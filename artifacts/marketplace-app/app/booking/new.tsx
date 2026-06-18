@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MOCK_BUSINESSES, TIME_SLOTS, formatPrice } from "@/constants/mockData";
 import { useColors } from "@/hooks/useColors";
+import { useOrders } from "@/context/OrdersContext";
 
 const DATES = Array.from({ length: 14 }, (_, i) => {
   const d = new Date();
@@ -28,6 +29,7 @@ export default function BookingScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { businessId, serviceId } = useLocalSearchParams<{ businessId: string; serviceId: string }>();
+  const { addBooking } = useOrders();
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,11 +46,25 @@ export default function BookingScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setLoading(true);
     await new Promise((r) => setTimeout(r, 1000));
+
+    await addBooking({
+      id: `b_${Date.now()}`,
+      businessId: business?.id ?? "",
+      businessName: business?.name ?? "",
+      businessCategory: business?.category ?? "",
+      serviceName: service?.title ?? "",
+      servicePrice: service?.price ?? 0,
+      date: selectedDate.toISOString().split("T")[0],
+      time: selectedTime!,
+      status: "confirmed",
+      createdAt: new Date().toISOString(),
+    });
+
     setLoading(false);
     Alert.alert(
       "Réservation confirmée !",
       `Votre réservation chez ${business?.name} pour "${service?.title}" est enregistrée.\n\nDate : ${selectedDate.toLocaleDateString("fr-FR")}\nHeure : ${selectedTime}`,
-      [{ text: "OK", onPress: () => router.replace("/orders/index") }]
+      [{ text: "Voir mes réservations", onPress: () => router.replace("/orders/index") }]
     );
   };
 

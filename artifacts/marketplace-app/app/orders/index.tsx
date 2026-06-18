@@ -5,12 +5,23 @@ import { FlatList, Platform, StyleSheet, Text, TouchableOpacity, View } from "re
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import EmptyState from "@/components/EmptyState";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
-import { MOCK_BOOKINGS, MOCK_ORDERS, formatDate, formatPrice } from "@/constants/mockData";
+import { formatPrice } from "@/constants/mockData";
+import { useOrders } from "@/context/OrdersContext";
 import { useColors } from "@/hooks/useColors";
+
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
 
 export default function OrdersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { bookings, orders } = useOrders();
   const [activeTab, setActiveTab] = useState<"bookings" | "orders">("bookings");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -33,18 +44,24 @@ export default function OrdersScreen() {
             onPress={() => setActiveTab(tab)}
           >
             <Text style={[styles.tabLabel, { color: activeTab === tab ? colors.primary : colors.mutedForeground }]}>
-              {tab === "bookings" ? "Réservations" : "Commandes"}
+              {tab === "bookings" ? `Réservations${bookings.length > 0 ? ` (${bookings.length})` : ""}` : `Commandes${orders.length > 0 ? ` (${orders.length})` : ""}`}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {activeTab === "bookings" ? (
-        MOCK_BOOKINGS.length === 0 ? (
-          <EmptyState icon="calendar" title="Aucune réservation" subtitle="Vos réservations apparaîtront ici" />
+        bookings.length === 0 ? (
+          <EmptyState
+            icon="calendar"
+            title="Aucune réservation"
+            subtitle="Vos réservations apparaîtront ici après confirmation"
+            actionLabel="Explorer les commerces"
+            onAction={() => router.push("/(tabs)/search")}
+          />
         ) : (
           <FlatList
-            data={MOCK_BOOKINGS}
+            data={bookings}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.list, { paddingBottom: botPad + 80 }]}
             renderItem={({ item }) => (
@@ -76,11 +93,17 @@ export default function OrdersScreen() {
           />
         )
       ) : (
-        MOCK_ORDERS.length === 0 ? (
-          <EmptyState icon="shopping-bag" title="Aucune commande" subtitle="Vos commandes apparaîtront ici" />
+        orders.length === 0 ? (
+          <EmptyState
+            icon="shopping-bag"
+            title="Aucune commande"
+            subtitle="Vos commandes apparaîtront ici après paiement"
+            actionLabel="Explorer les commerces"
+            onAction={() => router.push("/(tabs)/search")}
+          />
         ) : (
           <FlatList
-            data={MOCK_ORDERS}
+            data={orders}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.list, { paddingBottom: botPad + 80 }]}
             renderItem={({ item }) => (

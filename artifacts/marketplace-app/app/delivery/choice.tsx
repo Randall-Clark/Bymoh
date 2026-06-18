@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatPrice } from "@/constants/mockData";
 import { DeliveryProvider } from "@/constants/types";
 import { useCart } from "@/context/CartContext";
+import { useOrders } from "@/context/OrdersContext";
 import { useColors } from "@/hooks/useColors";
 
 const DELIVERY_OPTIONS = [
@@ -39,7 +40,8 @@ const DELIVERY_OPTIONS = [
 export default function DeliveryChoiceScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { totalPrice, clearCart } = useCart();
+  const { totalPrice, clearCart, items } = useCart();
+  const { addOrder } = useOrders();
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -53,13 +55,34 @@ export default function DeliveryChoiceScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setLoading(true);
     await new Promise((r) => setTimeout(r, 1200));
+
+    const firstItem = items[0];
+    if (firstItem) {
+      await addOrder({
+        id: `o_${Date.now()}`,
+        businessId: firstItem.businessId,
+        businessName: firstItem.businessName,
+        businessCategory: "",
+        items: items.map((i) => ({
+          title: i.service.title,
+          quantity: i.quantity,
+          price: i.service.price,
+        })),
+        total: finalTotal,
+        status: selected !== "pickup" ? "in_delivery" : "confirmed",
+        deliveryMethod: selected as any,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
     setLoading(false);
     clearCart();
+
     if (selected !== "pickup") {
       router.replace("/delivery/tracking");
     } else {
       Alert.alert("Commande passée !", "Votre commande a été envoyée au business.", [
-        { text: "OK", onPress: () => router.replace("/orders/index") },
+        { text: "Voir mes commandes", onPress: () => router.replace("/orders/index") },
       ]);
     }
   };

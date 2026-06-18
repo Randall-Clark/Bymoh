@@ -62,7 +62,7 @@ export default function OtpScreen() {
 
   const handleVerify = () => {
     if (!isComplete) return;
-    router.push("/auth/profile");
+    router.push({ pathname: "/auth/profile", params: { phone } });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;

@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -18,6 +18,7 @@ export default function ProfileSetupScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
+  const { phone } = useLocalSearchParams<{ phone: string }>();
   const [name, setName] = useState("");
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export default function ProfileSetupScreen() {
   const handleDone = async () => {
     if (!isValid || loading) return;
     setLoading(true);
-    await signIn("228000000", name.trim());
+    await signIn(phone ?? "000000000", name.trim());
     router.replace("/auth/purpose");
   };
 
