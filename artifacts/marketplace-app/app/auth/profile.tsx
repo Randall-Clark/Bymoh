@@ -29,7 +29,7 @@ export default function ProfileSetupScreen() {
     if (!isValid || loading) return;
     setLoading(true);
     await signIn("228000000", name.trim());
-    router.replace("/(tabs)");
+    router.replace("/auth/purpose");
   };
 
   return (

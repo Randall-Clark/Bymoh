@@ -139,7 +139,7 @@ export default function SplashScreen() {
         <View style={[styles.bottom, { paddingBottom: botPad + 24 }]}>
           <TouchableOpacity
             style={[styles.ctaBtn, !ready && { opacity: 0.6 }]}
-            onPress={() => ready && router.push("/auth/phone")}
+            onPress={() => ready && router.push("/auth/country")}
             activeOpacity={0.88}
             disabled={!ready}
           >

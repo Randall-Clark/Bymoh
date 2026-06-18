@@ -26,9 +26,11 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="auth/country" />
       <Stack.Screen name="auth/phone" />
       <Stack.Screen name="auth/otp" />
       <Stack.Screen name="auth/profile" />
+      <Stack.Screen name="auth/purpose" />
       <Stack.Screen name="business/[id]" />
       <Stack.Screen name="booking/new" />
       <Stack.Screen name="cart/index" />
