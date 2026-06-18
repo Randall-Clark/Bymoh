@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Local Marketplace App"
+version = "1.0.0"
+id = "artifacts/marketplace-app"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 19083
+
+[services.development]
+run = "pnpm --filter @workspace/marketplace-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/marketplace-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/marketplace-app", "run", "serve" ]
+
+[services.env]
+PORT = "19083"
+BASE_PATH = "/"

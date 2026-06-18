@@ -1,0 +1,32 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "EV5-XwUTfpZuxOb6K0h1H"
+uri = "file://artifacts/marketplace-app/assets/images/icon.png"
+type = "image"
+title = "marketplace app icon"
+
+[[generated]]
+id = "Yg2qd1JCbp6tK6fqyG0qT"
+uri = "file://artifacts/marketplace-app/assets/images/cat_restaurant.png"
+type = "image"
+title = "restaurant category"
+
+[[generated]]
+id = "82gz_9plqrbbAtYIgt9HU"
+uri = "file://artifacts/marketplace-app/assets/images/cat_artisan.png"
+type = "image"
+title = "artisan category"
+
+[[generated]]
+id = "JhFvMMR-hetxC5VjiO1RS"
+uri = "file://artifacts/marketplace-app/assets/images/cat_beauty.png"
+type = "image"
+title = "beauty category"
+
+[[generated]]
+id = "JSYNAl56b1E3CKWdfzmJJ"
+uri = "file://artifacts/marketplace-app/assets/images/hero_banner.png"
+type = "image"
+title = "hero banner"

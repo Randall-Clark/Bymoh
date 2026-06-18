@@ -1,0 +1,147 @@
+1. Contexte et vision du produit
+
+Conçois l'ensemble des interfaces (mobile iOS/Android + web responsive) d'une application nommée [NomApp], un catalogue professionnel et marketplace de services locaux. L'objectif est double :
+
+
+Permettre à des professionnels (restaurants, artisans locaux, prestataires de services en tout genre) de référencer leur business pour gagner en visibilité auprès d'un large bassin de clients potentiels.
+Permettre à des clients de rechercher une adresse, un service ou un commerce local, de consulter le catalogue d'un business, de réserver, de commander, et de se faire livrer via des partenaires tiers (Gozem, Yango).
+
+
+Ton visuel recherché : professionnel, rassurant, ancré localement, accessible à tous types d'utilisateurs (y compris peu à l'aise avec la technologie). Design simple, lisible, avec des composants clairs (cartes, listes, formulaires multi-étapes).
+
+2. Plateformes à designer
+
+
+Application mobile (iOS + Android, design unique adaptable aux deux)
+Version web responsive (desktop + mobile web)
+
+
+3. Types d'utilisateurs
+
+Professionnel (propriétaire de business)
+
+S'inscrit pour référencer son business, gérer son catalogue, et recevoir réservations/commandes.
+
+Client
+
+Cherche des business/services, consulte les fiches, réserve, commande, et choisit un mode de livraison.
+
+Un même compte doit pouvoir, idéalement, basculer entre les deux rôles (un client peut aussi devenir professionnel en ajoutant son business).
+
+4. Authentification
+
+
+Connexion uniquement par numéro de téléphone
+Réception d'un code OTP par SMS pour valider la connexion
+Pas de mot de passe à mémoriser
+Écrans à prévoir : saisie du numéro → saisie OTP (avec compte à rebours et option « renvoyer le code ») → complétion du profil si première connexion
+
+
+5. Fonctionnalités — Espace Professionnel
+
+Formulaire d'inscription business (idéalement en plusieurs étapes claires) collectant :
+
+
+Nom, prénom
+Nom de l'entreprise
+Numéro de téléphone
+Email (optionnel)
+Type d'entreprise / secteur d'activité
+Nombre d'employés
+Heures d'ouverture (par jour de la semaine)
+Catalogue des services/produits (titre, description, prix, photo)
+Étape finale : paiement des frais d'inscription avant validation du profil
+
+
+Une fois inscrit, le professionnel doit avoir accès à :
+
+
+Un tableau de bord simple (vue d'ensemble du profil, visibilité, réservations/commandes reçues)
+La gestion de son catalogue (ajout/modification/suppression de services)
+La gestion des heures d'ouverture
+La liste des réservations/commandes reçues avec statut (à confirmer, confirmée, terminée, annulée)
+Son profil (modification des informations, suppression du compte)
+
+
+6. Fonctionnalités — Espace Client
+
+
+Page d'accueil avec recherche, catégories (restaurants, artisans, services...), suggestions à proximité
+Résultats de recherche avec filtres (catégorie, ville/quartier, ouvert maintenant, livraison disponible)
+Fiche détaillée d'un business : photos, description, horaires, catalogue de services/produits, coordonnées
+Réservation d'un créneau (choix du service, date, heure, confirmation)
+Commande de produits/services (panier, récapitulatif)
+Choix du mode de livraison une fois la commande validée (voir section 7)
+Favoris : possibilité d'enregistrer des adresses/contacts de business pour les retrouver facilement
+Profil client : informations personnelles modifiables, historique des réservations/commandes, suppression du compte
+
+
+7. Intégrations tierces — Livraison
+
+Lorsqu'une commande nécessite une livraison, l'utilisateur doit pouvoir choisir entre deux services tiers intégrés via leurs API :
+
+
+Gozem
+Yango
+
+
+Prévoir un écran de comparaison/choix simple (logo du service, estimation si disponible, bouton de sélection) suivi d'un écran de suivi de la livraison une fois la course lancée.
+
+8. Liste complète des écrans à concevoir
+
+Onboarding & Authentification
+
+
+Splash screen / écran de bienvenue
+Choix du type d'usage (chercher un business / enregistrer mon business) — peut aussi être un simple choix dans le profil plutôt qu'un écran à part
+Saisie du numéro de téléphone
+Saisie du code OTP
+Complétion du profil (première connexion)
+
+
+Espace Client
+
+
+Accueil / Découverte
+Résultats de recherche + filtres
+Fiche détaillée d'un business
+Écran de réservation (sélection créneau/service)
+Confirmation de réservation
+Panier / récapitulatif de commande
+Choix du mode de livraison (Gozem / Yango / retrait sur place)
+Suivi de la livraison
+Paiement
+Favoris
+Profil client (vue + édition)
+Historique des réservations/commandes
+
+
+Espace Professionnel
+
+
+Formulaire d'inscription business (multi-étapes)
+Paiement des frais d'inscription
+Tableau de bord professionnel
+Gestion du catalogue (liste + ajout/édition d'un service)
+Gestion des horaires d'ouverture
+Liste des réservations/commandes reçues + détail
+Profil professionnel (vue + édition)
+
+
+Écrans communs
+
+
+Notifications
+Paramètres
+Suppression de compte (confirmation)
+États vides (aucun résultat, aucun favori, aucune commande)
+États de chargement et messages d'erreur
+
+
+9. Direction artistique suggérée
+
+
+Palette : une couleur principale chaleureuse et locale (à définir selon l'identité de marque), une couleur secondaire neutre, fond clair pour la lisibilité
+Typographie : une police sans-serif moderne et très lisible, hiérarchie claire entre titres/sous-titres/corps de texte
+Composants : cartes pour les listings de business (photo, nom, catégorie, note, distance), navigation par onglets en bas sur mobile (Accueil, Recherche, Favoris, Profil), formulaires multi-étapes avec barre de progression
+Iconographie : icônes simples et universelles (téléphone, horloge, épingle de localisation, panier, livraison)

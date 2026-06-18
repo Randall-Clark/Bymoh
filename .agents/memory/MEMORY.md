@@ -1,0 +1,1 @@
+- [Lokali app structure](lokali-structure.md) — Expo marketplace app with auth/cart contexts, multi-role (client+pro), AsyncStorage-only v1

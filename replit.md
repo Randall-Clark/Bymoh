@@ -1,6 +1,6 @@
-# [Project name]
+# Lokali
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Marketplace mobile local (iOS/Android) permettant aux clients de trouver, réserver et commander auprès de commerces locaux, et aux professionnels de gérer leur business.
 
 ## Run & Operate
 
@@ -14,23 +14,43 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- App mobile: Expo (React Native), expo-router v6
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
+- Storage: AsyncStorage (persistence locale)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/marketplace-app/` — app Expo (Lokali)
+  - `app/` — écrans (expo-router file-based routing)
+  - `app/(tabs)/` — onglets client : Accueil, Recherche, Favoris, Profil
+  - `app/auth/` — auth flow : phone → OTP → profile
+  - `app/business/[id].tsx` — détail d'un business
+  - `app/booking/new.tsx` — nouvelle réservation
+  - `app/cart/index.tsx` — panier
+  - `app/delivery/` — choix + tracking livraison
+  - `app/orders/index.tsx` — historique commandes/réservations
+  - `app/notifications.tsx` — notifications
+  - `app/pro/` — espace professionnel (register, dashboard, catalog, orders, schedule)
+  - `constants/` — types, colors, mockData
+  - `context/` — AuthContext, CartContext
+  - `components/` — composants réutilisables
+  - `hooks/useColors.ts` — design tokens light/dark
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Auth simulée (phone → OTP mock → AsyncStorage) sans backend pour le v1
+- Multi-rôle : client (/(tabs)/) et professionnel (/pro/) dans la même app
+- Livraison via Gozem / Yango / retrait sur place
+- FCFA comme monnaie principale, villes togolaises (Lomé)
+- Couleurs : orange primaire #FF6835, navy secondaire #1E3A5F, fond #F8F7F4
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Clients : chercher/filtrer par catégorie, voir les businesses, réserver des services, commander et se faire livrer, gérer son panier, suivre la livraison
+- Professionnels : inscrire leur business (5 étapes), gérer le catalogue, les horaires, les commandes et le tableau de bord analytics
 
 ## User preferences
 
@@ -38,7 +58,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- `Platform.OS === "web" ? 67 : insets.top` — pattern pour le padding top sur web vs mobile
+- Les écrans retournent `null` si `isLoading` est true (AuthContext init async)
+- `app/_layout.tsx` wraps tout avec AuthProvider + CartProvider — indispensable
+- NativeTabs (iOS 26 / liquid glass) + ClassicTabs (Android/web) dans `(tabs)/_layout.tsx`
 
 ## Pointers
 
