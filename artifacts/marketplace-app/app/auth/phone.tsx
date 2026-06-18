@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -16,6 +16,19 @@ import { useColors } from "@/hooks/useColors";
 export default function PhoneScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    dialCode: string;
+    flag: string;
+    placeholder: string;
+    maxLength: string;
+    countryCode: string;
+  }>();
+
+  const dialCode = params.dialCode ?? "+228";
+  const flag = params.flag ?? "🇹🇬";
+  const placeholder = params.placeholder ?? "90 00 00 00";
+  const maxLength = params.maxLength ? parseInt(params.maxLength, 10) : 10;
+
   const [phone, setPhone] = useState("");
   const [focused, setFocused] = useState(false);
 
@@ -23,7 +36,8 @@ export default function PhoneScreen() {
 
   const handleNext = () => {
     if (!isValid) return;
-    router.push({ pathname: "/auth/otp", params: { phone } });
+    const fullPhone = `${dialCode}${phone}`;
+    router.push({ pathname: "/auth/otp", params: { phone: fullPhone } });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -49,11 +63,15 @@ export default function PhoneScreen() {
         </Text>
 
         <View style={styles.inputGroup}>
-          <View style={[styles.countryCode, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Text style={[styles.flag, { color: colors.text }]}>🇹🇬</Text>
-            <Text style={[styles.code, { color: colors.text }]}>+228</Text>
+          <TouchableOpacity
+            style={[styles.countryCode, { backgroundColor: colors.muted, borderColor: colors.border }]}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.flag}>{flag}</Text>
+            <Text style={[styles.code, { color: colors.text }]}>{dialCode}</Text>
             <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-          </View>
+          </TouchableOpacity>
           <TextInput
             style={[
               styles.input,
@@ -63,14 +81,15 @@ export default function PhoneScreen() {
                 color: colors.text,
               },
             ]}
-            placeholder="90 00 00 00"
+            placeholder={placeholder}
             placeholderTextColor={colors.mutedForeground}
             keyboardType="phone-pad"
             value={phone}
             onChangeText={setPhone}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            maxLength={12}
+            maxLength={maxLength}
+            autoFocus
           />
         </View>
 
@@ -106,19 +125,32 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 15, lineHeight: 22 },
   inputGroup: { flexDirection: "row", gap: 10 },
   countryCode: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, borderRadius: 12, borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
   },
-  flag: { fontSize: 18 },
-  code: { fontSize: 15, fontWeight: "600" },
+  flag: { fontSize: 20 },
+  code: { fontSize: 15, fontWeight: "700" },
   input: {
-    flex: 1, paddingHorizontal: 16, paddingVertical: 14,
-    borderRadius: 12, borderWidth: 1.5, fontSize: 18,
-    letterSpacing: 2, fontWeight: "600",
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    fontSize: 18,
+    letterSpacing: 2,
+    fontWeight: "600",
   },
   btn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 16, borderRadius: 100,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 100,
   },
   btnText: { fontSize: 16, fontWeight: "700" },
   info: { fontSize: 12, textAlign: "center", lineHeight: 18 },

@@ -14,14 +14,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 
 const COUNTRIES = [
-  { code: "TG", name: "Togo", dialCode: "+228" },
-  { code: "BJ", name: "Bénin", dialCode: "+229" },
-  { code: "CI", name: "Côte d'Ivoire", dialCode: "+225" },
-  { code: "SN", name: "Sénégal", dialCode: "+221" },
-  { code: "GH", name: "Ghana", dialCode: "+233" },
-  { code: "CM", name: "Cameroun", dialCode: "+237" },
-  { code: "ML", name: "Mali", dialCode: "+223" },
-  { code: "BF", name: "Burkina Faso", dialCode: "+226" },
+  { code: "TG", name: "Togo", dialCode: "+228", flag: "🇹🇬", placeholder: "90 00 00 00", maxLength: 10 },
+  { code: "BJ", name: "Bénin", dialCode: "+229", flag: "🇧🇯", placeholder: "90 00 00 00", maxLength: 10 },
+  { code: "CI", name: "Côte d'Ivoire", dialCode: "+225", flag: "🇨🇮", placeholder: "07 00 00 00 00", maxLength: 12 },
+  { code: "SN", name: "Sénégal", dialCode: "+221", flag: "🇸🇳", placeholder: "70 000 00 00", maxLength: 11 },
+  { code: "GH", name: "Ghana", dialCode: "+233", flag: "🇬🇭", placeholder: "20 000 0000", maxLength: 11 },
+  { code: "CM", name: "Cameroun", dialCode: "+237", flag: "🇨🇲", placeholder: "6 00 00 00 00", maxLength: 11 },
+  { code: "ML", name: "Mali", dialCode: "+223", flag: "🇲🇱", placeholder: "70 00 00 00", maxLength: 10 },
+  { code: "BF", name: "Burkina Faso", dialCode: "+226", flag: "🇧🇫", placeholder: "70 00 00 00", maxLength: 10 },
 ];
 
 export default function CountryScreen() {
@@ -37,7 +37,17 @@ export default function CountryScreen() {
   };
 
   const handleContinue = () => {
-    router.push("/auth/phone");
+    const country = COUNTRIES.find((c) => c.code === selected)!;
+    router.push({
+      pathname: "/auth/phone",
+      params: {
+        dialCode: country.dialCode,
+        flag: country.flag,
+        placeholder: country.placeholder,
+        maxLength: String(country.maxLength),
+        countryCode: country.code,
+      },
+    });
   };
 
   return (
@@ -75,9 +85,7 @@ export default function CountryScreen() {
               style={[
                 styles.row,
                 {
-                  backgroundColor: isSelected
-                    ? colors.accent
-                    : colors.card,
+                  backgroundColor: isSelected ? colors.accent : colors.card,
                   borderColor: isSelected ? colors.primary : colors.border,
                   borderWidth: isSelected ? 2 : 1,
                 },
@@ -85,36 +93,24 @@ export default function CountryScreen() {
               onPress={() => handleSelect(country.code)}
               activeOpacity={0.82}
             >
-              {/* Code badge */}
-              <View
-                style={[
-                  styles.codeBadge,
-                  { backgroundColor: colors.accent },
-                ]}
-              >
-                <Text style={[styles.codeText, { color: colors.primary }]}>
-                  {country.code}
+              {/* Flag badge */}
+              <View style={[styles.codeBadge, { backgroundColor: isSelected ? colors.primary + "22" : colors.muted }]}>
+                <Text style={styles.flagEmoji}>{country.flag}</Text>
+              </View>
+
+              {/* Country name + dial code */}
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.countryName, { color: colors.text, fontWeight: isSelected ? "700" : "500" }]}>
+                  {country.name}
+                </Text>
+                <Text style={[styles.dialCode, { color: colors.mutedForeground }]}>
+                  {country.dialCode}
                 </Text>
               </View>
 
-              {/* Country name */}
-              <Text
-                style={[
-                  styles.countryName,
-                  { color: colors.text, fontWeight: isSelected ? "700" : "500" },
-                ]}
-              >
-                {country.name}
-              </Text>
-
               {/* Checkmark */}
               {isSelected ? (
-                <View
-                  style={[
-                    styles.checkCircle,
-                    { backgroundColor: colors.primary },
-                  ]}
-                >
+                <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
                   <Feather name="check" size={14} color="#fff" />
                 </View>
               ) : (
@@ -159,20 +155,21 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 16,
     gap: 14,
   },
   codeBadge: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  codeText: { fontSize: 14, fontWeight: "800", letterSpacing: 0.5 },
-  countryName: { flex: 1, fontSize: 17 },
+  flagEmoji: { fontSize: 26 },
+  countryName: { fontSize: 16 },
+  dialCode: { fontSize: 12, marginTop: 1 },
   checkCircle: {
     width: 28,
     height: 28,
