@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "Lokali",
+    "name": "Kola",
     "slug": "marketplace-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "lokali",
+    "scheme": "kola",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F8F7F4"
+      "backgroundColor": "#E84B1A"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.lokali.app"
+      "bundleIdentifier": "com.kola.app"
     },
     "android": {
-      "package": "com.lokali.app",
+      "package": "com.kola.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#FF6835"
+        "backgroundColor": "#E84B1A"
       }
     },
     "web": {

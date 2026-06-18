@@ -76,7 +76,7 @@ export default function ProRegisterScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert(
       "Business inscrit !",
-      "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Lokali.",
+      "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Kola.",
       [{ text: "Voir mon tableau de bord", onPress: () => router.replace("/pro/dashboard") }]
     );
   };
