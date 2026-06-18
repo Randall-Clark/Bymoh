@@ -119,43 +119,40 @@ export default function SplashScreen() {
       <View style={[styles.blobBottomLeft, { pointerEvents: "none" }]} />
 
       {/* === Content === */}
-      <Animated.View
-        style={[styles.content, { paddingBottom: botPad + 40, opacity: contentOpacity }]}
-      >
-        {/* Logo card */}
-        <Animated.View style={{ transform: [{ scale: logoScale }], marginBottom: 8 }}>
-          <View style={styles.logoCard}>
-            <Text style={styles.logoLetter}>K</Text>
-          </View>
-        </Animated.View>
+      <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
+        {/* ---- Centred hero ---- */}
+        <View style={styles.hero}>
+          <Animated.View style={{ transform: [{ scale: logoScale }], marginBottom: 8 }}>
+            <View style={styles.logoCard}>
+              <Text style={styles.logoLetter}>K</Text>
+            </View>
+          </Animated.View>
 
-        {/* App name */}
-        <Text style={styles.appName}>Kola</Text>
+          <Text style={styles.appName}>Kola</Text>
 
-        {/* Tagline */}
-        <Text style={styles.tagline}>
-          Tous les commerces et{"\n"}services près de chez vous.
-        </Text>
-
-        <View style={{ flex: 1 }} />
-
-        {/* CTA button */}
-        <TouchableOpacity
-          style={[styles.ctaBtn, !ready && { opacity: 0.6 }]}
-          onPress={() => ready && router.push("/auth/phone")}
-          activeOpacity={0.88}
-          disabled={!ready}
-        >
-          <Text style={styles.ctaText}>
-            {isLoading ? "Chargement…" : "Commencer"}
+          <Text style={styles.tagline}>
+            Tous les commerces et{"\n"}services près de chez vous.
           </Text>
-        </TouchableOpacity>
+        </View>
 
-        {/* Legal */}
-        <Text style={styles.legal}>
-          En continuant, vous acceptez nos{" "}
-          <Text style={styles.legalLink}>conditions d'utilisation</Text>
-        </Text>
+        {/* ---- Bottom actions ---- */}
+        <View style={[styles.bottom, { paddingBottom: botPad + 24 }]}>
+          <TouchableOpacity
+            style={[styles.ctaBtn, !ready && { opacity: 0.6 }]}
+            onPress={() => ready && router.push("/auth/phone")}
+            activeOpacity={0.88}
+            disabled={!ready}
+          >
+            <Text style={styles.ctaText}>
+              {isLoading ? "Chargement…" : "Commencer"}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.legal}>
+            En continuant, vous acceptez nos{" "}
+            <Text style={styles.legalLink}>conditions d'utilisation</Text>
+          </Text>
+        </View>
       </Animated.View>
     </View>
   );
@@ -211,10 +208,17 @@ const styles = StyleSheet.create({
   /* ---- Main content ---- */
   content: {
     flex: 1,
-    alignItems: "center",
     paddingHorizontal: 32,
-    paddingTop: 100,
+  },
+  hero: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
     gap: 16,
+  },
+  bottom: {
+    gap: 14,
+    paddingTop: 8,
   },
 
   logoCard: {
