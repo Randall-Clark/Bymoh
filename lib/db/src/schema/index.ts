@@ -6,3 +6,4 @@ export * from "./favorites";
 export * from "./reviews";
 export * from "./notifications";
 export * from "./drivers";
+export * from "./otp_codes";

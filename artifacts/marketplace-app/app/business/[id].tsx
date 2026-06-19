@@ -242,7 +242,7 @@ export default function BusinessDetailScreen() {
           </View>
           <TouchableOpacity
             style={[styles.cartBtn, { backgroundColor: colors.primary }]}
-            onPress={() => router.push("/cart/index")}
+            onPress={() => router.push("/cart")}
           >
             <Feather name="shopping-cart" size={16} color="#fff" />
             <Text style={styles.cartBtnText}>Voir le panier</Text>

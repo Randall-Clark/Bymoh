@@ -179,12 +179,12 @@ export default function ProfileScreen() {
           { backgroundColor: user?.role === "pro" ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.18)" },
         ]}>
           <Feather
-            name={user?.role === "pro" ? "briefcase" : user?.role === "driver" ? "truck" : "user"}
+            name={user?.role === "pro" ? "briefcase" : (user?.role as string) === "driver" ? "truck" : "user"}
             size={12}
             color="#fff"
           />
           <Text style={styles.roleText}>
-            {user?.role === "pro" ? "Professionnel" : user?.role === "driver" ? "Livreur" : "Client"}
+            {user?.role === "pro" ? "Professionnel" : (user?.role as string) === "driver" ? "Livreur" : "Client"}
           </Text>
         </View>
       </View>

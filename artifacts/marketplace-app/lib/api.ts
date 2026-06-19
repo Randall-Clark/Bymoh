@@ -40,6 +40,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+/** Converts a server-relative path (e.g. /api/uploads/avatars/x.jpg) to an absolute URL */
+export const getMediaUrl = (relativePath: string): string => {
+  if (!relativePath) return "";
+  if (relativePath.startsWith("http")) return relativePath;
+  const base = getBaseUrl().replace(/\/api$/, "");
+  return `${base}${relativePath}`;
+};
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

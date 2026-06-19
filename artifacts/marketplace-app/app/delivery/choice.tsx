@@ -82,7 +82,7 @@ export default function DeliveryChoiceScreen() {
       router.replace("/delivery/tracking");
     } else {
       Alert.alert("Commande passée !", "Votre commande a été envoyée au business.", [
-        { text: "Voir mes commandes", onPress: () => router.replace("/orders/index") },
+        { text: "Voir mes commandes", onPress: () => router.replace("/orders") },
       ]);
     }
   };

@@ -74,7 +74,7 @@ export default function BookingScreen() {
       Alert.alert(
         "Réservation confirmée !",
         `Table pour ${partySize} personne${partySize > 1 ? "s" : ""} chez ${business?.name}\n\nDate : ${selectedDate.toLocaleDateString("fr-FR")}\nHeure : ${selectedTime}`,
-        [{ text: "Voir mes réservations", onPress: () => router.replace("/orders/index") }]
+        [{ text: "Voir mes réservations", onPress: () => router.replace("/orders") }]
       );
     } else {
       await addBooking({
@@ -93,7 +93,7 @@ export default function BookingScreen() {
       Alert.alert(
         "Réservation confirmée !",
         `"${service?.title}" chez ${business?.name}\n\nDate : ${selectedDate.toLocaleDateString("fr-FR")}\nHeure : ${selectedTime}`,
-        [{ text: "Voir mes réservations", onPress: () => router.replace("/orders/index") }]
+        [{ text: "Voir mes réservations", onPress: () => router.replace("/orders") }]
       );
     }
   };

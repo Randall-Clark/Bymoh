@@ -61,6 +61,7 @@ function RootLayoutNav() {
         <Stack.Screen name="orders/index" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="profile/edit" />
+        <Stack.Screen name="profile/change-phone" />
         <Stack.Screen name="pro/register" />
         <Stack.Screen name="pro/dashboard" />
         <Stack.Screen name="pro/catalog" />
