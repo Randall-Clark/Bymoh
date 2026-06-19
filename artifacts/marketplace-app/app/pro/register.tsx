@@ -1,10 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -333,10 +335,47 @@ export default function ProRegisterScreen() {
   // Step 2 – Hours
   const [hours, setHours] = useState(DEFAULT_HOURS);
 
-  // Step 3 – Catalog
-  const [serviceTitle, setServiceTitle] = useState("");
-  const [serviceDesc, setServiceDesc] = useState("");
-  const [servicePrice, setServicePrice] = useState("");
+  // Step 3 – Catalog (multi-services)
+  type CatalogService = { id: string; title: string; desc: string; price: string; photo: string | null };
+  const [services, setServices] = useState<CatalogService[]>([]);
+  const [formTitle, setFormTitle] = useState("");
+  const [formDesc, setFormDesc] = useState("");
+  const [formPrice, setFormPrice] = useState("");
+  const [formPhoto, setFormPhoto] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const pickPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission requise", "Autorisez l'accès à la galerie pour ajouter une photo.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.75,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setFormPhoto(result.assets[0].uri);
+    }
+  };
+
+  const addService = () => {
+    if (!formTitle.trim() || !formPrice.trim()) return;
+    setServices((prev) => [
+      ...prev,
+      { id: Date.now().toString(), title: formTitle.trim(), desc: formDesc.trim(), price: formPrice.trim(), photo: formPhoto },
+    ]);
+    setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null);
+    setShowAddForm(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const removeService = (id: string) => {
+    setServices((prev) => prev.filter((s) => s.id !== id));
+    Haptics.selectionAsync();
+  };
 
   // Modals
   const [showCountryPicker, setShowCountryPicker] = useState(false);
@@ -348,7 +387,7 @@ export default function ProRegisterScreen() {
     if (step === 0) return firstName.trim() && lastName.trim();
     if (step === 1) return bizName.trim() && bizPhone.trim() && sector && businessType && city;
     if (step === 2) return true;
-    if (step === 3) return serviceTitle.trim() && servicePrice.trim();
+    if (step === 3) return services.length > 0;
     return true;
   };
 
@@ -559,22 +598,123 @@ export default function ProRegisterScreen() {
         {step === 3 && (
           <View style={styles.fields}>
             <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-              Ajoutez votre premier service ou produit pour attirer vos premiers clients.
+              Ajoutez tous vos services ou produits. Au moins un est requis.
             </Text>
-            <InputField label="Titre du service" value={serviceTitle} onChangeText={setServiceTitle} placeholder="Ex: Coupe homme" />
-            <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.text }]}>Description</Text>
-              <TextInput
-                style={[styles.textArea, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-                value={serviceDesc}
-                onChangeText={setServiceDesc}
-                placeholder="Décrivez votre service en détail..."
-                placeholderTextColor={colors.mutedForeground}
-                multiline
-                numberOfLines={4}
-              />
-            </View>
-            <InputField label="Prix (FCFA)" value={servicePrice} onChangeText={setServicePrice} placeholder="Ex: 5000" keyboardType="number-pad" />
+
+            {/* Services list */}
+            {services.map((s) => (
+              <View key={s.id} style={[styles.serviceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {s.photo ? (
+                  <Image source={{ uri: s.photo }} style={styles.serviceCardImg} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.serviceCardImgPlaceholder, { backgroundColor: colors.muted }]}>
+                    <Feather name="image" size={22} color={colors.mutedForeground} />
+                  </View>
+                )}
+                <View style={styles.serviceCardBody}>
+                  <Text style={[styles.serviceCardTitle, { color: colors.text }]} numberOfLines={1}>{s.title}</Text>
+                  {s.desc ? <Text style={[styles.serviceCardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{s.desc}</Text> : null}
+                  <Text style={[styles.serviceCardPrice, { color: colors.primary }]}>{s.price} FCFA</Text>
+                </View>
+                <TouchableOpacity onPress={() => removeService(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Feather name="trash-2" size={18} color={colors.destructive} />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {/* Add service form */}
+            {showAddForm ? (
+              <View style={[styles.addForm, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                <Text style={[styles.addFormTitle, { color: colors.text }]}>Nouveau service / produit</Text>
+
+                {/* Photo picker */}
+                <TouchableOpacity style={[styles.photoPicker, { backgroundColor: colors.muted, borderColor: colors.border }]} onPress={pickPhoto}>
+                  {formPhoto ? (
+                    <Image source={{ uri: formPhoto }} style={styles.photoPreview} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.photoPickerInner}>
+                      <Feather name="camera" size={24} color={colors.primary} />
+                      <Text style={[styles.photoPickerText, { color: colors.mutedForeground }]}>Ajouter une photo</Text>
+                    </View>
+                  )}
+                  {formPhoto && (
+                    <View style={[styles.photoOverlay]}>
+                      <Feather name="camera" size={16} color="#fff" />
+                      <Text style={styles.photoOverlayText}>Changer</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {/* Title */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Titre *</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                    value={formTitle}
+                    onChangeText={setFormTitle}
+                    placeholder="Ex : Coupe homme, Pizza Margarita..."
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                </View>
+
+                {/* Description */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Description</Text>
+                  <TextInput
+                    style={[styles.textArea, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                    value={formDesc}
+                    onChangeText={setFormDesc}
+                    placeholder="Décrivez votre service ou produit..."
+                    placeholderTextColor={colors.mutedForeground}
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
+                {/* Price */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Prix (FCFA) *</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                    value={formPrice}
+                    onChangeText={setFormPrice}
+                    placeholder="Ex : 5000"
+                    placeholderTextColor={colors.mutedForeground}
+                    keyboardType="number-pad"
+                  />
+                </View>
+
+                {/* Form actions */}
+                <View style={styles.formActions}>
+                  <TouchableOpacity
+                    style={[styles.formCancelBtn, { borderColor: colors.border }]}
+                    onPress={() => { setShowAddForm(false); setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null); }}
+                  >
+                    <Text style={[styles.formCancelText, { color: colors.text }]}>Annuler</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formAddBtn, { backgroundColor: formTitle.trim() && formPrice.trim() ? colors.primary : colors.muted }]}
+                    onPress={addService}
+                    disabled={!formTitle.trim() || !formPrice.trim()}
+                  >
+                    <Feather name="check" size={16} color={formTitle.trim() && formPrice.trim() ? "#fff" : colors.mutedForeground} />
+                    <Text style={[styles.formAddText, { color: formTitle.trim() && formPrice.trim() ? "#fff" : colors.mutedForeground }]}>
+                      Ajouter
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.addServiceBtn, { borderColor: colors.primary, backgroundColor: colors.accent }]}
+                onPress={() => setShowAddForm(true)}
+              >
+                <Feather name="plus-circle" size={20} color={colors.primary} />
+                <Text style={[styles.addServiceBtnText, { color: colors.primary }]}>
+                  {services.length === 0 ? "Ajouter un service / produit" : "Ajouter un autre"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -763,4 +903,49 @@ const styles = StyleSheet.create({
     gap: 8, paddingVertical: 16, borderRadius: 100,
   },
   nextBtnText: { fontSize: 16, fontWeight: "700" },
+  // Catalog
+  serviceCard: {
+    flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1,
+    overflow: "hidden", gap: 12, padding: 10,
+  },
+  serviceCardImg: { width: 64, height: 64, borderRadius: 10 },
+  serviceCardImgPlaceholder: {
+    width: 64, height: 64, borderRadius: 10,
+    alignItems: "center", justifyContent: "center",
+  },
+  serviceCardBody: { flex: 1, gap: 2 },
+  serviceCardTitle: { fontSize: 14, fontWeight: "700" },
+  serviceCardDesc: { fontSize: 12, lineHeight: 16 },
+  serviceCardPrice: { fontSize: 13, fontWeight: "700", marginTop: 2 },
+  addServiceBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 10, paddingVertical: 16, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed",
+  },
+  addServiceBtnText: { fontSize: 15, fontWeight: "700" },
+  addForm: { borderRadius: 16, borderWidth: 1.5, padding: 16, gap: 14 },
+  addFormTitle: { fontSize: 16, fontWeight: "800" },
+  photoPicker: {
+    height: 140, borderRadius: 12, borderWidth: 1,
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  photoPickerInner: { alignItems: "center", gap: 8 },
+  photoPickerText: { fontSize: 13 },
+  photoPreview: { width: "100%", height: "100%" },
+  photoOverlay: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    backgroundColor: "rgba(0,0,0,0.45)", flexDirection: "row",
+    alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 6,
+  },
+  photoOverlayText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  formActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+  formCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 100, borderWidth: 1,
+    alignItems: "center", justifyContent: "center",
+  },
+  formCancelText: { fontSize: 14, fontWeight: "600" },
+  formAddBtn: {
+    flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 12, borderRadius: 100,
+  },
+  formAddText: { fontSize: 14, fontWeight: "700" },
 });
