@@ -68,8 +68,14 @@ export default function ProfileSetupScreen() {
       return;
     }
     setLoading(true);
-    await registerUser(phone ?? "", name.trim(), email.trim(), pinStr);
-    router.replace("/auth/purpose");
+    try {
+      await registerUser(phone ?? "", name.trim(), email.trim(), pinStr);
+      router.replace("/auth/purpose");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erreur lors de la création du compte.";
+      setPinError(msg);
+      setLoading(false);
+    }
   };
 
   const PinInput = ({

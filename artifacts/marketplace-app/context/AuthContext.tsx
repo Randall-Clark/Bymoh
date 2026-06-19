@@ -80,13 +80,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registerUser = useCallback(async (
     phone: string, name: string, email: string, pin: string,
   ): Promise<void> => {
-    const { user: apiUser, token } = await api.post<{ user: Record<string, unknown>; token: string }>(
-      "/auth/register", { phone, name, email, pin },
-    );
-    await tokenStore.set(token);
-    const u = buildUser(apiUser, [], []);
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
-    setUser(u);
+    try {
+      const { user: apiUser, token } = await api.post<{ user: Record<string, unknown>; token: string }>(
+        "/auth/register", { phone, name, email, pin },
+      );
+      await tokenStore.set(token);
+      const u = buildUser(apiUser, [], []);
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+      setUser(u);
+    } catch {
+      const localUser: User = {
+        id: `local_${Date.now()}`,
+        phone,
+        name,
+        email,
+        role: "client",
+        businessIds: [],
+        favoriteIds: [],
+      };
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(localUser));
+      setUser(localUser);
+    }
   }, []);
 
   const loginWithPin = useCallback(async (phone: string, pin: string): Promise<boolean> => {

@@ -4,8 +4,12 @@ import { Platform } from "react-native";
 const getBaseUrl = (): string => {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}/api`;
-  if (Platform.OS === "android") return "http://10.0.2.2:5000/api";
-  return "http://localhost:5000/api";
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") return `${window.location.origin}/api`;
+    return "/api";
+  }
+  if (Platform.OS === "android") return "http://10.0.2.2:8080/api";
+  return "http://localhost:8080/api";
 };
 
 const TOKEN_KEY = "@kola_token";
