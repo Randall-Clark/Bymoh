@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { User } from "@/constants/types";
+import { api, tokenStore } from "@/lib/api";
 
 interface AuthContextValue {
   user: User | null;
@@ -17,22 +18,28 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const USERS_KEY = "@kola_users";
-const CURRENT_KEY = "@kola_current_phone";
+const USER_KEY = "@kola_user";
+const FAV_KEY = "@kola_favs";
+const BIZ_KEY = "@kola_biz";
 
-type UsersMap = Record<string, User>;
-
-async function loadUsers(): Promise<UsersMap> {
+async function loadLocal<T>(key: string, fallback: T): Promise<T> {
   try {
-    const raw = await AsyncStorage.getItem(USERS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch { return fallback; }
 }
 
-async function saveUsers(map: UsersMap): Promise<void> {
-  await AsyncStorage.setItem(USERS_KEY, JSON.stringify(map));
+function buildUser(base: Record<string, unknown>, favoriteIds: string[], businessIds: string[]): User {
+  return {
+    id: base.id as string,
+    phone: base.phone as string,
+    name: base.name as string,
+    email: base.email as string | undefined,
+    role: (base.role as User["role"]) ?? "client",
+    avatar: base.avatarUrl as string | undefined,
+    businessIds,
+    favoriteIds,
+  };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -42,10 +49,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const currentPhone = await AsyncStorage.getItem(CURRENT_KEY);
-        if (currentPhone) {
-          const users = await loadUsers();
-          if (users[currentPhone]) setUser(users[currentPhone]);
+        const token = await tokenStore.get();
+        if (token) {
+          try {
+            const apiUser = await api.get<Record<string, unknown>>("/users/me");
+            const favs = await loadLocal<string[]>(FAV_KEY, []);
+            const biz = await loadLocal<string[]>(BIZ_KEY, []);
+            const u = buildUser(apiUser, favs, biz);
+            setUser(u);
+            await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+          } catch {
+            const cached = await loadLocal<User | null>(USER_KEY, null);
+            if (cached) setUser(cached);
+            else await tokenStore.clear();
+          }
         }
       } finally {
         setIsLoading(false);
@@ -54,44 +71,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const checkPhone = useCallback(async (phone: string): Promise<boolean> => {
-    const users = await loadUsers();
-    return !!users[phone];
+    try {
+      const { exists } = await api.post<{ exists: boolean }>("/auth/check-phone", { phone });
+      return exists;
+    } catch { return false; }
   }, []);
 
   const registerUser = useCallback(async (
-    phone: string,
-    name: string,
-    email: string,
-    pin: string
+    phone: string, name: string, email: string, pin: string,
   ): Promise<void> => {
-    const users = await loadUsers();
-    const newUser: User = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      phone,
-      name,
-      email,
-      pin,
-      role: "client",
-      businessIds: [],
-      favoriteIds: [],
-    };
-    users[phone] = newUser;
-    await saveUsers(users);
-    await AsyncStorage.setItem(CURRENT_KEY, phone);
-    setUser(newUser);
+    const { user: apiUser, token } = await api.post<{ user: Record<string, unknown>; token: string }>(
+      "/auth/register", { phone, name, email, pin },
+    );
+    await tokenStore.set(token);
+    const u = buildUser(apiUser, [], []);
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+    setUser(u);
   }, []);
 
   const loginWithPin = useCallback(async (phone: string, pin: string): Promise<boolean> => {
-    const users = await loadUsers();
-    const found = users[phone];
-    if (!found || found.pin !== pin) return false;
-    await AsyncStorage.setItem(CURRENT_KEY, phone);
-    setUser(found);
-    return true;
+    try {
+      const { user: apiUser, token } = await api.post<{ user: Record<string, unknown>; token: string }>(
+        "/auth/login", { phone, pin },
+      );
+      await tokenStore.set(token);
+      const favs = await loadLocal<string[]>(FAV_KEY, []);
+      const biz = await loadLocal<string[]>(BIZ_KEY, []);
+      const u = buildUser(apiUser, favs, biz);
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+      setUser(u);
+      return true;
+    } catch { return false; }
   }, []);
 
   const signOut = useCallback(async () => {
-    await AsyncStorage.removeItem(CURRENT_KEY);
+    await tokenStore.clear();
+    await AsyncStorage.multiRemove([USER_KEY, FAV_KEY, BIZ_KEY]);
     setUser(null);
   }, []);
 
@@ -99,10 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
-      loadUsers().then((users) => {
-        users[updated.phone] = updated;
-        saveUsers(users);
-      });
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(updated));
       return updated;
     });
   }, []);
@@ -114,10 +126,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? prev.favoriteIds.filter((id) => id !== businessId)
         : [...prev.favoriteIds, businessId];
       const updated = { ...prev, favoriteIds: favs };
-      loadUsers().then((users) => {
-        users[updated.phone] = updated;
-        saveUsers(users);
-      });
+      AsyncStorage.setItem(FAV_KEY, JSON.stringify(favs));
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(updated));
       return updated;
     });
   }, []);
@@ -126,11 +136,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => {
       if (!prev) return prev;
       if (prev.businessIds.includes(businessId)) return prev;
-      const updated = { ...prev, businessIds: [...prev.businessIds, businessId], role: "pro" as const };
-      loadUsers().then((users) => {
-        users[updated.phone] = updated;
-        saveUsers(users);
-      });
+      const biz = [...prev.businessIds, businessId];
+      const updated = { ...prev, businessIds: biz, role: "pro" as const };
+      AsyncStorage.setItem(BIZ_KEY, JSON.stringify(biz));
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(updated));
       return updated;
     });
   }, []);

@@ -52,8 +52,22 @@ export default function BusinessDetailScreen() {
     addItem(service, business.id, business.name);
   };
 
+  const getBookingMode = (category: string): "table" | "service" => {
+    const lower = category.toLowerCase();
+    if (lower.includes("restaurant") || lower.includes("café") || lower.includes("cafe") || lower.includes("bar") || lower.includes("brasserie")) {
+      return "table";
+    }
+    return "service";
+  };
+
+  const bookingMode = getBookingMode(business.category);
+
+  const handleBookTable = () => {
+    router.push({ pathname: "/booking/new", params: { businessId: business.id, bookingMode: "table" } });
+  };
+
   const handleBook = (service: Service) => {
-    router.push({ pathname: "/booking/new", params: { businessId: business.id, serviceId: service.id } });
+    router.push({ pathname: "/booking/new", params: { businessId: business.id, serviceId: service.id, bookingMode } });
   };
 
   return (
@@ -146,12 +160,26 @@ export default function BusinessDetailScreen() {
 
         {activeTab === "services" && (
           <View style={styles.tabContent}>
+            {bookingMode === "table" && (
+              <TouchableOpacity
+                style={[styles.tableReservationBtn, { backgroundColor: colors.secondary }]}
+                onPress={handleBookTable}
+                activeOpacity={0.85}
+              >
+                <Feather name="calendar" size={20} color="#fff" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tableReservationTitle}>Réserver une table</Text>
+                  <Text style={styles.tableReservationSub}>Choisissez la date, l'heure et le nombre de convives</Text>
+                </View>
+                <Feather name="arrow-right" size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
             {business.services.map((s) => (
               <ServiceCard
                 key={s.id}
                 service={s}
                 onAddToCart={() => handleAddToCart(s)}
-                onBook={() => handleBook(s)}
+                onBook={bookingMode === "service" ? () => handleBook(s) : undefined}
                 inCart={items.some((i) => i.service.id === s.id)}
               />
             ))}
@@ -253,6 +281,9 @@ const styles = StyleSheet.create({
   tab: { flex: 1, alignItems: "center", paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabLabel: { fontSize: 14, fontWeight: "600" },
   tabContent: { gap: 10 },
+  tableReservationBtn: { flexDirection: "row", alignItems: "center", gap: 12, padding: 16, borderRadius: 16 },
+  tableReservationTitle: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  tableReservationSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 2 },
   hourRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1 },
   dayLabel: { fontSize: 14, fontWeight: "600" },
   hourLabel: { fontSize: 14 },

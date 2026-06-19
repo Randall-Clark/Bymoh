@@ -1,1 +1,4 @@
-- [Lokali app structure](lokali-structure.md) — Expo marketplace app with auth/cart contexts, multi-role (client+pro), AsyncStorage-only v1
+- [Express 5 params typing](express5-params.md) — req.params values are string|string[] in Express 5 types; always cast `req.params.foo as string`.
+- [Drizzle insert Partial spread](drizzle-insert-partial.md) — never spread `Partial<table.$inferInsert>` into db.insert(); map required fields explicitly.
+- [DB schema push](db-schema.md) — run typecheck:libs before leaf typechecks after changing lib/db schema; push with `pnpm --filter @workspace/db run push`.
+- [Auth token strategy](auth-token.md) — HMAC-SHA256 stateless token (userId:timestamp:sig) signed with SESSION_SECRET; PIN stored as HMAC-SHA256(pin, SECRET).

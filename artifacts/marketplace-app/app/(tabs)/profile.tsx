@@ -17,7 +17,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-// ─── Doodle grid (same as home/splash) ────────────────────────────────────────
 const { width: W } = Dimensions.get("window");
 const BG = "#E84B1A";
 const BG_DARK = "#C93E12";
@@ -35,15 +34,13 @@ function seededPick(row: number, col: number): string {
 const HEADER_CELLS = Array.from({ length: HEADER_ROWS }, (_, row) =>
   Array.from({ length: COLS }, (_, col) => ({
     key: `${row}-${col}`,
-    symbol: seededPick(row + 2, col + 1), // offset so pattern differs from home
+    symbol: seededPick(row + 2, col + 1),
     row,
     col,
   }))
 ).flat();
 
 const USE_NATIVE = Platform.OS !== "web";
-
-// ─── Profile Screen ────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
   const colors = useColors();
@@ -75,16 +72,26 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleBecomeDriver = () => {
+    Alert.alert(
+      "Devenir livreur",
+      "Cette option n'est pas encore disponible dans votre région.\n\nNous travaillons à l'étendre prochainement. Revenez bientôt !",
+      [{ text: "Compris", style: "default" }]
+    );
+  };
+
   const MenuItem = ({
     icon,
     label,
     onPress,
     danger,
+    badge,
   }: {
     icon: string;
     label: string;
     onPress: () => void;
     danger?: boolean;
+    badge?: string;
   }) => (
     <TouchableOpacity
       style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -95,7 +102,13 @@ export default function ProfileScreen() {
         <Feather name={icon as any} size={18} color={danger ? colors.destructive : colors.primary} />
       </View>
       <Text style={[styles.menuLabel, { color: danger ? colors.destructive : colors.text }]}>{label}</Text>
-      <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      {badge ? (
+        <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+          <Text style={styles.badgeText}>{badge}</Text>
+        </View>
+      ) : (
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      )}
     </TouchableOpacity>
   );
 
@@ -106,14 +119,11 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
 
-      {/* ── Fixed header: orange + doodles + avatar ── */}
+      {/* ── Fixed header ── */}
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
-        {/* Blob */}
         <View style={styles.blobTopRight} />
-        {/* Blob bottom left */}
         <View style={styles.blobBottomLeft} />
 
-        {/* Animated doodles */}
         <Animated.View
           style={[
             styles.doodleContainer,
@@ -131,7 +141,6 @@ export default function ProfileScreen() {
           ))}
         </Animated.View>
 
-        {/* Avatar circle */}
         <View style={styles.avatarWrap}>
           <View style={styles.avatarRing}>
             <View style={styles.avatar}>
@@ -140,7 +149,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Name + phone + role */}
         <Text style={styles.userName}>{user?.name ?? "—"}</Text>
         <Text style={styles.userPhone}>{user?.phone ?? ""}</Text>
 
@@ -149,12 +157,12 @@ export default function ProfileScreen() {
           { backgroundColor: user?.role === "pro" ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.18)" },
         ]}>
           <Feather
-            name={user?.role === "pro" ? "briefcase" : "user"}
+            name={user?.role === "pro" ? "briefcase" : user?.role === "driver" ? "truck" : "user"}
             size={12}
             color="#fff"
           />
           <Text style={styles.roleText}>
-            {user?.role === "pro" ? "Professionnel" : "Client"}
+            {user?.role === "pro" ? "Professionnel" : user?.role === "driver" ? "Livreur" : "Client"}
           </Text>
         </View>
       </View>
@@ -195,6 +203,29 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Driver section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ESPACE LIVREUR</Text>
+          <TouchableOpacity
+            style={[styles.driverPromo, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={handleBecomeDriver}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.driverIconWrap, { backgroundColor: colors.accent }]}>
+              <Feather name="truck" size={22} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.driverTitle, { color: colors.text }]}>Devenir livreur</Text>
+              <Text style={[styles.driverSub, { color: colors.mutedForeground }]}>
+                Gagnez de l'argent en livrant près de chez vous
+              </Text>
+            </View>
+            <View style={[styles.driverArrow, { backgroundColor: colors.primary }]}>
+              <Feather name="arrow-right" size={16} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        </View>
+
         {/* Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PARAMÈTRES</Text>
@@ -221,8 +252,6 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-
-  // ── Fixed header ──
   header: {
     backgroundColor: BG,
     paddingHorizontal: 20,
@@ -274,8 +303,6 @@ const styles = StyleSheet.create({
     width: TILE,
     textAlign: "center",
   },
-
-  // Avatar
   avatarWrap: { marginBottom: 4, zIndex: 2 },
   avatarRing: {
     width: 92,
@@ -296,7 +323,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { fontSize: 30, fontWeight: "900", color: "#fff" },
-
   userName: { fontSize: 22, fontWeight: "800", color: "#fff", zIndex: 2 },
   userPhone: { fontSize: 13, color: "rgba(255,255,255,0.75)", zIndex: 2 },
   roleBadge: {
@@ -310,8 +336,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   roleText: { fontSize: 12, fontWeight: "700", color: "#fff" },
-
-  // ── Scrollable ──
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 24, gap: 24 },
   section: { gap: 8 },
@@ -326,6 +350,8 @@ const styles = StyleSheet.create({
   },
   menuIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   menuLabel: { flex: 1, fontSize: 15, fontWeight: "500" },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 100 },
+  badgeText: { fontSize: 11, fontWeight: "700", color: "#fff" },
   proPromo: {
     padding: 16,
     borderRadius: 16,
@@ -337,4 +363,22 @@ const styles = StyleSheet.create({
   proPromoTitle: { color: "#fff", fontSize: 15, fontWeight: "700" },
   proPromoSub: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 },
   proPromoBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  driverPromo: {
+    padding: 14,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+  },
+  driverIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driverTitle: { fontSize: 15, fontWeight: "700" },
+  driverSub: { fontSize: 12, marginTop: 2 },
+  driverArrow: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
 });
