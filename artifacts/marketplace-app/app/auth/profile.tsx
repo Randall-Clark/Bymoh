@@ -1,4 +1,3 @@
-import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -38,15 +37,11 @@ export default function ProfileSetupScreen() {
       style={[styles.root, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={[styles.header, { paddingTop: topPad + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Feather name="arrow-left" size={22} color={colors.text} />
-        </TouchableOpacity>
-      </View>
+      <View style={{ height: topPad + 16 }} />
 
       <View style={styles.content}>
         <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-          <Feather name="user" size={40} color="#fff" />
+          <Text style={styles.avatarEmoji}>👋</Text>
         </View>
         <Text style={[styles.title, { color: colors.text }]}>Bienvenue !</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
@@ -73,6 +68,7 @@ export default function ProfileSetupScreen() {
             autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={handleDone}
+            autoFocus
           />
         </View>
 
@@ -93,12 +89,12 @@ export default function ProfileSetupScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 8 },
-  content: { flex: 1, paddingHorizontal: 24, gap: 20, paddingTop: 24 },
+  content: { flex: 1, paddingHorizontal: 24, gap: 20, paddingTop: 24, alignItems: "stretch" },
   avatarCircle: {
     width: 80, height: 80, borderRadius: 40,
     alignItems: "center", justifyContent: "center", alignSelf: "center",
   },
+  avatarEmoji: { fontSize: 38 },
   title: { fontSize: 28, fontWeight: "800", textAlign: "center" },
   subtitle: { fontSize: 15, lineHeight: 22, textAlign: "center" },
   label: { fontSize: 14, fontWeight: "600", marginBottom: 8 },
