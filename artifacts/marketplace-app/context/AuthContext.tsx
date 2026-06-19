@@ -7,6 +7,8 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isNewUser: boolean;
+  clearNewUser: () => void;
   checkPhone: (phone: string) => Promise<boolean>;
   registerUser: (phone: string, name: string, email: string, pin: string) => Promise<void>;
   loginWithPin: (phone: string, pin: string) => Promise<boolean>;
@@ -45,6 +47,9 @@ function buildUser(base: Record<string, unknown>, favoriteIds: string[], busines
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isNewUser, setIsNewUser] = useState(false);
+
+  const clearNewUser = useCallback(() => setIsNewUser(false), []);
 
   useEffect(() => {
     (async () => {
@@ -87,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await tokenStore.set(token);
       const u = buildUser(apiUser, [], []);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+      setIsNewUser(true);
       setUser(u);
     } catch {
       const localUser: User = {
@@ -99,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         favoriteIds: [],
       };
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(localUser));
+      setIsNewUser(true);
       setUser(localUser);
     }
   }, []);
@@ -161,6 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, isLoading, isAuthenticated: !!user,
+      isNewUser, clearNewUser,
       checkPhone, registerUser, loginWithPin,
       signOut, updateUser, toggleFavorite, addBusiness,
     }}>

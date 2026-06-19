@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 const BG_ORANGE = "#E84B1A";
@@ -17,16 +18,19 @@ const BG_ORANGE = "#E84B1A";
 export default function PurposeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { clearNewUser } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const handleExplore = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    clearNewUser();
     router.replace("/(tabs)");
   };
 
   const handleBusiness = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    clearNewUser();
     router.replace("/pro/register");
   };
 

@@ -43,7 +43,7 @@ const USE_NATIVE = Platform.OS !== "web";
 
 export default function SplashScreen() {
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isNewUser } = useAuth();
 
   const shift = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.82)).current;
@@ -82,9 +82,9 @@ export default function SplashScreen() {
   // Redirect authenticated users
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/(tabs)");
+      router.replace(isNewUser ? "/auth/purpose" : "/(tabs)");
     }
-  }, [isAuthenticated, isLoading]);
+  }, [isAuthenticated, isLoading, isNewUser]);
 
   const ready = !isLoading && !isAuthenticated;
   if (isAuthenticated) return null;
