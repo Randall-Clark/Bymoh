@@ -62,7 +62,8 @@ export default function OtpScreen() {
 
   const handleVerify = () => {
     if (!isComplete) return;
-    router.push({ pathname: "/auth/profile", params: { phone } });
+    // Use replace so the user cannot go back to OTP after verifying
+    router.replace({ pathname: "/auth/profile", params: { phone } });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -85,7 +86,7 @@ export default function OtpScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Code de vérification</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Entrez le code à 6 chiffres envoyé au{"\n"}
-          <Text style={{ color: colors.text, fontWeight: "700" }}>+228 {phone}</Text>
+          <Text style={{ color: colors.text, fontWeight: "700" }}>{phone}</Text>
         </Text>
 
         <View style={styles.otpRow}>
@@ -131,9 +132,7 @@ export default function OtpScreen() {
           ) : (
             <Text style={[styles.countdown, { color: colors.mutedForeground }]}>
               Renvoyer dans{" "}
-              <Text style={{ fontWeight: "700", color: colors.text }}>
-                {countdown}s
-              </Text>
+              <Text style={{ fontWeight: "700", color: colors.text }}>{countdown}s</Text>
             </Text>
           )}
         </View>

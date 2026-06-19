@@ -2,6 +2,8 @@ export interface User {
   id: string;
   phone: string;
   name: string;
+  email?: string;
+  pin?: string;
   role: "client" | "pro";
   businessIds: string[];
   favoriteIds: string[];

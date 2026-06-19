@@ -38,9 +38,11 @@ export default function CountryScreen() {
 
   const handleContinue = () => {
     const country = COUNTRIES.find((c) => c.code === selected)!;
+    // Always register mode when coming from country selection
     router.push({
       pathname: "/auth/phone",
       params: {
+        register: "true",
         dialCode: country.dialCode,
         flag: country.flag,
         placeholder: country.placeholder,
@@ -64,9 +66,7 @@ export default function CountryScreen() {
 
       {/* Title block */}
       <View style={styles.titleBlock}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Choisissez votre pays
-        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>Choisissez votre pays</Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Nous afficherons les commerces et services{"\n"}disponibles dans votre région.
         </Text>
@@ -93,12 +93,9 @@ export default function CountryScreen() {
               onPress={() => handleSelect(country.code)}
               activeOpacity={0.82}
             >
-              {/* Flag badge */}
               <View style={[styles.codeBadge, { backgroundColor: isSelected ? colors.primary + "22" : colors.muted }]}>
                 <Text style={styles.flagEmoji}>{country.flag}</Text>
               </View>
-
-              {/* Country name + dial code */}
               <View style={{ flex: 1 }}>
                 <Text style={[styles.countryName, { color: colors.text, fontWeight: isSelected ? "700" : "500" }]}>
                   {country.name}
@@ -107,8 +104,6 @@ export default function CountryScreen() {
                   {country.dialCode}
                 </Text>
               </View>
-
-              {/* Checkmark */}
               {isSelected ? (
                 <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
                   <Feather name="check" size={14} color="#fff" />
@@ -122,16 +117,7 @@ export default function CountryScreen() {
       </ScrollView>
 
       {/* Continue button */}
-      <View
-        style={[
-          styles.footer,
-          {
-            borderTopColor: colors.border,
-            paddingBottom: botPad + 20,
-            backgroundColor: colors.background,
-          },
-        ]}
-      >
+      <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: botPad + 20, backgroundColor: colors.background }]}>
         <TouchableOpacity
           style={[styles.continueBtn, { backgroundColor: colors.primary }]}
           onPress={handleContinue}
@@ -153,42 +139,19 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 15, lineHeight: 22 },
   list: { paddingHorizontal: 20, gap: 12 },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    gap: 14,
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 16, gap: 14,
   },
-  codeBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  codeBadge: { width: 48, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   flagEmoji: { fontSize: 26 },
   countryName: { fontSize: 16 },
   dialCode: { fontSize: 12, marginTop: 1 },
-  checkCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  footer: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    borderTopWidth: 1,
-  },
+  checkCircle: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  footer: { paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1 },
   continueBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 100,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 16, borderRadius: 100,
   },
   continueBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

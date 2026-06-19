@@ -6,7 +6,9 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  signIn: (phone: string, name: string) => Promise<void>;
+  checkPhone: (phone: string) => Promise<boolean>;
+  registerUser: (phone: string, name: string, email: string, pin: string) => Promise<void>;
+  loginWithPin: (phone: string, pin: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   toggleFavorite: (businessId: string) => void;
@@ -15,51 +17,95 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY = "@lokali_user";
+const USERS_KEY = "@kola_users";
+const CURRENT_KEY = "@kola_current_phone";
+
+type UsersMap = Record<string, User>;
+
+async function loadUsers(): Promise<UsersMap> {
+  try {
+    const raw = await AsyncStorage.getItem(USERS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveUsers(map: UsersMap): Promise<void> {
+  await AsyncStorage.setItem(USERS_KEY, JSON.stringify(map));
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
-        if (raw) setUser(JSON.parse(raw));
-      })
-      .finally(() => setIsLoading(false));
+    (async () => {
+      try {
+        const currentPhone = await AsyncStorage.getItem(CURRENT_KEY);
+        if (currentPhone) {
+          const users = await loadUsers();
+          if (users[currentPhone]) setUser(users[currentPhone]);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, []);
 
-  const persist = useCallback(async (u: User | null) => {
-    if (u) await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-    else await AsyncStorage.removeItem(STORAGE_KEY);
+  const checkPhone = useCallback(async (phone: string): Promise<boolean> => {
+    const users = await loadUsers();
+    return !!users[phone];
   }, []);
 
-  const signIn = useCallback(async (phone: string, name: string) => {
+  const registerUser = useCallback(async (
+    phone: string,
+    name: string,
+    email: string,
+    pin: string
+  ): Promise<void> => {
+    const users = await loadUsers();
     const newUser: User = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       phone,
       name,
+      email,
+      pin,
       role: "client",
       businessIds: [],
       favoriteIds: [],
     };
+    users[phone] = newUser;
+    await saveUsers(users);
+    await AsyncStorage.setItem(CURRENT_KEY, phone);
     setUser(newUser);
-    await persist(newUser);
-  }, [persist]);
+  }, []);
+
+  const loginWithPin = useCallback(async (phone: string, pin: string): Promise<boolean> => {
+    const users = await loadUsers();
+    const found = users[phone];
+    if (!found || found.pin !== pin) return false;
+    await AsyncStorage.setItem(CURRENT_KEY, phone);
+    setUser(found);
+    return true;
+  }, []);
 
   const signOut = useCallback(async () => {
+    await AsyncStorage.removeItem(CURRENT_KEY);
     setUser(null);
-    await persist(null);
-  }, [persist]);
+  }, []);
 
   const updateUser = useCallback(async (updates: Partial<User>) => {
     setUser((prev) => {
       if (!prev) return prev;
       const updated = { ...prev, ...updates };
-      persist(updated);
+      loadUsers().then((users) => {
+        users[updated.phone] = updated;
+        saveUsers(users);
+      });
       return updated;
     });
-  }, [persist]);
+  }, []);
 
   const toggleFavorite = useCallback((businessId: string) => {
     setUser((prev) => {
@@ -68,23 +114,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? prev.favoriteIds.filter((id) => id !== businessId)
         : [...prev.favoriteIds, businessId];
       const updated = { ...prev, favoriteIds: favs };
-      persist(updated);
+      loadUsers().then((users) => {
+        users[updated.phone] = updated;
+        saveUsers(users);
+      });
       return updated;
     });
-  }, [persist]);
+  }, []);
 
   const addBusiness = useCallback((businessId: string) => {
     setUser((prev) => {
       if (!prev) return prev;
       if (prev.businessIds.includes(businessId)) return prev;
       const updated = { ...prev, businessIds: [...prev.businessIds, businessId], role: "pro" as const };
-      persist(updated);
+      loadUsers().then((users) => {
+        users[updated.phone] = updated;
+        saveUsers(users);
+      });
       return updated;
     });
-  }, [persist]);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, signIn, signOut, updateUser, toggleFavorite, addBusiness }}>
+    <AuthContext.Provider value={{
+      user, isLoading, isAuthenticated: !!user,
+      checkPhone, registerUser, loginWithPin,
+      signOut, updateUser, toggleFavorite, addBusiness,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -86,7 +86,6 @@ export default function SplashScreen() {
     }
   }, [isAuthenticated, isLoading]);
 
-  // Show splash while loading — just disable the button
   const ready = !isLoading && !isAuthenticated;
   if (isAuthenticated) return null;
 
@@ -94,33 +93,27 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.root}>
-      {/* === Animated doodle grid (diagonal) === */}
+      {/* Animated doodle grid */}
       <Animated.View
         style={[
           styles.doodleContainer,
-          {
-            transform: [{ translateX: shift }, { translateY: shift }],
-            pointerEvents: "none",
-          },
+          { transform: [{ translateX: shift }, { translateY: shift }], pointerEvents: "none" },
         ]}
       >
         {CELLS.map(({ key, symbol, row, col }) => (
-          <Text
-            key={key}
-            style={[styles.doodle, { left: col * TILE - TILE, top: row * TILE - TILE }]}
-          >
+          <Text key={key} style={[styles.doodle, { left: col * TILE - TILE, top: row * TILE - TILE }]}>
             {symbol}
           </Text>
         ))}
       </Animated.View>
 
-      {/* === Decorative blobs === */}
+      {/* Decorative blobs */}
       <View style={[styles.blobTopRight, { pointerEvents: "none" }]} />
       <View style={[styles.blobBottomLeft, { pointerEvents: "none" }]} />
 
-      {/* === Content === */}
+      {/* Content */}
       <Animated.View style={[styles.content, { opacity: contentOpacity }]}>
-        {/* ---- Centred hero ---- */}
+        {/* Hero */}
         <View style={styles.hero}>
           <Animated.View style={{ transform: [{ scale: logoScale }], marginBottom: 8 }}>
             <View style={styles.logoCard}>
@@ -135,17 +128,28 @@ export default function SplashScreen() {
           </Text>
         </View>
 
-        {/* ---- Bottom actions ---- */}
+        {/* Bottom actions */}
         <View style={[styles.bottom, { paddingBottom: botPad + 24 }]}>
+          {/* Se connecter (main CTA) */}
           <TouchableOpacity
             style={[styles.ctaBtn, !ready && { opacity: 0.6 }]}
-            onPress={() => ready && router.push("/auth/country")}
+            onPress={() => ready && router.push("/auth/phone")}
             activeOpacity={0.88}
             disabled={!ready}
           >
             <Text style={styles.ctaText}>
-              {isLoading ? "Chargement…" : "Commencer"}
+              {isLoading ? "Chargement…" : "Se connecter"}
             </Text>
+          </TouchableOpacity>
+
+          {/* S'inscrire (secondary) */}
+          <TouchableOpacity
+            style={[styles.registerBtn, !ready && { opacity: 0.6 }]}
+            onPress={() => ready && router.push("/auth/country")}
+            activeOpacity={0.88}
+            disabled={!ready}
+          >
+            <Text style={styles.registerText}>Créer un compte</Text>
           </TouchableOpacity>
 
           <Text style={styles.legal}>
@@ -159,13 +163,8 @@ export default function SplashScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: BG,
-    overflow: "hidden",
-  },
+  root: { flex: 1, backgroundColor: BG, overflow: "hidden" },
 
-  /* ---- Doodles ---- */
   doodleContainer: {
     position: "absolute",
     width: W + TILE * 3,
@@ -174,115 +173,49 @@ const styles = StyleSheet.create({
     left: -TILE * 2,
   },
   doodle: {
-    position: "absolute",
-    fontSize: 18,
-    color: DOODLE_COLOR,
-    fontWeight: "300",
-    lineHeight: TILE,
-    width: TILE,
-    textAlign: "center",
+    position: "absolute", fontSize: 18, color: DOODLE_COLOR,
+    fontWeight: "300", lineHeight: TILE, width: TILE, textAlign: "center",
   },
 
-  /* ---- Blobs ---- */
   blobTopRight: {
-    position: "absolute",
-    width: W * 0.78,
-    height: W * 0.78,
-    borderRadius: W * 0.39,
-    backgroundColor: BG_DARK,
-    top: -W * 0.22,
-    right: -W * 0.22,
-    opacity: 0.55,
+    position: "absolute", width: W * 0.78, height: W * 0.78,
+    borderRadius: W * 0.39, backgroundColor: BG_DARK,
+    top: -W * 0.22, right: -W * 0.22, opacity: 0.55,
   },
   blobBottomLeft: {
-    position: "absolute",
-    width: W * 0.52,
-    height: W * 0.52,
-    borderRadius: W * 0.26,
-    backgroundColor: BG_DARK,
-    bottom: -W * 0.18,
-    left: -W * 0.18,
-    opacity: 0.38,
+    position: "absolute", width: W * 0.52, height: W * 0.52,
+    borderRadius: W * 0.26, backgroundColor: BG_DARK,
+    bottom: -W * 0.18, left: -W * 0.18, opacity: 0.38,
   },
 
-  /* ---- Main content ---- */
-  content: {
-    flex: 1,
-    paddingHorizontal: 32,
-  },
-  hero: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-  },
-  bottom: {
-    gap: 14,
-    paddingTop: 8,
-  },
+  content: { flex: 1, paddingHorizontal: 32 },
+  hero: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
+  bottom: { gap: 12, paddingTop: 8 },
 
   logoCard: {
-    width: 96,
-    height: 96,
-    borderRadius: 24,
-    backgroundColor: "#F5A623",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 14,
+    width: 96, height: 96, borderRadius: 24,
+    backgroundColor: "#F5A623", alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25, shadowRadius: 20, elevation: 14,
   },
-  logoLetter: {
-    fontSize: 54,
-    fontWeight: "900",
-    color: "#1C1917",
-    letterSpacing: -2,
-    lineHeight: 64,
-  },
-
-  appName: {
-    fontSize: 50,
-    fontWeight: "900",
-    color: "#FFFFFF",
-    letterSpacing: -1.5,
-  },
-
-  tagline: {
-    fontSize: 17,
-    color: "rgba(255,255,255,0.85)",
-    textAlign: "center",
-    lineHeight: 26,
-    fontWeight: "500",
-  },
+  logoLetter: { fontSize: 54, fontWeight: "900", color: "#1C1917", letterSpacing: -2, lineHeight: 64 },
+  appName: { fontSize: 50, fontWeight: "900", color: "#FFFFFF", letterSpacing: -1.5 },
+  tagline: { fontSize: 17, color: "rgba(255,255,255,0.85)", textAlign: "center", lineHeight: 26, fontWeight: "500" },
 
   ctaBtn: {
-    width: "100%",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 18,
-    borderRadius: 100,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
+    width: "100%", backgroundColor: "#FFFFFF", paddingVertical: 18,
+    borderRadius: 100, alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
   },
-  ctaText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: BG,
-  },
+  ctaText: { fontSize: 17, fontWeight: "700", color: BG },
 
-  legal: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.6)",
-    textAlign: "center",
-    lineHeight: 18,
+  registerBtn: {
+    width: "100%", paddingVertical: 16, borderRadius: 100,
+    alignItems: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.55)",
   },
-  legalLink: {
-    color: "rgba(255,255,255,0.9)",
-    textDecorationLine: "underline",
-  },
+  registerText: { fontSize: 16, fontWeight: "600", color: "#fff" },
+
+  legal: { fontSize: 12, color: "rgba(255,255,255,0.6)", textAlign: "center", lineHeight: 18 },
+  legalLink: { color: "rgba(255,255,255,0.9)", textDecorationLine: "underline" },
 });
