@@ -1,11 +1,13 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   Alert,
   Animated,
   Dimensions,
   Easing,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,6 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { getMediaUrl } from "@/lib/api";
 
 const { width: W } = Dimensions.get("window");
 const BG = "#E84B1A";
@@ -48,6 +51,7 @@ export default function ProfileScreen() {
   const { user, signOut } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const [showDriverModal, setShowDriverModal] = useState(false);
 
   const shift = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -87,10 +91,7 @@ export default function ProfileScreen() {
   };
 
   const handleBecomeDriver = () => {
-    notify(
-      "Devenir livreur",
-      "Cette option n'est pas encore disponible dans votre région.\n\nNous travaillons à l'étendre prochainement. Revenez bientôt !",
-    );
+    setShowDriverModal(true);
   };
 
   const handleDeleteAccount = () => {
@@ -165,9 +166,17 @@ export default function ProfileScreen() {
 
         <View style={styles.avatarWrap}>
           <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
+            {user?.avatar ? (
+              <Image
+                source={{ uri: getMediaUrl(user.avatar) }}
+                style={styles.avatar}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -188,6 +197,27 @@ export default function ProfileScreen() {
           </Text>
         </View>
       </View>
+
+      {/* ── Driver modal ── */}
+      <Modal visible={showDriverModal} transparent animationType="fade">
+        <View style={styles.driverModalOverlay}>
+          <View style={[styles.driverModalSheet, { backgroundColor: colors.card }]}>
+            <View style={[styles.driverModalIconWrap, { backgroundColor: colors.accent }]}>
+              <Feather name="truck" size={36} color={colors.primary} />
+            </View>
+            <Text style={[styles.driverModalTitle, { color: colors.text }]}>Devenir livreur</Text>
+            <Text style={[styles.driverModalBody, { color: colors.mutedForeground }]}>
+              Cette fonctionnalité n'est pas encore disponible dans votre région.{"\n\n"}Nous travaillons à l'étendre très prochainement. Revenez bientôt !
+            </Text>
+            <TouchableOpacity
+              style={[styles.driverModalBtn, { backgroundColor: colors.primary }]}
+              onPress={() => setShowDriverModal(false)}
+            >
+              <Text style={styles.driverModalBtnText}>Compris</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Scrollable menu ── */}
       <ScrollView
@@ -393,4 +423,22 @@ const styles = StyleSheet.create({
   driverTitle: { fontSize: 15, fontWeight: "700" },
   driverSub: { fontSize: 12, marginTop: 2 },
   driverArrow: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  driverModalOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center", justifyContent: "center", padding: 32,
+  },
+  driverModalSheet: {
+    width: "100%", borderRadius: 24, padding: 28, alignItems: "center", gap: 16,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20,
+    elevation: 12,
+  },
+  driverModalIconWrap: {
+    width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center",
+  },
+  driverModalTitle: { fontSize: 22, fontWeight: "800", textAlign: "center" },
+  driverModalBody: { fontSize: 15, lineHeight: 22, textAlign: "center" },
+  driverModalBtn: {
+    width: "100%", paddingVertical: 14, borderRadius: 100, alignItems: "center", marginTop: 4,
+  },
+  driverModalBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 });

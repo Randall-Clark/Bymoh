@@ -1,17 +1,18 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -138,6 +139,33 @@ const CITIES = [
 ];
 
 const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+// ─── Business model logic ──────────────────────────────────────────────────────
+
+type BusinessModel = "article" | "prestation" | "both";
+type ItemKind = "article" | "prestation";
+
+const ARTICLE_TYPE_LIST: string[] = [
+  "Boutique / Magasin", "Épicerie / Alimentation", "Supermarché / Mini-marché",
+  "Boulangerie / Pâtisserie", "Pharmacie / Parapharmacie", "Librairie / Papeterie",
+  "Informatique / Téléphonie", "Électronique / Électroménager", "Station service",
+];
+
+const PRESTATION_TYPE_LIST: string[] = [
+  "Salon de beauté / Coiffure", "Spa / Institut de beauté", "Clinique / Cabinet médical",
+  "Laboratoire d'analyse", "Garage / Atelier auto", "Atelier artisan",
+  "Menuiserie / Ébénisterie", "Imprimerie / Reprographie", "Agence immobilière",
+  "Bureau d'étude / Cabinet conseil", "Agence de voyage", "École / Centre de formation",
+  "Crèche / Garderie", "Hôtel / Auberge", "Location de véhicules",
+  "Transport / Logistique", "Couture / Tailleur", "Nettoyage / Blanchisserie",
+  "Plomberie / Électricité", "ONG / Association",
+];
+
+function getBusinessModel(type: string): BusinessModel {
+  if (ARTICLE_TYPE_LIST.includes(type)) return "article";
+  if (PRESTATION_TYPE_LIST.includes(type)) return "prestation";
+  return "both";
+}
 const STEPS = ["Informations", "Business", "Horaires", "Catalogue", "Paiement"];
 const DEFAULT_HOURS = Object.fromEntries(
   DAYS.map((d) => [d, { open: "08:00", close: "18:00", closed: false }])
@@ -326,49 +354,72 @@ export default function ProRegisterScreen() {
   const [bizCountry, setBizCountry] = useState(COUNTRIES[0]);
   const [bizPhone, setBizPhone] = useState("");
   const [bizEmail, setBizEmail] = useState("");
+  const [bizDescription, setBizDescription] = useState("");
+  const [bizLogo, setBizLogo] = useState<string | null>(null);
+  const [bizBanner, setBizBanner] = useState<string | null>(null);
   const [sector, setSector] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
-  const [employees, setEmployees] = useState("1-5");
 
   // Step 2 – Hours
   const [hours, setHours] = useState(DEFAULT_HOURS);
 
-  // Step 3 – Catalog (multi-services)
-  type CatalogService = { id: string; title: string; desc: string; price: string; photo: string | null };
-  const [services, setServices] = useState<CatalogService[]>([]);
+  // Step 3 – Catalog
+  type CatalogItem = {
+    id: string; kind: ItemKind; title: string; desc: string; price: string; photo: string | null;
+    duration?: string; billingType?: "fixed" | "hourly"; allowsBooking?: boolean;
+  };
+  const [services, setServices] = useState<CatalogItem[]>([]);
+  const [formKind, setFormKind] = useState<ItemKind>("article");
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formPrice, setFormPrice] = useState("");
   const [formPhoto, setFormPhoto] = useState<string | null>(null);
+  const [formDuration, setFormDuration] = useState("30");
+  const [formBilling, setFormBilling] = useState<"fixed" | "hourly">("fixed");
+  const [formAllowsBooking, setFormAllowsBooking] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showKindSelector, setShowKindSelector] = useState(false);
 
-  const pickPhoto = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Permission requise", "Autorisez l'accès à la galerie pour ajouter une photo.");
-      return;
+  const pickImageFor = async (setter: (uri: string) => void, aspect: [number, number] = [4, 3]) => {
+    if ((Platform.OS as string) !== "web") {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission requise", "Autorisez l'accès à la galerie.");
+        return;
+      }
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
-      aspect: [4, 3],
+      aspect,
       quality: 0.75,
     });
     if (!result.canceled && result.assets[0]) {
-      setFormPhoto(result.assets[0].uri);
+      setter(result.assets[0].uri);
     }
   };
 
   const addService = () => {
     if (!formTitle.trim() || !formPrice.trim()) return;
-    setServices((prev) => [
-      ...prev,
-      { id: Date.now().toString(), title: formTitle.trim(), desc: formDesc.trim(), price: formPrice.trim(), photo: formPhoto },
-    ]);
+    const model = getBusinessModel(businessType);
+    const effectiveKind: ItemKind = model === "prestation" ? "prestation" : model === "article" ? "article" : formKind;
+    const item = {
+      id: Date.now().toString(),
+      kind: effectiveKind,
+      title: formTitle.trim(),
+      desc: formDesc.trim(),
+      price: formPrice.trim(),
+      photo: formPhoto,
+      duration: effectiveKind === "prestation" ? formDuration : undefined,
+      billingType: effectiveKind === "prestation" ? formBilling : undefined,
+      allowsBooking: effectiveKind === "prestation" ? formAllowsBooking : undefined,
+    };
+    setServices((prev) => [...prev, item]);
     setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null);
-    setShowAddForm(false);
+    setFormDuration("30"); setFormBilling("fixed"); setFormAllowsBooking(true);
+    setFormKind("article"); setShowAddForm(false); setShowKindSelector(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
@@ -533,22 +584,58 @@ export default function ProRegisterScreen() {
               placeholder="Rue des Artisans, Quartier X"
             />
 
+            {/* Description */}
             <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.text }]}>Nombre d'employés</Text>
-              <View style={styles.empRow}>
-                {["1", "2-5", "6-10", "11-50", "50+"].map((e) => (
-                  <TouchableOpacity
-                    key={e}
-                    style={[styles.empChip, {
-                      backgroundColor: employees === e ? colors.primary : colors.card,
-                      borderColor: employees === e ? colors.primary : colors.border,
-                    }]}
-                    onPress={() => setEmployees(e)}
-                  >
-                    <Text style={[styles.empLabel, { color: employees === e ? "#fff" : colors.text }]}>{e}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <Text style={[styles.label, { color: colors.text }]}>Description du business</Text>
+              <TextInput
+                style={[styles.textArea, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                value={bizDescription}
+                onChangeText={setBizDescription}
+                placeholder="Décrivez votre business, vos spécialités, votre histoire..."
+                placeholderTextColor={colors.mutedForeground}
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+
+            {/* Logo */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.text }]}>Logo du business</Text>
+              <TouchableOpacity
+                style={[styles.logoPicker, { backgroundColor: colors.muted, borderColor: bizLogo ? colors.primary : colors.border }]}
+                onPress={() => pickImageFor((uri) => setBizLogo(uri), [1, 1])}
+                activeOpacity={0.85}
+              >
+                {bizLogo ? (
+                  <Image source={{ uri: bizLogo }} style={styles.logoPreview} resizeMode="cover" />
+                ) : (
+                  <View style={styles.logoPickerInner}>
+                    <Feather name="image" size={24} color={colors.primary} />
+                    <Text style={[styles.logoPickerText, { color: colors.mutedForeground }]}>Ajouter le logo</Text>
+                    <Text style={[styles.logoPickerHint, { color: colors.mutedForeground }]}>Format carré recommandé</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Banner */}
+            <View style={styles.field}>
+              <Text style={[styles.label, { color: colors.text }]}>Photo de couverture (bannière)</Text>
+              <TouchableOpacity
+                style={[styles.bannerPicker, { backgroundColor: colors.muted, borderColor: bizBanner ? colors.primary : colors.border }]}
+                onPress={() => pickImageFor((uri) => setBizBanner(uri), [16, 9])}
+                activeOpacity={0.85}
+              >
+                {bizBanner ? (
+                  <Image source={{ uri: bizBanner }} style={styles.bannerPreview} resizeMode="cover" />
+                ) : (
+                  <View style={styles.logoPickerInner}>
+                    <Feather name="image" size={24} color={colors.primary} />
+                    <Text style={[styles.logoPickerText, { color: colors.mutedForeground }]}>Ajouter une bannière</Text>
+                    <Text style={[styles.logoPickerHint, { color: colors.mutedForeground }]}>Format 16:9 recommandé</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -595,26 +682,50 @@ export default function ProRegisterScreen() {
         )}
 
         {/* ── Step 3: Catalogue ── */}
-        {step === 3 && (
+        {step === 3 && (() => {
+          const model = getBusinessModel(businessType);
+          const effectiveKind: ItemKind = showAddForm ? (model === "both" ? formKind : (model === "prestation" ? "prestation" : "article")) : "article";
+          const addLabel = model === "article" ? "Ajouter un article" : model === "prestation" ? "Ajouter une prestation" : "Ajouter un élément";
+          return (
           <View style={styles.fields}>
-            <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
-              Ajoutez tous vos services ou produits. Au moins un est requis.
-            </Text>
+            {/* Model hint */}
+            <View style={[styles.modelHint, { backgroundColor: model === "prestation" ? "#F5F3FF" : model === "article" ? colors.accent : colors.muted }]}>
+              <Feather
+                name={model === "prestation" ? "calendar" : model === "article" ? "package" : "layers"}
+                size={15}
+                color={model === "prestation" ? "#7C3AED" : colors.primary}
+              />
+              <Text style={[styles.modelHintText, { color: model === "prestation" ? "#7C3AED" : colors.primary }]}>
+                {model === "article"
+                  ? "Ce business vend des articles — ajoutez vos produits avec leur prix."
+                  : model === "prestation"
+                  ? "Ce business propose des prestations — ajoutez vos services avec durée et option de réservation."
+                  : "Ce business peut vendre des articles et des prestations."}
+              </Text>
+            </View>
 
-            {/* Services list */}
+            {/* Items list */}
             {services.map((s) => (
               <View key={s.id} style={[styles.serviceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {s.photo ? (
                   <Image source={{ uri: s.photo }} style={styles.serviceCardImg} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.serviceCardImgPlaceholder, { backgroundColor: colors.muted }]}>
-                    <Feather name="image" size={22} color={colors.mutedForeground} />
+                  <View style={[styles.serviceCardImgPlaceholder, { backgroundColor: s.kind === "prestation" ? "#EDE9FE" : colors.muted }]}>
+                    <Feather name={s.kind === "prestation" ? "calendar" : "package"} size={20} color={s.kind === "prestation" ? "#7C3AED" : colors.mutedForeground} />
                   </View>
                 )}
                 <View style={styles.serviceCardBody}>
+                  <View style={[styles.serviceKindBadge, { backgroundColor: s.kind === "prestation" ? "#EDE9FE" : colors.accent }]}>
+                    <Text style={[styles.serviceKindBadgeText, { color: s.kind === "prestation" ? "#7C3AED" : colors.primary }]}>
+                      {s.kind === "prestation" ? "Prestation" : "Article"}
+                    </Text>
+                  </View>
                   <Text style={[styles.serviceCardTitle, { color: colors.text }]} numberOfLines={1}>{s.title}</Text>
-                  {s.desc ? <Text style={[styles.serviceCardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{s.desc}</Text> : null}
-                  <Text style={[styles.serviceCardPrice, { color: colors.primary }]}>{s.price} FCFA</Text>
+                  {s.desc ? <Text style={[styles.serviceCardDesc, { color: colors.mutedForeground }]} numberOfLines={1}>{s.desc}</Text> : null}
+                  <Text style={[styles.serviceCardPrice, { color: colors.primary }]}>
+                    {s.price} FCFA{s.billingType === "hourly" ? "/h" : ""}
+                    {s.duration ? ` · ${s.duration} min` : ""}
+                  </Text>
                 </View>
                 <TouchableOpacity onPress={() => removeService(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Feather name="trash-2" size={18} color={colors.destructive} />
@@ -622,13 +733,45 @@ export default function ProRegisterScreen() {
               </View>
             ))}
 
-            {/* Add service form */}
+            {/* Kind selector (model = both and form not open) */}
+            {!showAddForm && showKindSelector && model === "both" && (
+              <View style={[styles.kindSelectorCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+                <Text style={[styles.addFormTitle, { color: colors.text }]}>Que voulez-vous ajouter ?</Text>
+                <TouchableOpacity
+                  style={[styles.kindOption, { backgroundColor: colors.accent, borderColor: colors.primary }]}
+                  onPress={() => { setFormKind("article"); setShowKindSelector(false); setShowAddForm(true); }}
+                >
+                  <Feather name="package" size={18} color={colors.primary} />
+                  <View>
+                    <Text style={[styles.kindOptionLabel, { color: colors.text }]}>Article</Text>
+                    <Text style={[styles.kindOptionDesc, { color: colors.mutedForeground }]}>Produit avec prix de vente</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.kindOption, { backgroundColor: "#F5F3FF", borderColor: "#7C3AED" }]}
+                  onPress={() => { setFormKind("prestation"); setShowKindSelector(false); setShowAddForm(true); }}
+                >
+                  <Feather name="calendar" size={18} color="#7C3AED" />
+                  <View>
+                    <Text style={[styles.kindOptionLabel, { color: colors.text }]}>Prestation</Text>
+                    <Text style={[styles.kindOptionDesc, { color: colors.mutedForeground }]}>Service avec durée et RDV</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.formCancelBtn, { borderColor: colors.border }]} onPress={() => setShowKindSelector(false)}>
+                  <Text style={[styles.formCancelText, { color: colors.text }]}>Annuler</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Add form */}
             {showAddForm ? (
               <View style={[styles.addForm, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-                <Text style={[styles.addFormTitle, { color: colors.text }]}>Nouveau service / produit</Text>
+                <Text style={[styles.addFormTitle, { color: colors.text }]}>
+                  {effectiveKind === "prestation" ? "Nouvelle prestation" : "Nouvel article"}
+                </Text>
 
                 {/* Photo picker */}
-                <TouchableOpacity style={[styles.photoPicker, { backgroundColor: colors.muted, borderColor: colors.border }]} onPress={pickPhoto}>
+                <TouchableOpacity style={[styles.photoPicker, { backgroundColor: colors.muted, borderColor: colors.border }]} onPress={() => pickImageFor((uri) => setFormPhoto(uri), [4, 3])}>
                   {formPhoto ? (
                     <Image source={{ uri: formPhoto }} style={styles.photoPreview} resizeMode="cover" />
                   ) : (
@@ -673,7 +816,9 @@ export default function ProRegisterScreen() {
 
                 {/* Price */}
                 <View style={styles.field}>
-                  <Text style={[styles.label, { color: colors.text }]}>Prix (FCFA) *</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>
+                    Prix (FCFA) *{effectiveKind === "prestation" && formBilling === "hourly" ? " — à l'heure" : ""}
+                  </Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
                     value={formPrice}
@@ -684,11 +829,72 @@ export default function ProRegisterScreen() {
                   />
                 </View>
 
+                {/* Prestation-specific fields */}
+                {effectiveKind === "prestation" && (
+                  <>
+                    {/* Duration */}
+                    <View style={styles.field}>
+                      <Text style={[styles.label, { color: colors.text }]}>Durée de la prestation</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 2 }}>
+                        {[
+                          { label: "15 min", v: "15" }, { label: "30 min", v: "30" }, { label: "45 min", v: "45" },
+                          { label: "1 h", v: "60" }, { label: "1h30", v: "90" }, { label: "2 h", v: "120" },
+                          { label: "3 h", v: "180" }, { label: "Journée", v: "480" },
+                        ].map(({ label, v }) => (
+                          <TouchableOpacity
+                            key={v}
+                            style={[styles.durationChip, {
+                              backgroundColor: formDuration === v ? colors.primary : colors.muted,
+                              borderColor: formDuration === v ? colors.primary : colors.border,
+                            }]}
+                            onPress={() => setFormDuration(v)}
+                          >
+                            <Text style={[styles.durationChipText, { color: formDuration === v ? "#fff" : colors.text }]}>{label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+
+                    {/* Billing type */}
+                    <View style={styles.field}>
+                      <Text style={[styles.label, { color: colors.text }]}>Mode de facturation</Text>
+                      <View style={{ flexDirection: "row", gap: 10 }}>
+                        <TouchableOpacity
+                          style={[styles.billingOption, { flex: 1, backgroundColor: formBilling === "fixed" ? colors.accent : colors.muted, borderColor: formBilling === "fixed" ? colors.primary : colors.border }]}
+                          onPress={() => setFormBilling("fixed")}
+                        >
+                          <Feather name="tag" size={15} color={formBilling === "fixed" ? colors.primary : colors.mutedForeground} />
+                          <Text style={[{ fontSize: 13, fontWeight: "700" }, { color: colors.text }]}>Forfait</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.billingOption, { flex: 1, backgroundColor: formBilling === "hourly" ? colors.accent : colors.muted, borderColor: formBilling === "hourly" ? colors.primary : colors.border }]}
+                          onPress={() => setFormBilling("hourly")}
+                        >
+                          <Feather name="clock" size={15} color={formBilling === "hourly" ? colors.primary : colors.mutedForeground} />
+                          <Text style={[{ fontSize: 13, fontWeight: "700" }, { color: colors.text }]}>À l'heure</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Booking toggle */}
+                    <View style={[styles.bookingRow, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                      <Feather name="calendar" size={16} color={formAllowsBooking ? colors.primary : colors.mutedForeground} />
+                      <Text style={[{ flex: 1, fontSize: 13, fontWeight: "600" }, { color: colors.text }]}>Prise de rendez-vous en ligne</Text>
+                      <Switch
+                        value={formAllowsBooking}
+                        onValueChange={setFormAllowsBooking}
+                        trackColor={{ false: colors.border, true: "#86EFAC" }}
+                        thumbColor={formAllowsBooking ? "#16A34A" : colors.mutedForeground}
+                      />
+                    </View>
+                  </>
+                )}
+
                 {/* Form actions */}
                 <View style={styles.formActions}>
                   <TouchableOpacity
                     style={[styles.formCancelBtn, { borderColor: colors.border }]}
-                    onPress={() => { setShowAddForm(false); setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null); }}
+                    onPress={() => { setShowAddForm(false); setShowKindSelector(false); setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null); }}
                   >
                     <Text style={[styles.formCancelText, { color: colors.text }]}>Annuler</Text>
                   </TouchableOpacity>
@@ -704,19 +910,23 @@ export default function ProRegisterScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            ) : (
+            ) : !showKindSelector ? (
               <TouchableOpacity
                 style={[styles.addServiceBtn, { borderColor: colors.primary, backgroundColor: colors.accent }]}
-                onPress={() => setShowAddForm(true)}
+                onPress={() => {
+                  if (model === "both") { setShowKindSelector(true); }
+                  else { setFormKind(model === "prestation" ? "prestation" : "article"); setShowAddForm(true); }
+                }}
               >
                 <Feather name="plus-circle" size={20} color={colors.primary} />
                 <Text style={[styles.addServiceBtnText, { color: colors.primary }]}>
-                  {services.length === 0 ? "Ajouter un service / produit" : "Ajouter un autre"}
+                  {services.length === 0 ? addLabel : "Ajouter un autre"}
                 </Text>
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
-        )}
+          );
+        })()}
 
         {/* ── Step 4: Paiement ── */}
         {step === 4 && (
@@ -866,10 +1076,49 @@ const styles = StyleSheet.create({
   flagText: { fontSize: 18 },
   dialCodeText: { fontSize: 14, fontWeight: "700" },
   phoneInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, borderWidth: 1, fontSize: 15 },
-  empRow: { flexDirection: "row", gap: 8 },
-  empChip: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
-  empLabel: { fontSize: 12, fontWeight: "600" },
   hintText: { fontSize: 14, lineHeight: 20 },
+  // Media pickers
+  logoPicker: {
+    height: 120, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed",
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  logoPreview: { width: "100%", height: "100%" },
+  logoPickerInner: { alignItems: "center", gap: 6 },
+  logoPickerText: { fontSize: 14, fontWeight: "600" },
+  logoPickerHint: { fontSize: 11 },
+  bannerPicker: {
+    height: 160, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed",
+    alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  bannerPreview: { width: "100%", height: "100%" },
+  // Catalog — model hint
+  modelHint: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    padding: 12, borderRadius: 12,
+  },
+  modelHintText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  // Catalog — item kind badge
+  serviceKindBadge: { alignSelf: "flex-start", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 100 },
+  serviceKindBadgeText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+  // Catalog — kind selector card
+  kindSelectorCard: { borderRadius: 16, borderWidth: 1.5, padding: 16, gap: 12 },
+  kindOption: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    padding: 14, borderRadius: 14, borderWidth: 1.5,
+  },
+  kindOptionLabel: { fontSize: 14, fontWeight: "700" },
+  kindOptionDesc: { fontSize: 12, marginTop: 1 },
+  // Prestation fields
+  durationChip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100, borderWidth: 1.5 },
+  durationChipText: { fontSize: 13, fontWeight: "600" },
+  billingOption: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    padding: 12, borderRadius: 12, borderWidth: 1.5,
+  },
+  bookingRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 12, borderRadius: 12, borderWidth: 1,
+  },
   hourRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, borderWidth: 1, gap: 10 },
   dayLabel: { fontSize: 13, fontWeight: "700" },
   closedToggle: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
