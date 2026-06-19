@@ -1,18 +1,18 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { PinField } from "@/components/PinField";
 
 export default function PinScreen() {
   const colors = useColors();
@@ -20,30 +20,16 @@ export default function PinScreen() {
   const { loginWithPin } = useAuth();
   const { phone } = useLocalSearchParams<{ phone: string }>();
 
-  const [pin, setPin] = useState(["", "", "", "", "", ""]);
+  const [pin, setPin] = useState<string[]>(Array(6).fill(""));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const inputs = useRef<(TextInput | null)[]>([]);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const isComplete = pin.every((d) => d !== "");
 
-  const handleChange = (text: string, idx: number) => {
-    const digit = text.replace(/\D/g, "").slice(-1);
-    const next = [...pin];
-    next[idx] = digit;
-    setPin(next);
+  const handlePinChange = (digits: string[]) => {
+    setPin(digits);
     setError("");
-    if (digit && idx < 5) inputs.current[idx + 1]?.focus();
-  };
-
-  const handleKeyPress = (key: string, idx: number) => {
-    if (key === "Backspace" && !pin[idx] && idx > 0) {
-      const next = [...pin];
-      next[idx - 1] = "";
-      setPin(next);
-      inputs.current[idx - 1]?.focus();
-    }
   };
 
   const handleLogin = async () => {
@@ -56,8 +42,7 @@ export default function PinScreen() {
       router.replace("/(tabs)");
     } else {
       setError("PIN incorrect. Vérifiez et réessayez.");
-      setPin(["", "", "", "", "", ""]);
-      inputs.current[0]?.focus();
+      setPin(Array(6).fill(""));
     }
   };
 
@@ -73,7 +58,6 @@ export default function PinScreen() {
       <View style={{ height: topPad + 20 }} />
 
       <View style={styles.content}>
-        {/* Icon */}
         <View style={[styles.iconWrap, { backgroundColor: colors.accent }]}>
           <Feather name="lock" size={28} color={colors.primary} />
         </View>
@@ -84,34 +68,8 @@ export default function PinScreen() {
           <Text style={{ color: colors.text, fontWeight: "700" }}>{maskedPhone}</Text>
         </Text>
 
-        {/* PIN boxes */}
-        <View style={styles.pinRow}>
-          {pin.map((digit, idx) => (
-            <TextInput
-              key={idx}
-              ref={(r) => { inputs.current[idx] = r; }}
-              style={[
-                styles.pinBox,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: error ? "#EF4444" : digit ? colors.primary : colors.border,
-                  color: colors.text,
-                },
-              ]}
-              value={digit ? "●" : ""}
-              onChangeText={(t) => handleChange(t, idx)}
-              onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, idx)}
-              keyboardType="number-pad"
-              maxLength={1}
-              textAlign="center"
-              selectTextOnFocus
-              autoFocus={idx === 0}
-              secureTextEntry={false}
-            />
-          ))}
-        </View>
+        <PinField value={pin} onChange={handlePinChange} error={!!error} autoFocus />
 
-        {/* Error */}
         {!!error && (
           <View style={[styles.errorBox, { backgroundColor: "#FEF2F2", borderColor: "#FECACA" }]}>
             <Feather name="alert-circle" size={14} color="#EF4444" />
@@ -119,7 +77,6 @@ export default function PinScreen() {
           </View>
         )}
 
-        {/* Login button */}
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: isComplete ? colors.primary : colors.muted }]}
           onPress={handleLogin}
@@ -134,7 +91,6 @@ export default function PinScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Back to phone */}
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.75} style={styles.backLink}>
           <Feather name="arrow-left" size={14} color={colors.mutedForeground} />
           <Text style={[styles.backLinkText, { color: colors.mutedForeground }]}>
@@ -152,11 +108,6 @@ const styles = StyleSheet.create({
   iconWrap: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 28, fontWeight: "800" },
   subtitle: { fontSize: 15, lineHeight: 22 },
-  pinRow: { flexDirection: "row", gap: 10, justifyContent: "center" },
-  pinBox: {
-    width: 46, height: 56, borderRadius: 12, borderWidth: 1.5,
-    fontSize: 22, fontWeight: "700",
-  },
   errorBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
     padding: 12, borderRadius: 10, borderWidth: 1,

@@ -251,7 +251,7 @@ export default function ProfileScreen() {
         {/* Settings */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>PARAMÈTRES</Text>
-          <MenuItem icon="edit-2" label="Modifier mon profil" onPress={() => {}} />
+          <MenuItem icon="edit-2" label="Modifier mon profil" onPress={() => router.push("/profile/edit")} />
           <MenuItem icon="lock" label="Confidentialité" onPress={() => {}} />
           <MenuItem icon="help-circle" label="Aide et support" onPress={() => {}} />
           <MenuItem icon="log-out" label="Se déconnecter" onPress={handleSignOut} danger />

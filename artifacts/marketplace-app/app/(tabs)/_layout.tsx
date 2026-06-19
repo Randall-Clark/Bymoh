@@ -8,6 +8,9 @@ import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
+import { router } from "expo-router";
+import { useEffect } from "react";
 
 function NativeTabLayout() {
   return (
@@ -123,9 +126,21 @@ function ClassicTabLayout() {
   );
 }
 
+function AuthRedirect() {
+  const { isAuthenticated, isLoading } = useAuth();
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace("/");
+    }
+  }, [isAuthenticated, isLoading]);
+  return null;
+}
+
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  return (
+    <>
+      <AuthRedirect />
+      {isLiquidGlassAvailable() ? <NativeTabLayout /> : <ClassicTabLayout />}
+    </>
+  );
 }
