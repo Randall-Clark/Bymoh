@@ -61,22 +61,44 @@ export default function ProfileScreen() {
     ).start();
   }, [shift]);
 
-  const handleSignOut = () => {
-    Alert.alert("Se déconnecter", "Voulez-vous vraiment vous déconnecter ?", [
+  const confirm = (title: string, message: string, onConfirm: () => void, confirmLabel = "Confirmer") => {
+    if (Platform.OS === "web") {
+      if (window.confirm(`${title}\n\n${message}`)) onConfirm();
+      return;
+    }
+    Alert.alert(title, message, [
       { text: "Annuler", style: "cancel" },
-      {
-        text: "Se déconnecter",
-        style: "destructive",
-        onPress: async () => { await signOut(); router.replace("/"); },
-      },
+      { text: confirmLabel, style: "destructive", onPress: onConfirm },
     ]);
   };
 
+  const notify = (title: string, message: string) => {
+    if (Platform.OS === "web") { window.alert(`${title}\n\n${message}`); return; }
+    Alert.alert(title, message, [{ text: "Compris" }]);
+  };
+
+  const handleSignOut = () => {
+    confirm(
+      "Se déconnecter",
+      "Voulez-vous vraiment vous déconnecter ?",
+      async () => { await signOut(); router.replace("/"); },
+      "Se déconnecter",
+    );
+  };
+
   const handleBecomeDriver = () => {
-    Alert.alert(
+    notify(
       "Devenir livreur",
       "Cette option n'est pas encore disponible dans votre région.\n\nNous travaillons à l'étendre prochainement. Revenez bientôt !",
-      [{ text: "Compris", style: "default" }]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    confirm(
+      "Supprimer mon compte",
+      "Cette action est irréversible. Toutes vos données seront effacées.",
+      async () => { await signOut(); router.replace("/"); },
+      "Supprimer",
     );
   };
 
@@ -176,7 +198,7 @@ export default function ProfileScreen() {
         {/* Client section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>MON ESPACE CLIENT</Text>
-          <MenuItem icon="clock" label="Historique des réservations" onPress={() => router.push("/orders/index")} />
+          <MenuItem icon="clock" label="Historique des réservations" onPress={() => router.push("/orders")} />
           <MenuItem icon="heart" label="Mes favoris" onPress={() => router.push("/(tabs)/favorites")} />
           <MenuItem icon="bell" label="Notifications" onPress={() => router.push("/notifications")} />
         </View>
@@ -233,17 +255,7 @@ export default function ProfileScreen() {
           <MenuItem icon="lock" label="Confidentialité" onPress={() => {}} />
           <MenuItem icon="help-circle" label="Aide et support" onPress={() => {}} />
           <MenuItem icon="log-out" label="Se déconnecter" onPress={handleSignOut} danger />
-          <MenuItem
-            icon="trash-2"
-            label="Supprimer mon compte"
-            onPress={() =>
-              Alert.alert("Suppression", "Cette action est irréversible.", [
-                { text: "Annuler" },
-                { text: "Supprimer", style: "destructive" },
-              ])
-            }
-            danger
-          />
+          <MenuItem icon="trash-2" label="Supprimer mon compte" onPress={handleDeleteAccount} danger />
         </View>
       </ScrollView>
     </View>
