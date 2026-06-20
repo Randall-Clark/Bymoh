@@ -815,7 +815,7 @@ const styles = StyleSheet.create({
   filterChip: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
   filterChipText: { fontSize: 12 },
 
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 18, paddingBottom: 10 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 8, paddingBottom: 8 },
   sectionHeaderLine: { width: 4, height: 20, borderRadius: 2 },
   sectionHeaderBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
   sectionHeaderText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.2 },
