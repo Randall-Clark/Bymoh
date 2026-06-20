@@ -108,14 +108,14 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
     {
       icon: "credit-card",
       label: "Portefeuille",
-      sublabel: "Bientôt disponible",
-      onPress: () => Alert.alert("Portefeuille", "Fonctionnalité disponible prochainement."),
+      sublabel: "Solde & retraits",
+      onPress: () => navigate("/pro/wallet"),
     },
     {
       icon: "user",
-      label: "Profil",
-      sublabel: user?.name ?? "",
-      onPress: () => navigate("/(tabs)/profile"),
+      label: "Profil business",
+      sublabel: "Logo, bannière, contact",
+      onPress: () => navigate("/pro/profile"),
     },
     {
       icon: "settings",

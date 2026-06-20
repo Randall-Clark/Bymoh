@@ -196,8 +196,8 @@ export default function ProDashboardScreen() {
             />
             <QuickAction
               icon="user"
-              label="Profil"
-              onPress={() => router.push("/(tabs)/profile")}
+              label="Profil business"
+              onPress={() => router.push("/pro/profile" as any)}
               color={colors.warning}
             />
           </View>

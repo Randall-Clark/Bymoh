@@ -239,6 +239,7 @@ export default function ProCatalogScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
