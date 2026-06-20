@@ -21,6 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 type SortKey = "relevance" | "rating" | "distance" | "popular";
+
 type RatingFilter = null | 3 | 4 | 4.5;
 
 const SORT_OPTIONS: { key: SortKey; label: string; icon: string }[] = [
@@ -50,6 +51,7 @@ export default function SearchScreen() {
   const [deliveryOnly, setDeliveryOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("relevance");
   const [minRating, setMinRating] = useState<RatingFilter>(null);
+  const [noPrepayment, setNoPrepayment] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -67,6 +69,7 @@ export default function SearchScreen() {
     minRating !== null,
     selectedCategory !== null,
     sortBy !== "relevance",
+    noPrepayment,
   ].filter(Boolean).length;
 
   const clearFilters = () => {
@@ -75,6 +78,7 @@ export default function SearchScreen() {
     setDeliveryOnly(false);
     setMinRating(null);
     setSortBy("relevance");
+    setNoPrepayment(false);
   };
 
   // Filter
@@ -87,7 +91,8 @@ export default function SearchScreen() {
     const matchOpen = !openOnly || b.isOpen;
     const matchDel  = !deliveryOnly || b.hasDelivery;
     const matchRating = !minRating || b.rating >= minRating;
-    return matchQ && matchCat && matchOpen && matchDel && matchRating;
+    const matchPay = !noPrepayment || !b.requiresPrepayment;
+    return matchQ && matchCat && matchOpen && matchDel && matchRating && matchPay;
   });
 
   // Sort
@@ -169,6 +174,14 @@ export default function SearchScreen() {
           >
             <Feather name="package" size={12} color={deliveryOnly ? "#fff" : colors.mutedForeground} />
             <Text style={[styles.chipLabel, { color: deliveryOnly ? "#fff" : colors.text }]}>Livraison</Text>
+          </TouchableOpacity>
+          {/* No-prepayment chip */}
+          <TouchableOpacity
+            style={[styles.chip, { backgroundColor: noPrepayment ? "#2563EB" : colors.card, borderColor: noPrepayment ? "#2563EB" : colors.border }]}
+            onPress={() => setNoPrepayment(!noPrepayment)}
+          >
+            <Feather name="credit-card" size={12} color={noPrepayment ? "#fff" : colors.mutedForeground} />
+            <Text style={[styles.chipLabel, { color: noPrepayment ? "#fff" : colors.text }]}>Sans prépaiement</Text>
           </TouchableOpacity>
           {/* Rating chip */}
           {minRating !== null && (
@@ -325,6 +338,21 @@ export default function SearchScreen() {
                   </View>
                   <View style={[styles.toggleDot, { backgroundColor: deliveryOnly ? colors.primary : colors.border }]}>
                     {deliveryOnly && <Feather name="check" size={12} color="#fff" />}
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleRow, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  onPress={() => setNoPrepayment(!noPrepayment)}
+                >
+                  <View style={[styles.toggleIcon, { backgroundColor: noPrepayment ? "#DBEAFE" : colors.muted }]}>
+                    <Feather name="credit-card" size={18} color={noPrepayment ? "#2563EB" : colors.mutedForeground} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.toggleLabel, { color: colors.text }]}>Sans prépaiement</Text>
+                    <Text style={[styles.toggleSub, { color: colors.mutedForeground }]}>Commerces qui acceptent le paiement sur place</Text>
+                  </View>
+                  <View style={[styles.toggleDot, { backgroundColor: noPrepayment ? "#2563EB" : colors.border }]}>
+                    {noPrepayment && <Feather name="check" size={12} color="#fff" />}
                   </View>
                 </TouchableOpacity>
               </View>

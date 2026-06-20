@@ -70,7 +70,11 @@ export default function BookingScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const canConfirm = selectedDate && selectedTime && payMethod;
+  // When business requires prepayment, force online payment
+  const effectivePayMethod: PayMethod | null =
+    business?.requiresPrepayment ? "online" : payMethod;
+
+  const canConfirm = selectedDate && selectedTime && (business?.requiresPrepayment || payMethod);
 
   // Slot helpers
   const getSeats = (t: string) => selectedDate ? slotSeats(selectedDate, t) : 5;
@@ -131,14 +135,14 @@ export default function BookingScreen() {
       date: dateStr,
       time: selectedTime!,
       status: "confirmed",
-      paymentMethod: payMethod ?? "on_site",
+      paymentMethod: effectivePayMethod ?? "on_site",
       partySize: isTableMode ? partySize : undefined,
       createdAt: new Date().toISOString(),
     });
 
     setLoading(false);
 
-    const payLabel = payMethod === "online" ? "Paiement en ligne (Mobile Money)" : "Paiement sur place";
+    const payLabel = effectivePayMethod === "online" ? "Paiement en ligne (Mobile Money)" : "Paiement sur place";
     Alert.alert(
       "✅ Réservation confirmée !",
       `${serviceName} chez ${business?.name}\n\n📅 ${selectedDate!.toLocaleDateString("fr-FR")} à ${selectedTime}\n💳 ${payLabel}\n\n⚠️ Annulation gratuite jusqu'à 24h avant.`,
@@ -307,55 +311,81 @@ export default function BookingScreen() {
         {selectedDate && selectedTime && (
           <View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Mode de paiement</Text>
-            <View style={styles.payRow}>
-              {/* Pay online */}
-              <TouchableOpacity
-                style={[
-                  styles.payOption,
-                  {
-                    backgroundColor: payMethod === "online" ? colors.accent : colors.card,
-                    borderColor: payMethod === "online" ? colors.primary : colors.border,
-                    borderWidth: payMethod === "online" ? 2 : 1,
-                  },
-                ]}
-                onPress={() => { setPayMethod("online"); Haptics.selectionAsync(); }}
-              >
-                <View style={[styles.payIconWrap, { backgroundColor: payMethod === "online" ? colors.primary + "20" : colors.muted }]}>
-                  <Feather name="smartphone" size={20} color={payMethod === "online" ? colors.primary : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.payLabel, { color: colors.text }]}>Payer maintenant</Text>
-                <Text style={[styles.paySub, { color: colors.mutedForeground }]}>Mobile Money · Flooz · T-Money</Text>
-                {payMethod === "online" && (
-                  <View style={[styles.payCheck, { backgroundColor: colors.primary }]}>
-                    <Feather name="check" size={12} color="#fff" />
-                  </View>
-                )}
-              </TouchableOpacity>
 
-              {/* Pay on site */}
-              <TouchableOpacity
-                style={[
-                  styles.payOption,
-                  {
-                    backgroundColor: payMethod === "on_site" ? colors.accent : colors.card,
-                    borderColor: payMethod === "on_site" ? colors.primary : colors.border,
-                    borderWidth: payMethod === "on_site" ? 2 : 1,
-                  },
-                ]}
-                onPress={() => { setPayMethod("on_site"); Haptics.selectionAsync(); }}
-              >
-                <View style={[styles.payIconWrap, { backgroundColor: payMethod === "on_site" ? colors.primary + "20" : colors.muted }]}>
-                  <Feather name="credit-card" size={20} color={payMethod === "on_site" ? colors.primary : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.payLabel, { color: colors.text }]}>Payer sur place</Text>
-                <Text style={[styles.paySub, { color: colors.mutedForeground }]}>Cash ou carte à l'arrivée</Text>
-                {payMethod === "on_site" && (
-                  <View style={[styles.payCheck, { backgroundColor: colors.primary }]}>
-                    <Feather name="check" size={12} color="#fff" />
-                  </View>
-                )}
-              </TouchableOpacity>
+            {/* Escrow info */}
+            <View style={[styles.escrowCard, { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }]}>
+              <Feather name="lock" size={14} color="#16A34A" />
+              <Text style={styles.escrowCardText}>
+                <Text style={{ fontWeight: "700" }}>Paiement sécurisé par Kola : </Text>
+                Les fonds sont retenus et versés au business 24h après la prestation accomplie.
+              </Text>
             </View>
+
+            {/* If business requires prepayment — no choice */}
+            {business?.requiresPrepayment ? (
+              <View style={[styles.prepayRequired, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.payIconWrap, { backgroundColor: "#DBEAFE" }]}>
+                  <Feather name="smartphone" size={20} color="#2563EB" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.payLabel, { color: colors.text }]}>Paiement en ligne requis</Text>
+                  <Text style={[styles.paySub, { color: colors.mutedForeground }]}>
+                    Ce commerce exige le prépaiement · Mobile Money, Flooz, T-Money
+                  </Text>
+                </View>
+                <Feather name="info" size={16} color="#2563EB" />
+              </View>
+            ) : (
+              <View style={styles.payRow}>
+                {/* Pay online */}
+                <TouchableOpacity
+                  style={[
+                    styles.payOption,
+                    {
+                      backgroundColor: payMethod === "online" ? colors.accent : colors.card,
+                      borderColor: payMethod === "online" ? colors.primary : colors.border,
+                      borderWidth: payMethod === "online" ? 2 : 1,
+                    },
+                  ]}
+                  onPress={() => { setPayMethod("online"); Haptics.selectionAsync(); }}
+                >
+                  <View style={[styles.payIconWrap, { backgroundColor: payMethod === "online" ? colors.primary + "20" : colors.muted }]}>
+                    <Feather name="smartphone" size={20} color={payMethod === "online" ? colors.primary : colors.mutedForeground} />
+                  </View>
+                  <Text style={[styles.payLabel, { color: colors.text }]}>Payer maintenant</Text>
+                  <Text style={[styles.paySub, { color: colors.mutedForeground }]}>Mobile Money · Flooz · T-Money</Text>
+                  {payMethod === "online" && (
+                    <View style={[styles.payCheck, { backgroundColor: colors.primary }]}>
+                      <Feather name="check" size={12} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {/* Pay on site */}
+                <TouchableOpacity
+                  style={[
+                    styles.payOption,
+                    {
+                      backgroundColor: payMethod === "on_site" ? colors.accent : colors.card,
+                      borderColor: payMethod === "on_site" ? colors.primary : colors.border,
+                      borderWidth: payMethod === "on_site" ? 2 : 1,
+                    },
+                  ]}
+                  onPress={() => { setPayMethod("on_site"); Haptics.selectionAsync(); }}
+                >
+                  <View style={[styles.payIconWrap, { backgroundColor: payMethod === "on_site" ? colors.primary + "20" : colors.muted }]}>
+                    <Feather name="credit-card" size={20} color={payMethod === "on_site" ? colors.primary : colors.mutedForeground} />
+                  </View>
+                  <Text style={[styles.payLabel, { color: colors.text }]}>Payer sur place</Text>
+                  <Text style={[styles.paySub, { color: colors.mutedForeground }]}>Cash ou carte à l'arrivée</Text>
+                  {payMethod === "on_site" && (
+                    <View style={[styles.payCheck, { backgroundColor: colors.primary }]}>
+                      <Feather name="check" size={12} color="#fff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
 
@@ -409,7 +439,7 @@ export default function BookingScreen() {
             <Text style={[styles.confirmText, { color: "#fff" }]}>Confirmation en cours...</Text>
           ) : !selectedDate || !selectedTime ? (
             <Text style={[styles.confirmText, { color: colors.mutedForeground }]}>Choisissez une date et un horaire</Text>
-          ) : !payMethod ? (
+          ) : !effectivePayMethod ? (
             <Text style={[styles.confirmText, { color: colors.mutedForeground }]}>Choisissez un mode de paiement</Text>
           ) : (
             <Text style={[styles.confirmText, { color: "#fff" }]}>
@@ -473,6 +503,15 @@ const styles = StyleSheet.create({
   timeSub: { fontSize: 9, fontWeight: "600", marginTop: 2 },
 
   // Payment
+  escrowCard: {
+    flexDirection: "row", alignItems: "flex-start", gap: 8,
+    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
+  },
+  escrowCardText: { flex: 1, fontSize: 12, color: "#15803D", lineHeight: 17 },
+  prepayRequired: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    padding: 16, borderRadius: 16, borderWidth: 1,
+  },
   payRow: { gap: 12 },
   payOption: {
     padding: 16, borderRadius: 16, gap: 4, position: "relative",

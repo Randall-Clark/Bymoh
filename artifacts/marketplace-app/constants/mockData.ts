@@ -30,6 +30,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: true,
     distance: "1.2 km",
     isVerified: true,
+    requiresPrepayment: false,
     services: [
       { id: "s1", title: "Fufu & Soupe Graine", description: "Fufu de manioc avec soupe de graine de palme et poisson fumé", price: 2500, currency: "FCFA" },
       { id: "s2", title: "Riz Sauté Spécial", description: "Riz sauté aux légumes, poulet grillé et sauce piquante maison", price: 3500, currency: "FCFA" },
@@ -63,6 +64,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: false,
     distance: "0.8 km",
     isVerified: true,
+    requiresPrepayment: true,
     services: [
       { id: "s5", title: "Coiffure Femme", description: "Tressage, défrisage, perruque ou coiffure naturelle", price: 5000, currency: "FCFA" },
       { id: "s6", title: "Coupe Homme", description: "Coupe + dégradé + barbe", price: 2000, currency: "FCFA" },
@@ -96,6 +98,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: true,
     distance: "3.5 km",
     isVerified: true,
+    requiresPrepayment: true,
     services: [
       { id: "s9", title: "Porte en Bois Sur Mesure", description: "Fabrication et pose de porte en bois massif", price: 85000, currency: "FCFA" },
       { id: "s10", title: "Armoire 2 Portes", description: "Armoire coulissante avec miroir, finition au choix", price: 120000, currency: "FCFA" },
@@ -129,6 +132,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: false,
     distance: "2.1 km",
     isVerified: true,
+    requiresPrepayment: false,
     services: [
       { id: "s13", title: "Consultation Générale", description: "Consultation médicale générale avec ordonnance", price: 5000, currency: "FCFA" },
       { id: "s14", title: "Prise de Sang", description: "Prélèvement et analyse en laboratoire partenaire", price: 8000, currency: "FCFA" },
@@ -161,6 +165,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: true,
     distance: "1.8 km",
     isVerified: false,
+    requiresPrepayment: false,
     services: [
       { id: "s16", title: "Réparation Smartphone", description: "Changement écran, batterie, diagnostic complet", price: 15000, currency: "FCFA" },
       { id: "s17", title: "Réparation PC", description: "Nettoyage, mise à jour, virus, écran cassé", price: 20000, currency: "FCFA" },
@@ -193,6 +198,7 @@ export const MOCK_BUSINESSES: Business[] = [
     hasDelivery: false,
     distance: "4.2 km",
     isVerified: false,
+    requiresPrepayment: false,
     services: [
       { id: "s19", title: "Réparation Fuite", description: "Détection et réparation de fuite d'eau urgente", price: 10000, currency: "FCFA" },
       { id: "s20", title: "Installation Robinetterie", description: "Pose robinet, mitigeur, douche", price: 15000, currency: "FCFA" },
@@ -221,6 +227,7 @@ export const MOCK_BOOKINGS: Booking[] = [
     date: "2026-06-20",
     time: "10:00",
     status: "confirmed",
+    paymentMethod: "online",
     createdAt: "2026-06-15T09:00:00Z",
   },
   {
@@ -232,7 +239,8 @@ export const MOCK_BOOKINGS: Booking[] = [
     servicePrice: 5000,
     date: "2026-06-22",
     time: "09:00",
-    status: "pending",
+    status: "confirmed",
+    paymentMethod: "on_site",
     createdAt: "2026-06-14T14:30:00Z",
   },
   {

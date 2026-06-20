@@ -32,6 +32,7 @@ export interface Business {
   employeeCount?: number;
   openingHours?: OpeningHours;
   isVerified?: boolean;
+  requiresPrepayment?: boolean;
 }
 
 export type OpeningHours = {

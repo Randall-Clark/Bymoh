@@ -50,6 +50,7 @@ export default function ProBusinessProfileScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [logo, setLogo] = useState<string | undefined>(undefined);
   const [banner, setBanner] = useState<string | undefined>(undefined);
+  const [requiresPrepayment, setRequiresPrepayment] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const pickImage = async (
@@ -296,6 +297,51 @@ export default function ProBusinessProfileScreen() {
             )}
           </View>
 
+          {/* ── Politique de réservation ── */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Politique de réservation</Text>
+            <Text style={[styles.sectionSub, { color: colors.mutedForeground }]}>
+              Définissez comment vos clients règlent leurs réservations
+            </Text>
+
+            <View style={[styles.toggleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.toggleIcon, { backgroundColor: "#DBEAFE" }]}>
+                <Feather name="smartphone" size={16} color="#2563EB" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.toggleTitle, { color: colors.text }]}>Exiger le prépaiement en ligne</Text>
+                <Text style={[styles.toggleSub, { color: colors.mutedForeground }]}>
+                  {requiresPrepayment
+                    ? "Le client doit payer en ligne (Mobile Money) pour réserver"
+                    : "Le client peut payer en ligne ou sur place"}
+                </Text>
+              </View>
+              <Switch
+                value={requiresPrepayment}
+                onValueChange={setRequiresPrepayment}
+                trackColor={{ false: colors.border, true: "#93C5FD" }}
+                thumbColor={requiresPrepayment ? "#2563EB" : colors.mutedForeground}
+              />
+            </View>
+
+            <View style={[styles.escrowBox, { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }]}>
+              <Feather name="lock" size={14} color="#16A34A" />
+              <Text style={[styles.escrowText, { color: "#15803D" }]}>
+                <Text style={{ fontWeight: "700" }}>Escrow Kola : </Text>
+                Tous les paiements en ligne sont retenus par Kola et versés sur votre wallet 24h après la prestation accomplie.
+              </Text>
+            </View>
+
+            {!requiresPrepayment && (
+              <View style={[styles.infoBox, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
+                <Feather name="info" size={14} color="#EA580C" />
+                <Text style={[styles.infoBoxText, { color: "#C2410C" }]}>
+                  Sans prépaiement obligatoire, vos clients peuvent réserver et payer sur place. Votre business sera visible dans le filtre "Sans prépaiement" des clients.
+                </Text>
+              </View>
+            )}
+          </View>
+
           {/* ── Info recap ── */}
           <View style={[styles.infoBox, { backgroundColor: colors.accent, borderColor: colors.primary + "30" }]}>
             <Feather name="info" size={15} color={colors.primary} />
@@ -384,4 +430,9 @@ const styles = StyleSheet.create({
     padding: 14, borderRadius: 12, borderWidth: 1,
   },
   infoBoxText: { flex: 1, fontSize: 13, lineHeight: 18, fontWeight: "500" },
+  escrowBox: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    padding: 14, borderRadius: 12, borderWidth: 1,
+  },
+  escrowText: { flex: 1, fontSize: 12, lineHeight: 18 },
 });
