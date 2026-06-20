@@ -98,6 +98,7 @@ export default function HomeScreen() {
   const [bannerIdx, setBannerIdx] = useState(0);
   const [selectedCity, setSelectedCity] = useState(CITIES[0]);
   const [cityModalVisible, setCityModalVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -161,7 +162,10 @@ export default function HomeScreen() {
 
         {/* Greeting */}
         <View style={styles.greet}>
-          <View>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.75}>
+            <Feather name="menu" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
             <Text style={styles.hello}>Bonjour 👋</Text>
             <Text style={styles.name}>{user?.name ?? "Bienvenue"}</Text>
           </View>
@@ -331,6 +335,57 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
+      {/* ── Nav menu modal ── */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuVisible(false)}
+        statusBarTranslucent
+      >
+        <TouchableOpacity
+          style={styles.cityModalBackdrop}
+          activeOpacity={1}
+          onPress={() => setMenuVisible(false)}
+        />
+        <View style={[styles.citySheet, { backgroundColor: colors.card, paddingBottom: botPad + 16 }]}>
+          <View style={[styles.citySheetHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.menuSheetHeader}>
+            <View style={[styles.menuAvatar, { backgroundColor: colors.accent }]}>
+              <Feather name="user" size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuSheetName, { color: colors.text }]}>{user?.name ?? "Invité"}</Text>
+              <Text style={[styles.menuSheetPhone, { color: colors.mutedForeground }]}>{user?.phone ?? ""}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setMenuVisible(false)}>
+              <Feather name="x" size={20} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+          {[
+            { icon: "user", label: "Mon profil", route: "/(tabs)/profile" },
+            { icon: "shopping-bag", label: "Mes commandes", route: "/orders" },
+            { icon: "heart", label: "Mes favoris", route: "/(tabs)/favorites" },
+            { icon: "bell", label: "Notifications", route: "/notifications" },
+            { icon: "briefcase", label: "Espace professionnel", route: "/pro/dashboard" },
+            { icon: "settings", label: "Paramètres", route: "/(tabs)/profile" },
+          ].map((item) => (
+            <TouchableOpacity
+              key={item.label}
+              style={[styles.menuItem, { borderColor: colors.border }]}
+              onPress={() => { setMenuVisible(false); router.push(item.route as any); }}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.menuItemIcon, { backgroundColor: colors.accent }]}>
+                <Feather name={item.icon as any} size={17} color={colors.primary} />
+              </View>
+              <Text style={[styles.menuItemLabel, { color: colors.text }]}>{item.label}</Text>
+              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+
       {/* ── City picker modal ── */}
       <Modal
         visible={cityModalVisible}
@@ -403,6 +458,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
   },
   cityText: { fontSize: 12, color: "#fff", fontWeight: "600" },
+  menuBtn: {
+    width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    marginRight: 10, flexShrink: 0,
+  },
   notifBtn: {
     width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.2)", position: "relative", zIndex: 2,
@@ -428,6 +488,18 @@ const styles = StyleSheet.create({
   cityFlag: { fontSize: 22 },
   cityOptionName: { fontSize: 15, fontWeight: "700" },
   cityOptionCountry: { fontSize: 12, marginTop: 1 },
+
+  // Nav menu sheet
+  menuSheetHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingBottom: 8 },
+  menuAvatar: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" },
+  menuSheetName: { fontSize: 16, fontWeight: "800" },
+  menuSheetPhone: { fontSize: 12, marginTop: 2 },
+  menuItem: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  menuItemIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  menuItemLabel: { flex: 1, fontSize: 15, fontWeight: "600" },
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 13, borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", zIndex: 2,

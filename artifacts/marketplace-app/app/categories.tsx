@@ -50,15 +50,11 @@ export default function CategoriesScreen() {
         <View style={{ width: 22 }} />
       </View>
 
+      {/* Scrollable grid only */}
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: botPad + 32 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          {CATEGORIES.length} catégories disponibles à Lomé
-        </Text>
-
-        {/* 2-column grid */}
         <View style={styles.grid}>
           {CATEGORIES.map((cat) => {
             const c = CATEGORY_COLORS[cat.id] ?? DEFAULT_COLORS;
@@ -77,8 +73,10 @@ export default function CategoriesScreen() {
             );
           })}
         </View>
+      </ScrollView>
 
-        {/* Become pro promo */}
+      {/* Fixed bottom — "Vous avez un business ?" */}
+      <View style={[styles.promoWrap, { paddingBottom: botPad + 12, backgroundColor: colors.background }]}>
         <TouchableOpacity
           style={[styles.promoCard, { backgroundColor: "#1E3A5F" }]}
           onPress={() => router.push("/pro/register" as any)}
@@ -97,7 +95,7 @@ export default function CategoriesScreen() {
             <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
           </View>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -110,8 +108,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 17, fontWeight: "700" },
 
-  content: { paddingHorizontal: 20, paddingTop: 20, gap: 20 },
-  subtitle: { fontSize: 13, fontWeight: "500" },
+  content: { paddingHorizontal: 20, paddingTop: 20 },
 
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
   tile: {
@@ -127,7 +124,7 @@ const styles = StyleSheet.create({
   },
   tileLabel: { fontSize: 14, fontWeight: "700", textAlign: "center" },
 
-  // Promo card
+  promoWrap: { paddingHorizontal: 20, paddingTop: 12 },
   promoCard: {
     borderRadius: 20, padding: 20, overflow: "hidden",
   },
