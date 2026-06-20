@@ -13,10 +13,16 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { OrdersProvider } from "@/context/OrdersContext";
+import { getBaseUrl, tokenStore } from "@/lib/api";
+
+// Initialise le client API généré avec le token auth et l'URL de base
+setBaseUrl(getBaseUrl());
+setAuthTokenGetter(() => tokenStore.get());
 
 SplashScreen.preventAutoHideAsync();
 
