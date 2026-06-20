@@ -2,6 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Platform,
@@ -13,10 +15,21 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import EmptyState from "@/components/EmptyState";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
-import { MOCK_BOOKINGS, MOCK_ORDERS, formatDate, formatPrice } from "@/constants/mockData";
-import { Booking, Order } from "@/constants/types";
+import {
+  getGetProBookingsQueryKey,
+  getGetProOrdersQueryKey,
+  useGetProBookings,
+  useGetProOrders,
+  useUpdateOrderStatus,
+  useUpdateProBookingStatus,
+  type ProBooking,
+  type ProOrder,
+} from "@workspace/api-client-react";
+import { formatDate, formatPrice } from "@/constants/mockData";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 type TabKey = "all" | "confirmed" | "completed" | "cancelled";
@@ -29,16 +42,26 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 type AnyItem =
-  | (Booking & { type: "booking" })
-  | (Order   & { type: "order"   });
+  | (ProBooking & { _type: "booking" })
+  | (ProOrder   & { _type: "order"   });
+
+const PRO_CANCEL_REASONS = [
+  "Client absent ou injoignable",
+  "Service temporairement indisponible",
+  "Problème technique ou matériel",
+  "À la demande du client",
+  "Conflit d'agenda",
+  "Autre raison",
+];
 
 export default function ProOrdersScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<TabKey>("all");
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const businessId = user?.businessIds?.[0] ?? "";
 
-  // Cancel reason modal state
+  const [tab, setTab] = useState<TabKey>("all");
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<AnyItem | null>(null);
   const [cancelReason, setCancelReason] = useState<string>("");
@@ -47,25 +70,56 @@ export default function ProOrdersScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const allItems: AnyItem[] = [
-    ...MOCK_BOOKINGS.map((b) => ({ ...b, type: "booking" as const })),
-    ...MOCK_ORDERS.map((o)   => ({ ...o, type: "order"   as const })),
-  ].filter((i) => {
-    if (tab === "all")       return true;
-    if (tab === "confirmed") return i.status === "confirmed" || i.status === "pending";
-    if (tab === "completed") return i.status === "completed";
-    if (tab === "cancelled") return i.status === "cancelled";
-    return true;
+  // ── API ──────────────────────────────────────────────────────────────────────
+  const { data: bookings = [], isLoading: bookingsLoading } = useGetProBookings({
+    query: { queryKey: getGetProBookingsQueryKey(), enabled: !!businessId },
   });
 
-  const PRO_CANCEL_REASONS = [
-    "Client absent ou injoignable",
-    "Service temporairement indisponible",
-    "Problème technique ou matériel",
-    "À la demande du client",
-    "Conflit d'agenda",
-    "Autre raison",
-  ];
+  const { data: orders = [], isLoading: ordersLoading } = useGetProOrders(businessId, {
+    query: { queryKey: getGetProOrdersQueryKey(businessId), enabled: !!businessId },
+  });
+
+  const isLoading = bookingsLoading || ordersLoading;
+
+  const { mutate: cancelBooking, isPending: cancellingBooking } = useUpdateProBookingStatus({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetProBookingsQueryKey() });
+        setCancelModalVisible(false);
+      },
+      onError: () => Alert.alert("Erreur", "Impossible d'annuler. Réessayez."),
+    },
+  });
+
+  const { mutate: cancelOrder, isPending: cancellingOrder } = useUpdateOrderStatus({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetProOrdersQueryKey(businessId) });
+        setCancelModalVisible(false);
+      },
+      onError: () => Alert.alert("Erreur", "Impossible d'annuler. Réessayez."),
+    },
+  });
+
+  const isCancelling = cancellingBooking || cancellingOrder;
+
+  // ── Merge + filter ────────────────────────────────────────────────────────────
+  const allItems: AnyItem[] = [
+    ...bookings.map((b) => ({ ...b, _type: "booking" as const })),
+    ...orders.map((o) => ({ ...o, _type: "order" as const })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .filter((i) => {
+      if (tab === "all") return true;
+      if (tab === "confirmed") return i.status === "confirmed" || i.status === "pending";
+      if (tab === "completed") return i.status === "completed" || i.status === "delivered";
+      if (tab === "cancelled") return i.status === "cancelled";
+      return true;
+    });
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+  const canCancel = (item: AnyItem) =>
+    item.status === "confirmed" || item.status === "pending";
 
   const openCancelModal = (item: AnyItem) => {
     setCancelTarget(item);
@@ -75,14 +129,13 @@ export default function ProOrdersScreen() {
   };
 
   const confirmCancel = () => {
-    if (!cancelReason) return;
-    setCancelModalVisible(false);
-    setCancellingId(cancelTarget?.id ?? null);
-    setTimeout(() => setCancellingId(null), 1500);
+    if (!cancelReason || !cancelTarget) return;
+    if (cancelTarget._type === "booking") {
+      cancelBooking({ bookingId: cancelTarget.id, data: { status: "cancelled" } });
+    } else {
+      cancelOrder({ orderId: cancelTarget.id, data: { status: "cancelled" } });
+    }
   };
-
-  const canCancel = (item: AnyItem) =>
-    item.status === "confirmed" || item.status === "pending";
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -118,20 +171,22 @@ export default function ProOrdersScreen() {
         ))}
       </View>
 
-      {allItems.length === 0 ? (
+      {isLoading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : allItems.length === 0 ? (
         <EmptyState icon="inbox" title="Aucune entrée" subtitle="Vos réservations et commandes reçues apparaîtront ici" />
       ) : (
         <FlatList
           data={allItems}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.id + item._type}
           contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
-            const isBooking = item.type === "booking";
-            const booking = item as Booking & { type: "booking" };
-            const order   = item as Order   & { type: "order"   };
-            const paid    = isBooking && booking.paymentMethod === "online" && booking.servicePrice > 0;
-            const isCancelling = cancellingId === item.id;
+            const isBooking = item._type === "booking";
+            const booking = item as ProBooking & { _type: "booking" };
+            const order   = item as ProOrder   & { _type: "order"   };
 
             return (
               <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -147,38 +202,30 @@ export default function ProOrdersScreen() {
                       {isBooking ? "Réservation" : "Commande"}
                     </Text>
                   </View>
-                  <View style={styles.rightBadges}>
-                    {/* Payment method badge */}
-                    {isBooking && booking.paymentMethod && (
-                      <View style={[
-                        styles.payBadge,
-                        { backgroundColor: booking.paymentMethod === "online" ? "#DBEAFE" : "#F3F4F6" },
-                      ]}>
-                        <Feather
-                          name={booking.paymentMethod === "online" ? "smartphone" : "credit-card"}
-                          size={10}
-                          color={booking.paymentMethod === "online" ? "#2563EB" : "#6B7280"}
-                        />
-                        <Text style={[styles.payBadgeLabel, { color: booking.paymentMethod === "online" ? "#2563EB" : "#6B7280" }]}>
-                          {booking.paymentMethod === "online" ? "En ligne" : "Sur place"}
-                        </Text>
-                      </View>
-                    )}
-                    <OrderStatusBadge status={item.status as any} />
-                  </View>
+                  <OrderStatusBadge status={item.status as any} />
                 </View>
 
                 {/* Content */}
                 {isBooking ? (
                   <>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>{booking.serviceName}</Text>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>
+                      {booking.serviceTitle ?? (booking.bookingType === "table" ? "Réservation table" : "Réservation service")}
+                    </Text>
+                    {booking.userName && (
+                      <View style={styles.infoRow}>
+                        <Feather name="user" size={12} color={colors.mutedForeground} />
+                        <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
+                          {booking.userName}{booking.userPhone ? ` · ${booking.userPhone}` : ""}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.infoRow}>
                       <Feather name="calendar" size={12} color={colors.mutedForeground} />
                       <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
                         {formatDate(booking.date)} à {booking.time}
                       </Text>
                     </View>
-                    {booking.partySize && (
+                    {booking.partySize != null && (
                       <View style={styles.infoRow}>
                         <Feather name="users" size={12} color={colors.mutedForeground} />
                         <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
@@ -186,41 +233,22 @@ export default function ProOrdersScreen() {
                         </Text>
                       </View>
                     )}
-                    {booking.servicePrice > 0 && (
-                      <Text style={[styles.price, { color: colors.primary }]}>
-                        {formatPrice(booking.servicePrice)}
-                      </Text>
-                    )}
                   </>
                 ) : (
                   <>
                     <Text style={[styles.itemTitle, { color: colors.text }]}>
                       {order.items.map((i) => i.title).join(", ")}
                     </Text>
+                    <View style={styles.infoRow}>
+                      <Feather name="map-pin" size={12} color={colors.mutedForeground} />
+                      <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
+                        {order.deliveryMethod === "delivery" ? "Livraison" : "Retrait sur place"}
+                      </Text>
+                    </View>
                     <Text style={[styles.price, { color: colors.primary }]}>
                       {formatPrice(order.total)}
                     </Text>
                   </>
-                )}
-
-                {/* Escrow hold note */}
-                {paid && item.status === "completed" && (
-                  <View style={[styles.escrowNote, { backgroundColor: "#DBEAFE", borderColor: "#BFDBFE" }]}>
-                    <Feather name="clock" size={12} color="#2563EB" />
-                    <Text style={styles.escrowNoteText}>
-                      Paiement retenu par Kola · versement sous 24h
-                    </Text>
-                  </View>
-                )}
-
-                {/* Cancellation info for cancelled paid booking */}
-                {paid && item.status === "cancelled" && (
-                  <View style={[styles.escrowNote, { backgroundColor: "#FEF2F2", borderColor: "#FECACA" }]}>
-                    <Feather name="refresh-cw" size={12} color="#DC2626" />
-                    <Text style={[styles.escrowNoteText, { color: "#DC2626" }]}>
-                      Remboursement client en cours (24–48h)
-                    </Text>
-                  </View>
                 )}
 
                 {/* Cancel action */}
@@ -232,7 +260,7 @@ export default function ProOrdersScreen() {
                   >
                     <Feather name="x-circle" size={14} color={colors.destructive} />
                     <Text style={[styles.cancelBtnText, { color: colors.destructive }]}>
-                      {isCancelling ? "Annulation..." : "Annuler cette réservation"}
+                      Annuler
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -261,19 +289,6 @@ export default function ProOrdersScreen() {
           <Text style={[styles.cancelSheetSub, { color: colors.mutedForeground }]}>
             Veuillez indiquer la raison de l'annulation. Le client sera notifié.
           </Text>
-
-          {/* Refund warning */}
-          {cancelTarget?.type === "booking" &&
-            (cancelTarget as Booking).paymentMethod === "online" &&
-            (cancelTarget as Booking).servicePrice > 0 && (
-              <View style={[styles.refundWarn, { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }]}>
-                <Feather name="alert-triangle" size={14} color="#D97706" />
-                <Text style={styles.refundWarnText}>
-                  Le client a payé en ligne ({formatPrice((cancelTarget as Booking).servicePrice)}).
-                  Kola remboursera automatiquement sous 24–48h.
-                </Text>
-              </View>
-            )}
 
           {/* Reason selection */}
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 260 }}>
@@ -322,13 +337,17 @@ export default function ProOrdersScreen() {
               <Text style={[styles.cancelSheetKeepText, { color: colors.text }]}>Conserver</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.cancelSheetConfirm, { backgroundColor: cancelReason ? "#DC2626" : colors.muted }]}
+              style={[styles.cancelSheetConfirm, { backgroundColor: cancelReason && !isCancelling ? "#DC2626" : colors.muted }]}
               onPress={confirmCancel}
-              disabled={!cancelReason}
+              disabled={!cancelReason || isCancelling}
             >
-              <Text style={[styles.cancelSheetConfirmText, { color: cancelReason ? "#fff" : colors.mutedForeground }]}>
-                Confirmer l'annulation
-              </Text>
+              {isCancelling ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={[styles.cancelSheetConfirmText, { color: cancelReason ? "#fff" : colors.mutedForeground }]}>
+                  Confirmer l'annulation
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -365,25 +384,16 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   typeBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
   typeLabel: { fontSize: 11, fontWeight: "700" },
-  rightBadges: { flexDirection: "row", alignItems: "center", gap: 6 },
-  payBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 100 },
-  payBadgeLabel: { fontSize: 10, fontWeight: "600" },
   itemTitle: { fontSize: 15, fontWeight: "700" },
   infoRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   infoText: { fontSize: 12 },
   price: { fontSize: 15, fontWeight: "700" },
-  escrowNote: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    padding: 8, borderRadius: 8, borderWidth: 1,
-  },
-  escrowNoteText: { fontSize: 11, color: "#2563EB", flex: 1 },
   cancelBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
     paddingVertical: 10, borderRadius: 10, borderWidth: 1, marginTop: 4,
   },
   cancelBtnText: { fontSize: 13, fontWeight: "700" },
 
-  // Cancel reason modal
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
   cancelSheet: {
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
@@ -393,11 +403,6 @@ const styles = StyleSheet.create({
   cancelSheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 4 },
   cancelSheetTitle: { fontSize: 18, fontWeight: "800" },
   cancelSheetSub: { fontSize: 13, lineHeight: 18 },
-  refundWarn: {
-    flexDirection: "row", alignItems: "flex-start", gap: 8,
-    padding: 12, borderRadius: 12, borderWidth: 1,
-  },
-  refundWarnText: { fontSize: 12, color: "#B45309", flex: 1, lineHeight: 17 },
   reasonRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
     padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8,

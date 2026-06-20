@@ -20,10 +20,16 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BusinessHourEntry,
+  BusinessHourInput,
+  BusinessStats,
   CatalogItem,
   CatalogItemInput,
   CatalogItemUpdate,
-  HealthStatus
+  HealthStatus,
+  ProBooking,
+  ProOrder,
+  StatusUpdate
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -409,5 +415,529 @@ export const useDeleteCatalogItem = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getDeleteCatalogItemMutationOptions(options));
+    }
+
+export const getGetBusinessHoursUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/businesses/${businessId}/hours`
+}
+
+/**
+ * @summary Get opening hours for a business (pro only)
+ */
+export const getBusinessHours = async (businessId: string, options?: RequestInit): Promise<BusinessHourEntry[]> => {
+
+  return customFetch<BusinessHourEntry[]>(getGetBusinessHoursUrl(businessId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBusinessHoursQueryKey = (businessId: string,) => {
+    return [
+    `/api/businesses/${businessId}/hours`
+    ] as const;
+    }
+
+
+export const getGetBusinessHoursQueryOptions = <TData = Awaited<ReturnType<typeof getBusinessHours>>, TError = ErrorType<void>>(businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessHours>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBusinessHoursQueryKey(businessId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBusinessHours>>> = ({ signal }) => getBusinessHours(businessId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(businessId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBusinessHours>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBusinessHoursQueryResult = NonNullable<Awaited<ReturnType<typeof getBusinessHours>>>
+export type GetBusinessHoursQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get opening hours for a business (pro only)
+ */
+
+export function useGetBusinessHours<TData = Awaited<ReturnType<typeof getBusinessHours>>, TError = ErrorType<void>>(
+ businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessHours>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBusinessHoursQueryOptions(businessId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateBusinessHoursUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/businesses/${businessId}/hours`
+}
+
+/**
+ * @summary Replace all opening hours for a business (pro only)
+ */
+export const updateBusinessHours = async (businessId: string,
+    businessHourInput: BusinessHourInput[], options?: RequestInit): Promise<BusinessHourEntry[]> => {
+
+  return customFetch<BusinessHourEntry[]>(getUpdateBusinessHoursUrl(businessId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      businessHourInput,)
+  }
+);}
+
+
+
+
+export const getUpdateBusinessHoursMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBusinessHours>>, TError,{businessId: string;data: BodyType<BusinessHourInput[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateBusinessHours>>, TError,{businessId: string;data: BodyType<BusinessHourInput[]>}, TContext> => {
+
+const mutationKey = ['updateBusinessHours'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateBusinessHours>>, {businessId: string;data: BodyType<BusinessHourInput[]>}> = (props) => {
+          const {businessId,data} = props ?? {};
+
+          return  updateBusinessHours(businessId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateBusinessHoursMutationResult = NonNullable<Awaited<ReturnType<typeof updateBusinessHours>>>
+    export type UpdateBusinessHoursMutationBody = BodyType<BusinessHourInput[]>
+    export type UpdateBusinessHoursMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace all opening hours for a business (pro only)
+ */
+export const useUpdateBusinessHours = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateBusinessHours>>, TError,{businessId: string;data: BodyType<BusinessHourInput[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateBusinessHours>>,
+        TError,
+        {businessId: string;data: BodyType<BusinessHourInput[]>},
+        TContext
+      > => {
+      return useMutation(getUpdateBusinessHoursMutationOptions(options));
+    }
+
+export const getGetBusinessStatsUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/businesses/${businessId}/stats`
+}
+
+/**
+ * @summary Get dashboard stats for a business (pro only)
+ */
+export const getBusinessStats = async (businessId: string, options?: RequestInit): Promise<BusinessStats> => {
+
+  return customFetch<BusinessStats>(getGetBusinessStatsUrl(businessId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBusinessStatsQueryKey = (businessId: string,) => {
+    return [
+    `/api/businesses/${businessId}/stats`
+    ] as const;
+    }
+
+
+export const getGetBusinessStatsQueryOptions = <TData = Awaited<ReturnType<typeof getBusinessStats>>, TError = ErrorType<void>>(businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBusinessStatsQueryKey(businessId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBusinessStats>>> = ({ signal }) => getBusinessStats(businessId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(businessId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBusinessStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBusinessStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getBusinessStats>>>
+export type GetBusinessStatsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get dashboard stats for a business (pro only)
+ */
+
+export function useGetBusinessStats<TData = Awaited<ReturnType<typeof getBusinessStats>>, TError = ErrorType<void>>(
+ businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBusinessStatsQueryOptions(businessId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetProOrdersUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/businesses/${businessId}/orders`
+}
+
+/**
+ * @summary Get all orders received by a business (pro only)
+ */
+export const getProOrders = async (businessId: string, options?: RequestInit): Promise<ProOrder[]> => {
+
+  return customFetch<ProOrder[]>(getGetProOrdersUrl(businessId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProOrdersQueryKey = (businessId: string,) => {
+    return [
+    `/api/businesses/${businessId}/orders`
+    ] as const;
+    }
+
+
+export const getGetProOrdersQueryOptions = <TData = Awaited<ReturnType<typeof getProOrders>>, TError = ErrorType<void>>(businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProOrdersQueryKey(businessId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProOrders>>> = ({ signal }) => getProOrders(businessId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(businessId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof getProOrders>>>
+export type GetProOrdersQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get all orders received by a business (pro only)
+ */
+
+export function useGetProOrders<TData = Awaited<ReturnType<typeof getProOrders>>, TError = ErrorType<void>>(
+ businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProOrdersQueryOptions(businessId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetProBookingsUrl = () => {
+
+
+
+
+  return `/api/bookings/pro`
+}
+
+/**
+ * @summary Get all bookings received by the pro's business
+ */
+export const getProBookings = async ( options?: RequestInit): Promise<ProBooking[]> => {
+
+  return customFetch<ProBooking[]>(getGetProBookingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProBookingsQueryKey = () => {
+    return [
+    `/api/bookings/pro`
+    ] as const;
+    }
+
+
+export const getGetProBookingsQueryOptions = <TData = Awaited<ReturnType<typeof getProBookings>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProBookings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProBookingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProBookings>>> = ({ signal }) => getProBookings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProBookings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetProBookingsQueryResult = NonNullable<Awaited<ReturnType<typeof getProBookings>>>
+export type GetProBookingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get all bookings received by the pro's business
+ */
+
+export function useGetProBookings<TData = Awaited<ReturnType<typeof getProBookings>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getProBookings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetProBookingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getUpdateProBookingStatusUrl = (bookingId: string,) => {
+
+
+
+
+  return `/api/bookings/pro/${bookingId}/status`
+}
+
+/**
+ * @summary Update the status of a booking (pro only)
+ */
+export const updateProBookingStatus = async (bookingId: string,
+    statusUpdate: StatusUpdate, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUpdateProBookingStatusUrl(bookingId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      statusUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateProBookingStatusMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProBookingStatus>>, TError,{bookingId: string;data: BodyType<StatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateProBookingStatus>>, TError,{bookingId: string;data: BodyType<StatusUpdate>}, TContext> => {
+
+const mutationKey = ['updateProBookingStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateProBookingStatus>>, {bookingId: string;data: BodyType<StatusUpdate>}> = (props) => {
+          const {bookingId,data} = props ?? {};
+
+          return  updateProBookingStatus(bookingId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateProBookingStatusMutationResult = NonNullable<Awaited<ReturnType<typeof updateProBookingStatus>>>
+    export type UpdateProBookingStatusMutationBody = BodyType<StatusUpdate>
+    export type UpdateProBookingStatusMutationError = ErrorType<void>
+
+    /**
+ * @summary Update the status of a booking (pro only)
+ */
+export const useUpdateProBookingStatus = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateProBookingStatus>>, TError,{bookingId: string;data: BodyType<StatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateProBookingStatus>>,
+        TError,
+        {bookingId: string;data: BodyType<StatusUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateProBookingStatusMutationOptions(options));
+    }
+
+export const getUpdateOrderStatusUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/orders/${orderId}/status`
+}
+
+/**
+ * @summary Update the status of an order
+ */
+export const updateOrderStatus = async (orderId: string,
+    statusUpdate: StatusUpdate, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUpdateOrderStatusUrl(orderId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      statusUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateOrderStatusMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderStatus>>, TError,{orderId: string;data: BodyType<StatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrderStatus>>, TError,{orderId: string;data: BodyType<StatusUpdate>}, TContext> => {
+
+const mutationKey = ['updateOrderStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrderStatus>>, {orderId: string;data: BodyType<StatusUpdate>}> = (props) => {
+          const {orderId,data} = props ?? {};
+
+          return  updateOrderStatus(orderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrderStatusMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrderStatus>>>
+    export type UpdateOrderStatusMutationBody = BodyType<StatusUpdate>
+    export type UpdateOrderStatusMutationError = ErrorType<void>
+
+    /**
+ * @summary Update the status of an order
+ */
+export const useUpdateOrderStatus = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrderStatus>>, TError,{orderId: string;data: BodyType<StatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrderStatus>>,
+        TError,
+        {orderId: string;data: BodyType<StatusUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateOrderStatusMutationOptions(options));
     }
 

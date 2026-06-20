@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { and, eq, ilike, or } from "drizzle-orm";
-import { db, businessesTable, businessHoursTable, servicesTable } from "@workspace/db";
+import { and, count, eq, ilike, or, sql, sum } from "drizzle-orm";
+import { db, businessesTable, businessHoursTable, bookingsTable, ordersTable, orderItemsTable, servicesTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
@@ -212,6 +212,103 @@ router.delete("/businesses/:bizId/catalog/:itemId", requireAuth, async (req: Aut
   await db.delete(servicesTable)
     .where(and(eq(servicesTable.id, itemId), eq(servicesTable.businessId, bizId)));
   res.status(204).send();
+});
+
+// ─── Horaires (pro) ──────────────────────────────────────────────────────────
+
+router.get("/businesses/:id/hours", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const hours = await db.select().from(businessHoursTable).where(eq(businessHoursTable.businessId, id));
+  res.json(hours);
+});
+
+router.put("/businesses/:id/hours", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const entries = req.body as Array<{ day: string; openTime: string; closeTime: string; isClosed: boolean }>;
+  if (!Array.isArray(entries)) { res.status(400).json({ error: "body doit être un tableau" }); return; }
+  await db.delete(businessHoursTable).where(eq(businessHoursTable.businessId, id));
+  if (entries.length > 0) {
+    await db.insert(businessHoursTable).values(
+      entries.map((e) => ({
+        businessId: id,
+        dayOfWeek: e.day as typeof businessHoursTable.$inferInsert["dayOfWeek"],
+        openTime: e.openTime,
+        closeTime: e.closeTime,
+        isClosed: e.isClosed,
+      }))
+    );
+  }
+  const updated = await db.select().from(businessHoursTable).where(eq(businessHoursTable.businessId, id));
+  res.json(updated);
+});
+
+// ─── Stats dashboard (pro) ───────────────────────────────────────────────────
+
+router.get("/businesses/:id/stats", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const [[bookingTotal], [bookingMonth], [orderTotal], [orderMonth], [revenueMonth]] = await Promise.all([
+    db.select({ c: count() }).from(bookingsTable).where(eq(bookingsTable.businessId, id)),
+    db.select({ c: count() }).from(bookingsTable).where(
+      and(eq(bookingsTable.businessId, id), sql`${bookingsTable.createdAt} >= ${monthStart}`)
+    ),
+    db.select({ c: count() }).from(ordersTable).where(eq(ordersTable.businessId, id)),
+    db.select({ c: count() }).from(ordersTable).where(
+      and(eq(ordersTable.businessId, id), sql`${ordersTable.createdAt} >= ${monthStart}`)
+    ),
+    db.select({ s: sum(ordersTable.total) }).from(ordersTable).where(
+      and(
+        eq(ordersTable.businessId, id),
+        sql`${ordersTable.createdAt} >= ${monthStart}`,
+        sql`${ordersTable.status} != 'cancelled'`
+      )
+    ),
+  ]);
+
+  res.json({
+    bookingsTotal: bookingTotal?.c ?? 0,
+    bookingsThisMonth: bookingMonth?.c ?? 0,
+    ordersTotal: orderTotal?.c ?? 0,
+    ordersThisMonth: orderMonth?.c ?? 0,
+    revenueThisMonth: Number(revenueMonth?.s ?? 0),
+  });
+});
+
+// ─── Commandes pro (reçues par le business) ──────────────────────────────────
+
+router.get("/businesses/:id/orders", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+
+  const orders = await db.select().from(ordersTable)
+    .where(eq(ordersTable.businessId, id))
+    .orderBy(sql`${ordersTable.createdAt} DESC`);
+
+  const ordersWithItems = await Promise.all(
+    orders.map(async (order) => {
+      const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+      return { ...order, items };
+    })
+  );
+  res.json(ordersWithItems);
 });
 
 export default router;

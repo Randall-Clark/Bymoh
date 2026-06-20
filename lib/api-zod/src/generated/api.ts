@@ -128,3 +128,137 @@ export const DeleteCatalogItemParams = zod.object({
 })
 
 
+/**
+ * @summary Get opening hours for a business (pro only)
+ */
+export const GetBusinessHoursParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const GetBusinessHoursResponseItem = zod.object({
+  "id": zod.string(),
+  "businessId": zod.string(),
+  "dayOfWeek": zod.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+  "openTime": zod.string(),
+  "closeTime": zod.string(),
+  "isClosed": zod.boolean()
+})
+export const GetBusinessHoursResponse = zod.array(GetBusinessHoursResponseItem)
+
+
+/**
+ * @summary Replace all opening hours for a business (pro only)
+ */
+export const UpdateBusinessHoursParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const UpdateBusinessHoursBodyItem = zod.object({
+  "day": zod.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+  "openTime": zod.string(),
+  "closeTime": zod.string(),
+  "isClosed": zod.boolean()
+})
+export const UpdateBusinessHoursBody = zod.array(UpdateBusinessHoursBodyItem)
+
+export const UpdateBusinessHoursResponseItem = zod.object({
+  "id": zod.string(),
+  "businessId": zod.string(),
+  "dayOfWeek": zod.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+  "openTime": zod.string(),
+  "closeTime": zod.string(),
+  "isClosed": zod.boolean()
+})
+export const UpdateBusinessHoursResponse = zod.array(UpdateBusinessHoursResponseItem)
+
+
+/**
+ * @summary Get dashboard stats for a business (pro only)
+ */
+export const GetBusinessStatsParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const GetBusinessStatsResponse = zod.object({
+  "bookingsTotal": zod.number(),
+  "bookingsThisMonth": zod.number(),
+  "ordersTotal": zod.number(),
+  "ordersThisMonth": zod.number(),
+  "revenueThisMonth": zod.number()
+})
+
+
+/**
+ * @summary Get all orders received by a business (pro only)
+ */
+export const GetProOrdersParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const GetProOrdersResponseItem = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'preparing', 'ready', 'delivering', 'delivered', 'cancelled']),
+  "deliveryMethod": zod.enum(['delivery', 'pickup']),
+  "deliveryAddress": zod.string().nullish(),
+  "deliveryFee": zod.number(),
+  "subtotal": zod.number(),
+  "total": zod.number(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date().optional(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "orderId": zod.string(),
+  "serviceId": zod.string().nullish(),
+  "title": zod.string(),
+  "quantity": zod.number(),
+  "unitPrice": zod.number(),
+  "currency": zod.string()
+}))
+})
+export const GetProOrdersResponse = zod.array(GetProOrdersResponseItem)
+
+
+/**
+ * @summary Get all bookings received by the pro's business
+ */
+export const GetProBookingsResponseItem = zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "time": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no_show']),
+  "bookingType": zod.enum(['table', 'service']),
+  "partySize": zod.number().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "serviceTitle": zod.string().nullish(),
+  "userName": zod.string().nullish(),
+  "userPhone": zod.string().nullish()
+})
+export const GetProBookingsResponse = zod.array(GetProBookingsResponseItem)
+
+
+/**
+ * @summary Update the status of a booking (pro only)
+ */
+export const UpdateProBookingStatusParams = zod.object({
+  "bookingId": zod.coerce.string()
+})
+
+export const UpdateProBookingStatusBody = zod.object({
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Update the status of an order
+ */
+export const UpdateOrderStatusParams = zod.object({
+  "orderId": zod.coerce.string()
+})
+
+export const UpdateOrderStatusBody = zod.object({
+  "status": zod.string()
+})
+
+

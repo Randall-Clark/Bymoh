@@ -15,11 +15,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ProDrawerMenu from "@/components/ProDrawerMenu";
-import { MOCK_BOOKINGS } from "@/constants/mockData";
+import {
+  getGetBusinessStatsQueryKey,
+  getGetProBookingsQueryKey,
+  useGetBusinessStats,
+  useGetProBookings,
+} from "@workspace/api-client-react";
+import { formatPrice } from "@/constants/mockData";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-// ─── Doodle config (same palette as home/profile) ─────────────────────────────
+// ─── Doodle config ────────────────────────────────────────────────────────────
 const { width: W } = Dimensions.get("window");
 const BG = "#E84B1A";
 const BG_DARK = "#C93E12";
@@ -53,6 +59,7 @@ export default function ProDashboardScreen() {
   const { user } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const businessId = user?.businessIds?.[0] ?? "";
 
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -68,6 +75,18 @@ export default function ProDashboardScreen() {
     ).start();
   }, [shift]);
 
+  // ── API ──────────────────────────────────────────────────────────────────────
+  const { data: stats } = useGetBusinessStats(businessId, {
+    query: { queryKey: getGetBusinessStatsQueryKey(businessId), enabled: !!businessId },
+  });
+
+  const { data: proBookings = [] } = useGetProBookings({
+    query: { queryKey: getGetProBookingsQueryKey(), enabled: !!businessId },
+  });
+
+  const recentBookings = proBookings.slice(0, 3);
+
+  // ── Sub-components ───────────────────────────────────────────────────────────
   const StatCard = ({
     label,
     value,
@@ -166,10 +185,30 @@ export default function ProDashboardScreen() {
       >
         {/* Stats */}
         <View style={styles.statsGrid}>
-          <StatCard label="Vues aujourd'hui" value="47" icon="eye" color={colors.primary} />
-          <StatCard label="Réservations" value="12" icon="calendar" color={colors.success} />
-          <StatCard label="Commandes" value="8" icon="shopping-bag" color="#8B5CF6" />
-          <StatCard label="Revenus ce mois" value="126 500 FCFA" icon="trending-up" color={colors.warning} />
+          <StatCard
+            label="Réservations ce mois"
+            value={stats ? String(stats.bookingsThisMonth) : "—"}
+            icon="calendar"
+            color={colors.success}
+          />
+          <StatCard
+            label="Commandes ce mois"
+            value={stats ? String(stats.ordersThisMonth) : "—"}
+            icon="shopping-bag"
+            color="#8B5CF6"
+          />
+          <StatCard
+            label="Total réservations"
+            value={stats ? String(stats.bookingsTotal) : "—"}
+            icon="bookmark"
+            color={colors.primary}
+          />
+          <StatCard
+            label="Revenus ce mois"
+            value={stats ? formatPrice(stats.revenueThisMonth) : "—"}
+            icon="trending-up"
+            color={colors.warning}
+          />
         </View>
 
         {/* Quick actions */}
@@ -211,23 +250,32 @@ export default function ProDashboardScreen() {
               <Text style={[styles.seeAll, { color: colors.primary }]}>Voir tout</Text>
             </TouchableOpacity>
           </View>
-          {MOCK_BOOKINGS.slice(0, 3).map((b) => (
-            <View
-              key={b.id}
-              style={[styles.bookingItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <View style={[styles.bookingAvatar, { backgroundColor: colors.muted }]}>
-                <Feather name="user" size={18} color={colors.mutedForeground} />
+          {recentBookings.length === 0 ? (
+            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>
+              Aucune réservation pour le moment.
+            </Text>
+          ) : (
+            recentBookings.map((b) => (
+              <View
+                key={b.id}
+                style={[styles.bookingItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              >
+                <View style={[styles.bookingAvatar, { backgroundColor: colors.muted }]}>
+                  <Feather name="user" size={18} color={colors.mutedForeground} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.bookingService, { color: colors.text }]}>
+                    {b.serviceTitle ?? (b.bookingType === "table" ? "Réservation table" : "Réservation service")}
+                  </Text>
+                  <Text style={[styles.bookingTime, { color: colors.mutedForeground }]}>
+                    {b.date} · {b.time}
+                    {b.userName ? ` · ${b.userName}` : ""}
+                  </Text>
+                </View>
+                <OrderStatusBadge status={b.status as any} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.bookingService, { color: colors.text }]}>{b.serviceName}</Text>
-                <Text style={[styles.bookingTime, { color: colors.mutedForeground }]}>
-                  {b.date} · {b.time}
-                </Text>
-              </View>
-              <OrderStatusBadge status={b.status} />
-            </View>
-          ))}
+            ))
+          )}
         </View>
       </ScrollView>
 
@@ -277,67 +325,115 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: W + TILE * 3,
     height: HEADER_ROWS * TILE + TILE * 2,
-    top: -TILE,
-    left: -TILE,
-    pointerEvents: "none",
   },
   doodle: {
     position: "absolute",
-    fontSize: 16,
+    fontSize: 22,
     color: DOODLE_COLOR,
     fontWeight: "300",
-    lineHeight: TILE,
-    width: TILE,
-    textAlign: "center",
   },
-
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    zIndex: 2,
+    marginTop: 12,
   },
   hamburger: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
-  headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", fontWeight: "600" },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#fff" },
+  headerSub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+    fontWeight: "500",
+    letterSpacing: 0.5,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -0.3,
+  },
   notifBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  // ── Scrollable ──
+  // ── Scroll ──
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 24, gap: 24 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, gap: 28 },
 
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  statCard: { width: "47%", borderRadius: 16, padding: 14, borderWidth: 1, gap: 8 },
-  statIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  statValue: { fontSize: 18, fontWeight: "800" },
-  statLabel: { fontSize: 12 },
+  // ── Stats grid ──
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: "45%",
+    maxWidth: "48%",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    gap: 8,
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statValue: { fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
+  statLabel: { fontSize: 12, lineHeight: 16 },
 
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  seeAll: { fontSize: 13, fontWeight: "600" },
-
-  qActionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 },
-  qAction: { width: "47%", alignItems: "center", gap: 8, paddingVertical: 18, borderRadius: 16, borderWidth: 1 },
+  // ── Quick actions ──
+  sectionTitle: { fontSize: 17, fontWeight: "800", marginBottom: 12 },
+  qActionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  qAction: {
+    flex: 1,
+    minWidth: "45%",
+    maxWidth: "48%",
+    alignItems: "center",
+    paddingVertical: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+  },
   qLabel: { fontSize: 13, fontWeight: "600" },
 
+  // ── Recent bookings ──
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  seeAll: { fontSize: 13, fontWeight: "600" },
   bookingItem: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 8,
   },
-  bookingAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  bookingService: { fontSize: 14, fontWeight: "600" },
-  bookingTime: { fontSize: 12, marginTop: 2 },
+  bookingAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bookingService: { fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  bookingTime: { fontSize: 12 },
+  emptyHint: { fontSize: 14, textAlign: "center", paddingVertical: 16 },
 });

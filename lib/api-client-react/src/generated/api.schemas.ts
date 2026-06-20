@@ -113,3 +113,143 @@ export interface CatalogItemUpdate {
   isAvailable?: boolean;
 }
 
+export type BusinessHourEntryDayOfWeek = typeof BusinessHourEntryDayOfWeek[keyof typeof BusinessHourEntryDayOfWeek];
+
+
+export const BusinessHourEntryDayOfWeek = {
+  Mon: 'Mon',
+  Tue: 'Tue',
+  Wed: 'Wed',
+  Thu: 'Thu',
+  Fri: 'Fri',
+  Sat: 'Sat',
+  Sun: 'Sun',
+} as const;
+
+export interface BusinessHourEntry {
+  id: string;
+  businessId: string;
+  dayOfWeek: BusinessHourEntryDayOfWeek;
+  openTime: string;
+  closeTime: string;
+  isClosed: boolean;
+}
+
+export type BusinessHourInputDay = typeof BusinessHourInputDay[keyof typeof BusinessHourInputDay];
+
+
+export const BusinessHourInputDay = {
+  Mon: 'Mon',
+  Tue: 'Tue',
+  Wed: 'Wed',
+  Thu: 'Thu',
+  Fri: 'Fri',
+  Sat: 'Sat',
+  Sun: 'Sun',
+} as const;
+
+export interface BusinessHourInput {
+  day: BusinessHourInputDay;
+  openTime: string;
+  closeTime: string;
+  isClosed: boolean;
+}
+
+export interface BusinessStats {
+  bookingsTotal: number;
+  bookingsThisMonth: number;
+  ordersTotal: number;
+  ordersThisMonth: number;
+  revenueThisMonth: number;
+}
+
+export type ProBookingStatus = typeof ProBookingStatus[keyof typeof ProBookingStatus];
+
+
+export const ProBookingStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  completed: 'completed',
+  cancelled: 'cancelled',
+  no_show: 'no_show',
+} as const;
+
+export type ProBookingBookingType = typeof ProBookingBookingType[keyof typeof ProBookingBookingType];
+
+
+export const ProBookingBookingType = {
+  table: 'table',
+  service: 'service',
+} as const;
+
+export interface ProBooking {
+  id: string;
+  date: string;
+  time: string;
+  status: ProBookingStatus;
+  bookingType: ProBookingBookingType;
+  /** @nullable */
+  partySize?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  /** @nullable */
+  serviceTitle?: string | null;
+  /** @nullable */
+  userName?: string | null;
+  /** @nullable */
+  userPhone?: string | null;
+}
+
+export interface ProOrderItem {
+  id: string;
+  orderId: string;
+  /** @nullable */
+  serviceId?: string | null;
+  title: string;
+  quantity: number;
+  unitPrice: number;
+  currency: string;
+}
+
+export type ProOrderStatus = typeof ProOrderStatus[keyof typeof ProOrderStatus];
+
+
+export const ProOrderStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  preparing: 'preparing',
+  ready: 'ready',
+  delivering: 'delivering',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export type ProOrderDeliveryMethod = typeof ProOrderDeliveryMethod[keyof typeof ProOrderDeliveryMethod];
+
+
+export const ProOrderDeliveryMethod = {
+  delivery: 'delivery',
+  pickup: 'pickup',
+} as const;
+
+export interface ProOrder {
+  id: string;
+  status: ProOrderStatus;
+  deliveryMethod: ProOrderDeliveryMethod;
+  /** @nullable */
+  deliveryAddress?: string | null;
+  deliveryFee: number;
+  subtotal: number;
+  total: number;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  items: ProOrderItem[];
+}
+
+export interface StatusUpdate {
+  status: string;
+}
+

@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './businessHourEntry';
+export * from './businessHourEntryDayOfWeek';
+export * from './businessHourInput';
+export * from './businessHourInputDay';
+export * from './businessStats';
 export * from './catalogItem';
 export * from './catalogItemBillingType';
 export * from './catalogItemInput';
@@ -15,3 +20,11 @@ export * from './catalogItemKind';
 export * from './catalogItemUpdate';
 export * from './catalogItemUpdateBillingType';
 export * from './healthStatus';
+export * from './proBooking';
+export * from './proBookingBookingType';
+export * from './proBookingStatus';
+export * from './proOrder';
+export * from './proOrderDeliveryMethod';
+export * from './proOrderItem';
+export * from './proOrderStatus';
+export * from './statusUpdate';

@@ -1,11 +1,27 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MOCK_BUSINESSES } from "@/constants/mockData";
+import {
+  getGetBusinessHoursQueryKey,
+  useGetBusinessHours,
+  useUpdateBusinessHours,
+} from "@workspace/api-client-react";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useQueryClient } from "@tanstack/react-query";
 
 const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const DAY_LABELS: Record<string, string> = {
@@ -13,30 +29,101 @@ const DAY_LABELS: Record<string, string> = {
   Ven: "Vendredi", Sam: "Samedi", Dim: "Dimanche",
 };
 
+const FR_TO_EN: Record<string, string> = {
+  Lun: "Mon", Mar: "Tue", Mer: "Wed", Jeu: "Thu",
+  Ven: "Fri", Sam: "Sat", Dim: "Sun",
+};
+const EN_TO_FR: Record<string, string> = {
+  Mon: "Lun", Tue: "Mar", Wed: "Mer", Thu: "Jeu",
+  Fri: "Ven", Sat: "Sam", Sun: "Dim",
+};
+
+type DayState = { open: string; close: string; closed: boolean };
+type HoursState = Record<string, DayState>;
+
+const DEFAULT_HOURS: HoursState = Object.fromEntries(
+  DAYS.map((d) => [d, { open: "08:00", close: "18:00", closed: false }])
+);
+
 export default function ProScheduleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [hours, setHours] = useState({ ...MOCK_BUSINESSES[0].openingHours! });
-  const [saved, setSaved] = useState(false);
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const businessId = user?.businessIds?.[0] ?? "";
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const [hours, setHours] = useState<HoursState>(DEFAULT_HOURS);
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: apiHours, isLoading } = useGetBusinessHours(businessId, {
+    query: { queryKey: getGetBusinessHoursQueryKey(businessId), enabled: !!businessId },
+  });
+
+  useEffect(() => {
+    if (!apiHours || apiHours.length === 0) return;
+    const state: HoursState = { ...DEFAULT_HOURS };
+    for (const entry of apiHours) {
+      const fr = EN_TO_FR[entry.dayOfWeek];
+      if (fr) {
+        state[fr] = { open: entry.openTime, close: entry.closeTime, closed: entry.isClosed };
+      }
+    }
+    setHours(state);
+  }, [apiHours]);
+
+  const { mutate: saveHours, isPending: isSaving } = useUpdateBusinessHours({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetBusinessHoursQueryKey(businessId) });
+        setSaved(true);
+        setDirty(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Horaires mis à jour", "Vos nouveaux horaires sont maintenant visibles sur votre profil.");
+      },
+      onError: () => {
+        Alert.alert("Erreur", "Impossible d'enregistrer les horaires. Réessayez.");
+      },
+    },
+  });
 
   const toggleClosed = (day: string) => {
     Haptics.selectionAsync();
     setHours((h) => ({ ...h, [day]: { ...h[day], closed: !h[day].closed } }));
     setSaved(false);
+    setDirty(true);
   };
 
   const updateTime = (day: string, field: "open" | "close", val: string) => {
     setHours((h) => ({ ...h, [day]: { ...h[day], [field]: val } }));
     setSaved(false);
+    setDirty(true);
   };
 
   const handleSave = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaved(true);
-    Alert.alert("Horaires mis à jour", "Vos nouveaux horaires sont maintenant visibles sur votre profil.");
+    if (!businessId) {
+      Alert.alert("Erreur", "Aucun business associé à ce compte.");
+      return;
+    }
+    const entries = DAYS.map((fr) => ({
+      day: FR_TO_EN[fr] as "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun",
+      openTime: hours[fr]?.open ?? "08:00",
+      closeTime: hours[fr]?.close ?? "18:00",
+      isClosed: hours[fr]?.closed ?? false,
+    }));
+    saveHours({ businessId, data: entries });
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -107,11 +194,18 @@ export default function ProScheduleScreen() {
 
       <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: botPad + 16 }]}>
         <TouchableOpacity
-          style={[styles.saveBtn, { backgroundColor: saved ? colors.success : colors.primary }]}
+          style={[styles.saveBtn, { backgroundColor: saved ? colors.success : dirty || !saved ? colors.primary : colors.muted }]}
           onPress={handleSave}
+          disabled={isSaving}
         >
-          <Feather name={saved ? "check" : "save"} size={18} color="#fff" />
-          <Text style={styles.saveBtnText}>{saved ? "Horaires enregistrés" : "Enregistrer les horaires"}</Text>
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Feather name={saved ? "check" : "save"} size={18} color="#fff" />
+              <Text style={styles.saveBtnText}>{saved ? "Horaires enregistrés" : "Enregistrer les horaires"}</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>

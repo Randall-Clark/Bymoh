@@ -78,7 +78,39 @@ router.get("/bookings/pro", requireAuth, async (req: AuthRequest, res) => {
     .leftJoin(servicesTable, eq(bookingsTable.serviceId, servicesTable.id))
     .where(eq(bookingsTable.businessId, biz.id))
     .orderBy(bookingsTable.date);
-  res.json(rows);
+  res.json(rows.map((r) => ({
+    id: r.booking.id,
+    date: r.booking.date,
+    time: r.booking.time,
+    status: r.booking.status,
+    bookingType: r.booking.bookingType,
+    partySize: r.booking.partySize,
+    notes: r.booking.notes,
+    createdAt: r.booking.createdAt,
+    serviceTitle: r.serviceTitle ?? null,
+    userName: r.userName ?? null,
+    userPhone: r.userPhone ?? null,
+  })));
+});
+
+router.patch("/bookings/pro/:id/status", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const { status } = req.body as { status?: string };
+  if (!status) { res.status(400).json({ error: "status requis" }); return; }
+
+  const [biz] = await db.select({ id: businessesTable.id }).from(businessesTable)
+    .where(eq(businessesTable.ownerId, req.userId!)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Aucun business trouvé pour ce compte" }); return; }
+
+  const [booking] = await db.select({ businessId: bookingsTable.businessId }).from(bookingsTable)
+    .where(eq(bookingsTable.id, id)).limit(1);
+  if (!booking) { res.status(404).json({ error: "Réservation introuvable" }); return; }
+  if (booking.businessId !== biz.id) { res.status(403).json({ error: "Accès refusé" }); return; }
+
+  const [updated] = await db.update(bookingsTable)
+    .set({ status: status as typeof bookingsTable.$inferInsert.status, updatedAt: new Date() })
+    .where(eq(bookingsTable.id, id)).returning();
+  res.json(updated);
 });
 
 export default router;

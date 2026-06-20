@@ -12,6 +12,14 @@ tags:
     description: Health operations
   - name: catalog
     description: Pro catalog management
+  - name: hours
+    description: Pro schedule / opening hours
+  - name: stats
+    description: Pro dashboard stats
+  - name: proBookings
+    description: Pro booking management
+  - name: proOrders
+    description: Pro order management
 paths:
   /healthz:
     get:
@@ -27,6 +35,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  # ── Catalog ────────────────────────────────────────────────────────────────
   /businesses/{businessId}/catalog:
     get:
       operationId: getBusinessCatalog
@@ -139,6 +148,191 @@ paths:
         "403":
           description: Forbidden
 
+  # ── Hours ──────────────────────────────────────────────────────────────────
+  /businesses/{businessId}/hours:
+    get:
+      operationId: getBusinessHours
+      tags: [hours]
+      summary: Get opening hours for a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of business hour entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusinessHourEntry"
+        "403":
+          description: Forbidden
+    put:
+      operationId: updateBusinessHours
+      tags: [hours]
+      summary: Replace all opening hours for a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/BusinessHourInput"
+      responses:
+        "200":
+          description: Updated list of entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusinessHourEntry"
+        "400":
+          description: Validation error
+        "403":
+          description: Forbidden
+
+  # ── Stats ──────────────────────────────────────────────────────────────────
+  /businesses/{businessId}/stats:
+    get:
+      operationId: getBusinessStats
+      tags: [stats]
+      summary: Get dashboard stats for a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stats object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessStats"
+        "403":
+          description: Forbidden
+
+  # ── Pro orders ─────────────────────────────────────────────────────────────
+  /businesses/{businessId}/orders:
+    get:
+      operationId: getProOrders
+      tags: [proOrders]
+      summary: Get all orders received by a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of orders with items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProOrder"
+        "403":
+          description: Forbidden
+
+  # ── Pro bookings ───────────────────────────────────────────────────────────
+  /bookings/pro:
+    get:
+      operationId: getProBookings
+      tags: [proBookings]
+      summary: Get all bookings received by the pro's business
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of pro bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProBooking"
+        "404":
+          description: No business found
+
+  /bookings/pro/{bookingId}/status:
+    patch:
+      operationId: updateProBookingStatus
+      tags: [proBookings]
+      summary: Update the status of a booking (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bookingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusUpdate"
+      responses:
+        "200":
+          description: Updated booking
+        "400":
+          description: Missing status
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+
+  /orders/{orderId}/status:
+    patch:
+      operationId: updateOrderStatus
+      tags: [proOrders]
+      summary: Update the status of an order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusUpdate"
+      responses:
+        "200":
+          description: Updated order
+        "400":
+          description: Missing status
+        "404":
+          description: Not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -153,6 +347,7 @@ components:
       required:
         - status
 
+    # ── Catalog ──────────────────────────────────────────────────────────────
     CatalogItem:
       type: object
       required: [id, kind, title, description, price, currency, billingType, allowsBooking, showStock, isAvailable, createdAt]
@@ -258,3 +453,143 @@ components:
           type: boolean
         isAvailable:
           type: boolean
+
+    # ── Hours ─────────────────────────────────────────────────────────────────
+    BusinessHourEntry:
+      type: object
+      required: [id, businessId, dayOfWeek, openTime, closeTime, isClosed]
+      properties:
+        id:
+          type: string
+        businessId:
+          type: string
+        dayOfWeek:
+          type: string
+          enum: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        openTime:
+          type: string
+        closeTime:
+          type: string
+        isClosed:
+          type: boolean
+
+    BusinessHourInput:
+      type: object
+      required: [day, openTime, closeTime, isClosed]
+      properties:
+        day:
+          type: string
+          enum: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        openTime:
+          type: string
+        closeTime:
+          type: string
+        isClosed:
+          type: boolean
+
+    # ── Stats ─────────────────────────────────────────────────────────────────
+    BusinessStats:
+      type: object
+      required: [bookingsTotal, bookingsThisMonth, ordersTotal, ordersThisMonth, revenueThisMonth]
+      properties:
+        bookingsTotal:
+          type: integer
+        bookingsThisMonth:
+          type: integer
+        ordersTotal:
+          type: integer
+        ordersThisMonth:
+          type: integer
+        revenueThisMonth:
+          type: number
+
+    # ── Pro bookings ──────────────────────────────────────────────────────────
+    ProBooking:
+      type: object
+      required: [id, date, time, status, bookingType, createdAt]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+        time:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, completed, cancelled, no_show]
+        bookingType:
+          type: string
+          enum: [table, service]
+        partySize:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        serviceTitle:
+          type: ["string", "null"]
+        userName:
+          type: ["string", "null"]
+        userPhone:
+          type: ["string", "null"]
+
+    # ── Pro orders ────────────────────────────────────────────────────────────
+    ProOrderItem:
+      type: object
+      required: [id, orderId, title, quantity, unitPrice, currency]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        serviceId:
+          type: ["string", "null"]
+        title:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        currency:
+          type: string
+
+    ProOrder:
+      type: object
+      required: [id, status, deliveryMethod, subtotal, total, deliveryFee, createdAt, items]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, confirmed, preparing, ready, delivering, delivered, cancelled]
+        deliveryMethod:
+          type: string
+          enum: [delivery, pickup]
+        deliveryAddress:
+          type: ["string", "null"]
+        deliveryFee:
+          type: number
+        subtotal:
+          type: number
+        total:
+          type: number
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProOrderItem"
+
+    StatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
