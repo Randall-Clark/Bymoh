@@ -5,11 +5,11 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
+  SectionList,
   StyleSheet,
   Switch,
   Text,
@@ -34,6 +34,7 @@ type CatalogItem = {
   currency: string;
   photo?: string;
   // Article only
+  category?: string;      // free-text category for grouping
   unit?: string;          // e.g. "Unité", "kg", "m"
   stockQty?: number | null; // null = non géré
   showStock?: boolean;    // propriétaire choisit; auto-true si ≤ 5
@@ -41,6 +42,12 @@ type CatalogItem = {
   duration?: number;
   billingType?: BillingType;
   allowsBooking?: boolean;
+};
+
+type CatalogSection = {
+  title: string;
+  kind: "articles" | "prestations";
+  data: CatalogItem[];
 };
 
 const DURATION_OPTIONS = [
@@ -70,9 +77,13 @@ const UNIT_OPTIONS = [
 ];
 
 const INITIAL_ITEMS: CatalogItem[] = [
-  { id: "1", kind: "article", title: "Tissu wax (par mètre)", description: "Tissu wax de qualité supérieure.", price: 3500, currency: "FCFA", unit: "m", stockQty: 48, showStock: false },
-  { id: "2", kind: "article", title: "Sucre en poudre", description: "Sachet de 1 kg.", price: 600, currency: "FCFA", unit: "kg", stockQty: 4, showStock: true },
-  { id: "3", kind: "prestation", title: "Coupe + brushing", description: "Coupe femme avec brushing et finitions.", price: 8000, currency: "FCFA", duration: 60, billingType: "fixed", allowsBooking: true },
+  { id: "1", kind: "article", category: "Plats", title: "Riz au poulet braisé", description: "Servi avec salade et alloco.", price: 2500, currency: "FCFA", unit: "Unité", stockQty: null },
+  { id: "2", kind: "article", category: "Plats", title: "Attiéké poisson braisé", description: "Attiéké frais avec poisson grillé.", price: 2000, currency: "FCFA", unit: "Unité", stockQty: null },
+  { id: "3", kind: "article", category: "Plats", title: "Fufu + sauce gombo", description: "Fufu de manioc, sauce gombo avec viande.", price: 1500, currency: "FCFA", unit: "Unité", stockQty: 8, showStock: true },
+  { id: "4", kind: "article", category: "Boissons", title: "Jus de bissap", description: "Jus naturel fait maison.", price: 300, currency: "FCFA", unit: "Unité", stockQty: 4, showStock: true },
+  { id: "5", kind: "article", category: "Boissons", title: "Coca-Cola", description: "Bouteille 33 cl.", price: 500, currency: "FCFA", unit: "Unité", stockQty: 24, showStock: false },
+  { id: "6", kind: "article", category: "Snacks", title: "Beignets haricots (3 pièces)", description: "Beignets croustillants à l'arachide.", price: 200, currency: "FCFA", unit: "Lot / Pack", stockQty: null },
+  { id: "7", kind: "prestation", title: "Livraison express", description: "Livraison dans Lomé sous 45 min.", price: 1000, currency: "FCFA", duration: 45, billingType: "fixed", allowsBooking: false },
 ];
 
 /** Stock visible par le client : toujours vrai si ≤ 5, sinon selon la préférence du proprio */
@@ -110,6 +121,7 @@ export default function ProCatalogScreen() {
   const [formPrice, setFormPrice] = useState("");
   const [formPhoto, setFormPhoto] = useState<string | undefined>(undefined);
   // Article fields
+  const [formCategory, setFormCategory] = useState("");
   const [formUnit, setFormUnit] = useState("Unité");
   const [formStockQty, setFormStockQty] = useState<string>("");  // "" = non géré
   const [formShowStock, setFormShowStock] = useState(false);
@@ -123,7 +135,7 @@ export default function ProCatalogScreen() {
 
   const resetForm = () => {
     setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(undefined);
-    setFormUnit("Unité"); setFormStockQty(""); setFormShowStock(false);
+    setFormCategory(""); setFormUnit("Unité"); setFormStockQty(""); setFormShowStock(false);
     setFormDuration(60); setFormBilling("fixed"); setFormAllowsBooking(true);
     setEditingItem(null);
   };
@@ -141,6 +153,7 @@ export default function ProCatalogScreen() {
     setFormPrice(String(item.price));
     setFormPhoto(item.photo);
     // Article
+    setFormCategory(item.category ?? "");
     setFormUnit(item.unit ?? "Unité");
     setFormStockQty(item.stockQty != null ? String(item.stockQty) : "");
     setFormShowStock(item.showStock ?? false);
@@ -181,6 +194,7 @@ export default function ProCatalogScreen() {
       photo: formPhoto,
     };
     if (formKind === "article") {
+      base.category = formCategory.trim() || undefined;
       base.unit = formUnit;
       base.stockQty = parsedStock;
       // Auto-show if ≤ 5, otherwise honour owner's choice
@@ -207,6 +221,31 @@ export default function ProCatalogScreen() {
 
   const articleCount = items.filter((i) => i.kind === "article").length;
   const prestationCount = items.filter((i) => i.kind === "prestation").length;
+
+  // Unique existing categories (for quick-select chips in form)
+  const existingCategories = Array.from(
+    new Set(items.filter((i) => i.kind === "article" && i.category).map((i) => i.category as string))
+  ).sort();
+
+  // Build sections: articles grouped by category, then prestations
+  const sections: CatalogSection[] = (() => {
+    const articles = items.filter((i) => i.kind === "article");
+    const prestations = items.filter((i) => i.kind === "prestation");
+    const catMap = new Map<string, CatalogItem[]>();
+    for (const a of articles) {
+      const key = a.category?.trim() || "Autres";
+      if (!catMap.has(key)) catMap.set(key, []);
+      catMap.get(key)!.push(a);
+    }
+    const articleSections: CatalogSection[] = Array.from(catMap.entries())
+      .sort(([a], [b]) => a === "Autres" ? 1 : b === "Autres" ? -1 : a.localeCompare(b, "fr"))
+      .map(([title, data]) => ({ title, kind: "articles", data }));
+    const result: CatalogSection[] = [...articleSections];
+    if (prestations.length > 0) {
+      result.push({ title: "Prestations", kind: "prestations", data: prestations });
+    }
+    return result;
+  })();
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -236,12 +275,13 @@ export default function ProCatalogScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={items}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
         style={{ flex: 1 }}
         contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled={false}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Feather name="layers" size={40} color={colors.mutedForeground} />
@@ -255,6 +295,24 @@ export default function ProCatalogScreen() {
             </TouchableOpacity>
           </View>
         }
+        renderSectionHeader={({ section }) => (
+          <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+            <View style={[styles.sectionHeaderLine, { backgroundColor: section.kind === "prestations" ? "#7C3AED" : colors.primary }]} />
+            <View style={[styles.sectionHeaderBadge, { backgroundColor: section.kind === "prestations" ? "#EDE9FE" : colors.accent }]}>
+              <Feather
+                name={section.kind === "prestations" ? "calendar" : "tag"}
+                size={12}
+                color={section.kind === "prestations" ? "#7C3AED" : colors.primary}
+              />
+              <Text style={[styles.sectionHeaderText, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
+                {section.title}
+              </Text>
+              <Text style={[styles.sectionHeaderCount, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
+                {section.data.length}
+              </Text>
+            </View>
+          </View>
+        )}
         renderItem={({ item }) => (
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {item.photo ? (
@@ -484,6 +542,36 @@ export default function ProCatalogScreen() {
             {/* ── Article-only fields ── */}
             {formKind === "article" && (
               <>
+                {/* Category */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Catégorie</Text>
+                  {existingCategories.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                      {existingCategories.map((cat) => (
+                        <TouchableOpacity
+                          key={cat}
+                          style={[styles.unitChip, {
+                            backgroundColor: formCategory === cat ? colors.primary : colors.card,
+                            borderColor: formCategory === cat ? colors.primary : colors.border,
+                          }]}
+                          onPress={() => setFormCategory(formCategory === cat ? "" : cat)}
+                        >
+                          <Text style={[styles.unitChipText, { color: formCategory === cat ? "#fff" : colors.text }]}>
+                            {cat}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                    value={formCategory}
+                    onChangeText={setFormCategory}
+                    placeholder='Ex : Plats, Boissons, Snacks… (optionnel)'
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                </View>
+
                 {/* Unit of sale */}
                 <View style={styles.field}>
                   <Text style={[styles.label, { color: colors.text }]}>Unité de vente</Text>
@@ -660,10 +748,17 @@ const styles = StyleSheet.create({
   statPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100 },
   statText: { fontSize: 12, fontWeight: "700" },
 
-  list: { paddingHorizontal: 20, paddingTop: 4, gap: 12 },
+  list: { paddingHorizontal: 20, paddingTop: 4 },
+
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 18, paddingBottom: 10 },
+  sectionHeaderLine: { width: 4, height: 20, borderRadius: 2 },
+  sectionHeaderBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
+  sectionHeaderText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.2 },
+  sectionHeaderCount: { fontSize: 12, fontWeight: "600", opacity: 0.7 },
   card: {
     flexDirection: "row", alignItems: "flex-start",
     borderRadius: 16, borderWidth: 1, overflow: "hidden", gap: 12, padding: 10,
+    marginBottom: 12,
   },
   cardImg: { width: 72, height: 72, borderRadius: 10 },
   cardImgPlaceholder: { alignItems: "center", justifyContent: "center" },
