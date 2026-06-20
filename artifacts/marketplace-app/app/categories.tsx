@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CATEGORIES, MOCK_BUSINESSES } from "@/constants/mockData";
+import { CATEGORIES } from "@/constants/mockData";
 import { useColors } from "@/hooks/useColors";
 
 const CATEGORY_COLORS: Record<string, { bg: string; icon: string }> = {
@@ -31,12 +31,6 @@ export default function CategoriesScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
-
-  // Count businesses per category
-  const countByCategory: Record<string, number> = {};
-  for (const b of MOCK_BUSINESSES) {
-    countByCategory[b.category] = (countByCategory[b.category] ?? 0) + 1;
-  }
 
   const handleSelect = (catId: string) => {
     router.push({ pathname: "/(tabs)/search", params: { category: catId } } as any);
@@ -68,7 +62,6 @@ export default function CategoriesScreen() {
         <View style={styles.grid}>
           {CATEGORIES.map((cat) => {
             const c = CATEGORY_COLORS[cat.id] ?? DEFAULT_COLORS;
-            const count = countByCategory[cat.id] ?? 0;
             return (
               <TouchableOpacity
                 key={cat.id}
@@ -76,18 +69,10 @@ export default function CategoriesScreen() {
                 onPress={() => handleSelect(cat.id)}
                 activeOpacity={0.82}
               >
-                {/* Icon circle */}
                 <View style={[styles.iconCircle, { backgroundColor: c.bg }]}>
                   <Feather name={cat.icon as any} size={28} color={c.icon} />
                 </View>
                 <Text style={[styles.tileLabel, { color: colors.text }]}>{cat.label}</Text>
-                <Text style={[styles.tileCount, { color: colors.mutedForeground }]}>
-                  {count > 0 ? `${count} commerce${count > 1 ? "s" : ""}` : "Bientôt disponible"}
-                </Text>
-                {/* Arrow */}
-                <View style={[styles.tileArrow, { backgroundColor: colors.muted }]}>
-                  <Feather name="arrow-right" size={14} color={colors.mutedForeground} />
-                </View>
               </TouchableOpacity>
             );
           })}
@@ -132,22 +117,15 @@ const styles = StyleSheet.create({
   tile: {
     width: "47%",
     borderRadius: 20, borderWidth: 1,
-    padding: 18, gap: 8,
-    alignItems: "flex-start",
-    position: "relative",
+    paddingVertical: 22, paddingHorizontal: 12,
+    gap: 10,
+    alignItems: "center",
   },
   iconCircle: {
-    width: 60, height: 60, borderRadius: 30,
-    alignItems: "center", justifyContent: "center",
-    marginBottom: 4,
-  },
-  tileLabel: { fontSize: 16, fontWeight: "800" },
-  tileCount: { fontSize: 12, fontWeight: "500" },
-  tileArrow: {
-    position: "absolute", top: 14, right: 14,
-    width: 28, height: 28, borderRadius: 14,
+    width: 64, height: 64, borderRadius: 32,
     alignItems: "center", justifyContent: "center",
   },
+  tileLabel: { fontSize: 14, fontWeight: "700", textAlign: "center" },
 
   // Promo card
   promoCard: {

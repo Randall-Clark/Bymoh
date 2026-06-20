@@ -811,9 +811,9 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 20, paddingTop: 4 },
 
   filterBar: { borderBottomWidth: StyleSheet.hairlineWidth },
-  filterRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingVertical: 10 },
-  filterChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100, borderWidth: 1.5 },
-  filterChipText: { fontSize: 13 },
+  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingVertical: 8 },
+  filterChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  filterChipText: { fontSize: 12 },
 
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 18, paddingBottom: 10 },
   sectionHeaderLine: { width: 4, height: 20, borderRadius: 2 },

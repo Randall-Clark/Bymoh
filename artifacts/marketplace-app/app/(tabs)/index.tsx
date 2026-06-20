@@ -5,6 +5,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -44,6 +45,16 @@ const HEADER_CELLS = Array.from({ length: HEADER_ROWS }, (_, row) =>
 ).flat();
 
 const USE_NATIVE = Platform.OS !== "web";
+
+// ─── Cities / locations ─────────────────────────────────────────────────────────
+const CITIES = [
+  { id: "lome",     name: "Lomé",      country: "Togo",          flag: "🇹🇬" },
+  { id: "kara",     name: "Kara",      country: "Togo",          flag: "🇹🇬" },
+  { id: "cotonou",  name: "Cotonou",   country: "Bénin",         flag: "🇧🇯" },
+  { id: "abidjan",  name: "Abidjan",   country: "Côte d'Ivoire", flag: "🇨🇮" },
+  { id: "dakar",    name: "Dakar",     country: "Sénégal",       flag: "🇸🇳" },
+  { id: "accra",    name: "Accra",     country: "Ghana",         flag: "🇬🇭" },
+];
 
 // ─── Promo banners ──────────────────────────────────────────────────────────────
 const PROMO_BANNERS = [
@@ -85,6 +96,8 @@ export default function HomeScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [bannerIdx, setBannerIdx] = useState(0);
+  const [selectedCity, setSelectedCity] = useState(CITIES[0]);
+  const [cityModalVisible, setCityModalVisible] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -122,7 +135,8 @@ export default function HomeScreen() {
       ? b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         b.category.toLowerCase().includes(searchQuery.toLowerCase())
       : true;
-    return matchCat && matchSearch;
+    const matchCity = b.city.toLowerCase() === selectedCity.name.toLowerCase();
+    return matchCat && matchSearch && matchCity;
   });
 
   const open = filtered.filter((b) => b.isOpen);
@@ -151,10 +165,17 @@ export default function HomeScreen() {
             <Text style={styles.hello}>Bonjour 👋</Text>
             <Text style={styles.name}>{user?.name ?? "Bienvenue"}</Text>
           </View>
-          <TouchableOpacity style={styles.notifBtn} onPress={() => router.push("/notifications")}>
-            <Feather name="bell" size={20} color="#fff" />
-            <View style={styles.notifDot} />
-          </TouchableOpacity>
+          <View style={styles.greetRight}>
+            <TouchableOpacity style={styles.cityPill} onPress={() => setCityModalVisible(true)}>
+              <Feather name="map-pin" size={11} color="#fff" />
+              <Text style={styles.cityText}>{selectedCity.flag} {selectedCity.name}</Text>
+              <Feather name="chevron-down" size={11} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.notifBtn} onPress={() => router.push("/notifications")}>
+              <Feather name="bell" size={20} color="#fff" />
+              <View style={styles.notifDot} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Search bar */}
@@ -309,6 +330,46 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* ── City picker modal ── */}
+      <Modal
+        visible={cityModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCityModalVisible(false)}
+        statusBarTranslucent
+      >
+        <TouchableOpacity
+          style={styles.cityModalBackdrop}
+          activeOpacity={1}
+          onPress={() => setCityModalVisible(false)}
+        />
+        <View style={[styles.citySheet, { backgroundColor: colors.card, paddingBottom: botPad + 16 }]}>
+          <View style={[styles.citySheetHandle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.citySheetTitle, { color: colors.text }]}>Choisir une ville</Text>
+          <Text style={[styles.citySheetSub, { color: colors.mutedForeground }]}>
+            Le contenu affiché sera adapté à votre ville
+          </Text>
+          {CITIES.map((city) => {
+            const active = city.id === selectedCity.id;
+            return (
+              <TouchableOpacity
+                key={city.id}
+                style={[styles.cityOption, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.accent : colors.background }]}
+                onPress={() => { setSelectedCity(city); setCityModalVisible(false); }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.cityFlag}>{city.flag}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cityOptionName, { color: colors.text }]}>{city.name}</Text>
+                  <Text style={[styles.cityOptionCountry, { color: colors.mutedForeground }]}>{city.country}</Text>
+                </View>
+                {active && <Feather name="check-circle" size={18} color={colors.primary} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -333,8 +394,15 @@ const styles = StyleSheet.create({
     fontWeight: "300", lineHeight: TILE, width: TILE, textAlign: "center",
   },
   greet: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", zIndex: 2 },
+  greetRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   hello: { fontSize: 13, color: "rgba(255,255,255,0.80)", fontWeight: "500" },
   name: { fontSize: 22, fontWeight: "800", color: "#fff" },
+  cityPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 100,
+    paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+  },
+  cityText: { fontSize: 12, color: "#fff", fontWeight: "600" },
   notifBtn: {
     width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.2)", position: "relative", zIndex: 2,
@@ -343,6 +411,23 @@ const styles = StyleSheet.create({
     position: "absolute", top: 9, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: "#fff", borderWidth: 1.5, borderColor: BG,
   },
+
+  // City modal
+  cityModalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  citySheet: {
+    borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, gap: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 24,
+  },
+  citySheetHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 4 },
+  citySheetTitle: { fontSize: 18, fontWeight: "800" },
+  citySheetSub: { fontSize: 13, marginBottom: 4 },
+  cityOption: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    padding: 14, borderRadius: 14, borderWidth: 1.5,
+  },
+  cityFlag: { fontSize: 22 },
+  cityOptionName: { fontSize: 15, fontWeight: "700" },
+  cityOptionCountry: { fontSize: 12, marginTop: 1 },
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 13, borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", zIndex: 2,

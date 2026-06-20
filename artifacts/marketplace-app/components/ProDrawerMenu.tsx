@@ -89,7 +89,7 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
   const mainItems: MenuItemDef[] = [
     {
       icon: "home",
-      label: "Accueil (vue client)",
+      label: "Accueil",
       sublabel: "Explorer les commerces",
       onPress: () => navigateReplace("/(tabs)"),
     },
@@ -104,6 +104,12 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
       label: "Notifications",
       onPress: () => navigate("/notifications"),
       badge: "3",
+    },
+    {
+      icon: "percent",
+      label: "Offres & Promotions",
+      sublabel: "Créer et gérer vos promos",
+      onPress: () => navigate("/pro/promotions"),
     },
     {
       icon: "credit-card",
