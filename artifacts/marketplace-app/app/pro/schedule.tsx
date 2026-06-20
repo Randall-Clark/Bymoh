@@ -48,7 +48,7 @@ export default function ProScheduleScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 100 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 24 }]} showsVerticalScrollIndicator={false}>
         <Text style={[styles.hint, { color: colors.mutedForeground }]}>
           Définissez vos horaires par jour. Les clients verront si vous êtes ouvert en temps réel.
         </Text>

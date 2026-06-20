@@ -497,7 +497,7 @@ export default function ProRegisterScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

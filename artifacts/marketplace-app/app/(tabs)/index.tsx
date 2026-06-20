@@ -201,7 +201,7 @@ export default function HomeScreen() {
       {/* ── Scrollable content ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 60 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Categories ── */}

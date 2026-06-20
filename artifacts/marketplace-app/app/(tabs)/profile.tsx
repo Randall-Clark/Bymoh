@@ -222,7 +222,7 @@ export default function ProfileScreen() {
       {/* ── Scrollable menu ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 60 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Client section */}

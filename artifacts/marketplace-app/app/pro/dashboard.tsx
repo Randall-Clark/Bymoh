@@ -161,7 +161,7 @@ export default function ProDashboardScreen() {
       {/* ── Scrollable content ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Stats */}

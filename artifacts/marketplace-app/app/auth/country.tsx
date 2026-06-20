@@ -74,7 +74,7 @@ export default function CountryScreen() {
 
       {/* Country list */}
       <ScrollView
-        contentContainerStyle={[styles.list, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         {COUNTRIES.map((country) => {

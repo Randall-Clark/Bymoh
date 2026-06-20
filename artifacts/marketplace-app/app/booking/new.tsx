@@ -164,7 +164,7 @@ export default function BookingScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 100 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Service / Table summary ── */}
