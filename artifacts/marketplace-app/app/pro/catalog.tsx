@@ -119,9 +119,6 @@ export default function ProCatalogScreen() {
   const [formDesc, setFormDesc] = useState("");
   const [formPrice, setFormPrice] = useState("");
   const [formPhoto, setFormPhoto] = useState<string | undefined>(undefined);
-  // Filter
-  const [filterKey, setFilterKey] = useState<"all" | "articles" | "prestations" | string>("all");
-
   // Article fields
   const [formCategory, setFormCategory] = useState("");
   const [formUnit, setFormUnit] = useState("Unité");
@@ -229,18 +226,10 @@ export default function ProCatalogScreen() {
     new Set(items.filter((i) => i.kind === "article" && i.category).map((i) => i.category as string))
   ).sort();
 
-  // Apply filter
-  const filteredItems = (() => {
-    if (filterKey === "all") return items;
-    if (filterKey === "articles") return items.filter((i) => i.kind === "article");
-    if (filterKey === "prestations") return items.filter((i) => i.kind === "prestation");
-    return items.filter((i) => i.kind === "article" && i.category === filterKey);
-  })();
-
-  // Build sections from filtered items: articles grouped by category, then prestations
+  // Build sections: articles grouped by category, then prestations
   const sections: CatalogSection[] = (() => {
-    const articles = filteredItems.filter((i) => i.kind === "article");
-    const prestations = filteredItems.filter((i) => i.kind === "prestation");
+    const articles = items.filter((i) => i.kind === "article");
+    const prestations = items.filter((i) => i.kind === "prestation");
     const catMap = new Map<string, CatalogItem[]>();
     for (const a of articles) {
       const key = a.category?.trim() || "Autres";
@@ -256,14 +245,6 @@ export default function ProCatalogScreen() {
     }
     return result;
   })();
-
-  // Filter chips definition
-  const filterChips: { key: string; label: string; icon: string }[] = [
-    { key: "all", label: "Tout", icon: "grid" },
-    { key: "articles", label: "Articles", icon: "package" },
-    { key: "prestations", label: "Prestations", icon: "calendar" },
-    ...existingCategories.map((cat) => ({ key: cat, label: cat, icon: "tag" })),
-  ];
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -292,47 +273,6 @@ export default function ProCatalogScreen() {
           <Text style={[styles.statText, { color: "#7C3AED" }]}>{prestationCount} prestation{prestationCount !== 1 ? "s" : ""}</Text>
         </View>
       </View>
-
-      {/* Filter bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-        style={[styles.filterBar, { borderBottomColor: colors.border }]}
-      >
-        {filterChips.map((chip) => {
-          const active = filterKey === chip.key;
-          const isPresta = chip.key === "prestations";
-          const activeBg = isPresta ? "#7C3AED" : colors.primary;
-          const activeText = "#fff";
-          const inactiveBg = isPresta ? "#EDE9FE" : filterKey === chip.key ? colors.accent : colors.card;
-          return (
-            <TouchableOpacity
-              key={chip.key}
-              style={[styles.filterChip, {
-                backgroundColor: active ? activeBg : colors.card,
-                borderColor: active ? activeBg : colors.border,
-              }]}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setFilterKey(chip.key);
-              }}
-            >
-              <Feather
-                name={chip.icon as any}
-                size={12}
-                color={active ? activeText : (isPresta ? "#7C3AED" : colors.mutedForeground)}
-              />
-              <Text style={[styles.filterChipText, {
-                color: active ? activeText : colors.text,
-                fontWeight: active ? "700" : "500",
-              }]}>
-                {chip.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
 
       <ScrollView
         style={{ flex: 1 }}
@@ -803,10 +743,6 @@ const styles = StyleSheet.create({
 
   list: { paddingHorizontal: 20, paddingTop: 0 },
 
-  filterBar: { borderBottomWidth: StyleSheet.hairlineWidth },
-  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingVertical: 5, alignItems: "center" },
-  filterChip: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100, borderWidth: 1 },
-  filterChipText: { fontSize: 12 },
 
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 4, paddingBottom: 6 },
   sectionHeaderLine: { width: 4, height: 20, borderRadius: 2 },
