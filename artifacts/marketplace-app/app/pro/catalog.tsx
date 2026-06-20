@@ -9,7 +9,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  SectionList,
   StyleSheet,
   Switch,
   Text,
@@ -335,16 +334,12 @@ export default function ProCatalogScreen() {
         })}
       </ScrollView>
 
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => item.id}
+      <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
-        stickySectionHeadersEnabled={false}
-        automaticallyAdjustContentInsets={false}
-        contentInset={{ top: 0, bottom: 0 }}
-        ListEmptyComponent={
+      >
+        {sections.length === 0 ? (
           <View style={styles.empty}>
             <Feather name="layers" size={40} color={colors.mutedForeground} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Catalogue vide</Text>
@@ -356,103 +351,99 @@ export default function ProCatalogScreen() {
               <Text style={styles.emptyBtnText}>Ajouter un élément</Text>
             </TouchableOpacity>
           </View>
-        }
-        renderSectionHeader={({ section }) => (
-          <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
-            <View style={[styles.sectionHeaderLine, { backgroundColor: section.kind === "prestations" ? "#7C3AED" : colors.primary }]} />
-            <View style={[styles.sectionHeaderBadge, { backgroundColor: section.kind === "prestations" ? "#EDE9FE" : colors.accent }]}>
-              <Feather
-                name={section.kind === "prestations" ? "calendar" : "tag"}
-                size={12}
-                color={section.kind === "prestations" ? "#7C3AED" : colors.primary}
-              />
-              <Text style={[styles.sectionHeaderText, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
-                {section.title}
-              </Text>
-              <Text style={[styles.sectionHeaderCount, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
-                {section.data.length}
-              </Text>
-            </View>
-          </View>
-        )}
-        renderItem={({ item }) => (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {item.photo ? (
-              <Image source={{ uri: item.photo }} style={styles.cardImg} contentFit="cover" />
-            ) : (
-              <View style={[styles.cardImg, styles.cardImgPlaceholder, { backgroundColor: item.kind === "prestation" ? "#EDE9FE" : colors.muted }]}>
-                <Feather name={item.kind === "prestation" ? "calendar" : "package"} size={22} color={item.kind === "prestation" ? "#7C3AED" : colors.mutedForeground} />
-              </View>
-            )}
-            <View style={{ flex: 1 }}>
-              {/* Kind badge */}
-              <View style={[styles.kindBadge, { backgroundColor: item.kind === "prestation" ? "#EDE9FE" : colors.accent }]}>
-                <Text style={[styles.kindBadgeText, { color: item.kind === "prestation" ? "#7C3AED" : colors.primary }]}>
-                  {item.kind === "prestation" ? "Prestation" : "Article"}
+        ) : sections.map((section) => (
+          <View key={section.title}>
+            {/* Section header */}
+            <View style={[styles.sectionHeader, { backgroundColor: colors.background }]}>
+              <View style={[styles.sectionHeaderLine, { backgroundColor: section.kind === "prestations" ? "#7C3AED" : colors.primary }]} />
+              <View style={[styles.sectionHeaderBadge, { backgroundColor: section.kind === "prestations" ? "#EDE9FE" : colors.accent }]}>
+                <Feather
+                  name={section.kind === "prestations" ? "calendar" : "tag"}
+                  size={12}
+                  color={section.kind === "prestations" ? "#7C3AED" : colors.primary}
+                />
+                <Text style={[styles.sectionHeaderText, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
+                  {section.title}
+                </Text>
+                <Text style={[styles.sectionHeaderCount, { color: section.kind === "prestations" ? "#7C3AED" : colors.primary }]}>
+                  {section.data.length}
                 </Text>
               </View>
-              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
-              {item.description ? (
-                <Text style={[styles.cardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{item.description}</Text>
-              ) : null}
-              <View style={styles.cardFooter}>
-                <Text style={[styles.cardPrice, { color: colors.primary }]}>
-                  {formatPrice(item.price, item.currency)}
-                  {item.kind === "article" && item.unit && item.unit !== "Unité" ? ` / ${item.unit}` : ""}
-                  {item.billingType === "hourly" ? "/h" : ""}
-                </Text>
-                {/* Article: unité */}
-                {item.kind === "article" && item.unit && item.unit !== "Unité" && (
-                  <View style={[styles.unitBadge, { backgroundColor: colors.muted }]}>
-                    <Text style={[styles.unitText, { color: colors.mutedForeground }]}>/{item.unit}</Text>
+            </View>
+            {/* Items */}
+            {section.data.map((item) => (
+              <View key={item.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {item.photo ? (
+                  <Image source={{ uri: item.photo }} style={styles.cardImg} contentFit="cover" />
+                ) : (
+                  <View style={[styles.cardImg, styles.cardImgPlaceholder, { backgroundColor: item.kind === "prestation" ? "#EDE9FE" : colors.muted }]}>
+                    <Feather name={item.kind === "prestation" ? "calendar" : "package"} size={22} color={item.kind === "prestation" ? "#7C3AED" : colors.mutedForeground} />
                   </View>
                 )}
-                {/* Article: stock */}
-                {item.kind === "article" && isStockVisibleToClient(item) && item.stockQty != null && (
-                  <View style={[styles.stockBadge, {
-                    backgroundColor: item.stockQty <= 5 ? "#FEF3C7" : "#DCFCE7",
-                  }]}>
-                    <Feather name="layers" size={11} color={item.stockQty <= 5 ? "#D97706" : "#16A34A"} />
-                    <Text style={[styles.stockText, { color: item.stockQty <= 5 ? "#D97706" : "#16A34A" }]}>
-                      {item.stockQty <= 5 ? `${item.stockQty} restant${item.stockQty > 1 ? "s" : ""}` : `En stock (${item.stockQty})`}
+                <View style={{ flex: 1 }}>
+                  <View style={[styles.kindBadge, { backgroundColor: item.kind === "prestation" ? "#EDE9FE" : colors.accent }]}>
+                    <Text style={[styles.kindBadgeText, { color: item.kind === "prestation" ? "#7C3AED" : colors.primary }]}>
+                      {item.kind === "prestation" ? "Prestation" : "Article"}
                     </Text>
                   </View>
-                )}
-                {/* Article: stock masqué (pro seulement) */}
-                {item.kind === "article" && item.stockQty != null && !isStockVisibleToClient(item) && (
-                  <View style={[styles.stockBadge, { backgroundColor: colors.muted }]}>
-                    <Feather name="eye-off" size={11} color={colors.mutedForeground} />
-                    <Text style={[styles.stockText, { color: colors.mutedForeground }]}>{item.stockQty} (masqué)</Text>
-                  </View>
-                )}
-                {/* Prestation: durée */}
-                {item.kind === "prestation" && item.duration && (
-                  <View style={[styles.durationBadge, { backgroundColor: colors.muted }]}>
-                    <Feather name="clock" size={11} color={colors.mutedForeground} />
-                    <Text style={[styles.durationText, { color: colors.mutedForeground }]}>
-                      {formatDuration(item.duration)}
+                  <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</Text>
+                  {item.description ? (
+                    <Text style={[styles.cardDesc, { color: colors.mutedForeground }]} numberOfLines={2}>{item.description}</Text>
+                  ) : null}
+                  <View style={styles.cardFooter}>
+                    <Text style={[styles.cardPrice, { color: colors.primary }]}>
+                      {formatPrice(item.price, item.currency)}
+                      {item.kind === "article" && item.unit && item.unit !== "Unité" ? ` / ${item.unit}` : ""}
+                      {item.billingType === "hourly" ? "/h" : ""}
                     </Text>
+                    {item.kind === "article" && item.unit && item.unit !== "Unité" && (
+                      <View style={[styles.unitBadge, { backgroundColor: colors.muted }]}>
+                        <Text style={[styles.unitText, { color: colors.mutedForeground }]}>/{item.unit}</Text>
+                      </View>
+                    )}
+                    {item.kind === "article" && isStockVisibleToClient(item) && item.stockQty != null && (
+                      <View style={[styles.stockBadge, { backgroundColor: item.stockQty <= 5 ? "#FEF3C7" : "#DCFCE7" }]}>
+                        <Feather name="layers" size={11} color={item.stockQty <= 5 ? "#D97706" : "#16A34A"} />
+                        <Text style={[styles.stockText, { color: item.stockQty <= 5 ? "#D97706" : "#16A34A" }]}>
+                          {item.stockQty <= 5 ? `${item.stockQty} restant${item.stockQty > 1 ? "s" : ""}` : `En stock (${item.stockQty})`}
+                        </Text>
+                      </View>
+                    )}
+                    {item.kind === "article" && item.stockQty != null && !isStockVisibleToClient(item) && (
+                      <View style={[styles.stockBadge, { backgroundColor: colors.muted }]}>
+                        <Feather name="eye-off" size={11} color={colors.mutedForeground} />
+                        <Text style={[styles.stockText, { color: colors.mutedForeground }]}>{item.stockQty} (masqué)</Text>
+                      </View>
+                    )}
+                    {item.kind === "prestation" && item.duration && (
+                      <View style={[styles.durationBadge, { backgroundColor: colors.muted }]}>
+                        <Feather name="clock" size={11} color={colors.mutedForeground} />
+                        <Text style={[styles.durationText, { color: colors.mutedForeground }]}>
+                          {formatDuration(item.duration)}
+                        </Text>
+                      </View>
+                    )}
+                    {item.allowsBooking && (
+                      <View style={[styles.bookingBadge, { backgroundColor: "#DCFCE7" }]}>
+                        <Feather name="check-circle" size={11} color="#16A34A" />
+                        <Text style={[styles.bookingText, { color: "#16A34A" }]}>RDV</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-                {item.allowsBooking && (
-                  <View style={[styles.bookingBadge, { backgroundColor: "#DCFCE7" }]}>
-                    <Feather name="check-circle" size={11} color="#16A34A" />
-                    <Text style={[styles.bookingText, { color: "#16A34A" }]}>RDV</Text>
-                  </View>
-                )}
+                </View>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.muted }]} onPress={() => openEdit(item)}>
+                    <Feather name="edit-2" size={15} color={colors.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => handleDelete(item.id)}>
+                    <Feather name="trash-2" size={15} color="#DC2626" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-            <View style={styles.cardActions}>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.muted }]} onPress={() => openEdit(item)}>
-                <Feather name="edit-2" size={15} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => handleDelete(item.id)}>
-                <Feather name="trash-2" size={15} color="#DC2626" />
-              </TouchableOpacity>
-            </View>
+            ))}
           </View>
-        )}
-      />
+        ))}
+      </ScrollView>
 
       {/* ── Kind Selector Modal ── */}
       <Modal visible={kindSelectorVisible} transparent animationType="fade">
