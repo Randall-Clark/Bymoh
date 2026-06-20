@@ -33,8 +33,12 @@ type CatalogItem = {
   price: number;
   currency: string;
   photo?: string;
+  // Article only
+  unit?: string;          // e.g. "Unité", "kg", "m"
+  stockQty?: number | null; // null = non géré
+  showStock?: boolean;    // propriétaire choisit; auto-true si ≤ 5
   // Prestation only
-  duration?: number; // minutes
+  duration?: number;
   billingType?: BillingType;
   allowsBooking?: boolean;
 };
@@ -50,10 +54,33 @@ const DURATION_OPTIONS = [
   { label: "Journée", value: 480 },
 ];
 
-const INITIAL_ITEMS: CatalogItem[] = [
-  { id: "1", kind: "article", title: "Produit exemple", description: "Un article disponible à la vente.", price: 5000, currency: "FCFA" },
-  { id: "2", kind: "prestation", title: "Prestation exemple", description: "Une prestation sur rendez-vous.", price: 15000, currency: "FCFA", duration: 60, billingType: "fixed", allowsBooking: true },
+const UNIT_OPTIONS = [
+  { label: "Unité", short: "unité" },
+  { label: "Kilogramme", short: "kg" },
+  { label: "Gramme", short: "g" },
+  { label: "Mètre", short: "m" },
+  { label: "Centimètre", short: "cm" },
+  { label: "Litre", short: "L" },
+  { label: "Paire", short: "paire" },
+  { label: "Lot / Pack", short: "lot" },
+  { label: "Carton", short: "carton" },
+  { label: "Douzaine", short: "douzaine" },
+  { label: "Sachet", short: "sachet" },
+  { label: "Boîte", short: "boîte" },
 ];
+
+const INITIAL_ITEMS: CatalogItem[] = [
+  { id: "1", kind: "article", title: "Tissu wax (par mètre)", description: "Tissu wax de qualité supérieure.", price: 3500, currency: "FCFA", unit: "m", stockQty: 48, showStock: false },
+  { id: "2", kind: "article", title: "Sucre en poudre", description: "Sachet de 1 kg.", price: 600, currency: "FCFA", unit: "kg", stockQty: 4, showStock: true },
+  { id: "3", kind: "prestation", title: "Coupe + brushing", description: "Coupe femme avec brushing et finitions.", price: 8000, currency: "FCFA", duration: 60, billingType: "fixed", allowsBooking: true },
+];
+
+/** Stock visible par le client : toujours vrai si ≤ 5, sinon selon la préférence du proprio */
+function isStockVisibleToClient(item: CatalogItem): boolean {
+  if (item.stockQty == null) return false;
+  if (item.stockQty <= 5) return true;
+  return !!item.showStock;
+}
 
 function formatPrice(price: number, currency: string): string {
   return `${price.toLocaleString("fr-FR")} ${currency}`;
@@ -82,6 +109,11 @@ export default function ProCatalogScreen() {
   const [formDesc, setFormDesc] = useState("");
   const [formPrice, setFormPrice] = useState("");
   const [formPhoto, setFormPhoto] = useState<string | undefined>(undefined);
+  // Article fields
+  const [formUnit, setFormUnit] = useState("Unité");
+  const [formStockQty, setFormStockQty] = useState<string>("");  // "" = non géré
+  const [formShowStock, setFormShowStock] = useState(false);
+  // Prestation fields
   const [formDuration, setFormDuration] = useState(60);
   const [formBilling, setFormBilling] = useState<BillingType>("fixed");
   const [formAllowsBooking, setFormAllowsBooking] = useState(true);
@@ -91,6 +123,7 @@ export default function ProCatalogScreen() {
 
   const resetForm = () => {
     setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(undefined);
+    setFormUnit("Unité"); setFormStockQty(""); setFormShowStock(false);
     setFormDuration(60); setFormBilling("fixed"); setFormAllowsBooking(true);
     setEditingItem(null);
   };
@@ -107,6 +140,11 @@ export default function ProCatalogScreen() {
     setFormDesc(item.description);
     setFormPrice(String(item.price));
     setFormPhoto(item.photo);
+    // Article
+    setFormUnit(item.unit ?? "Unité");
+    setFormStockQty(item.stockQty != null ? String(item.stockQty) : "");
+    setFormShowStock(item.showStock ?? false);
+    // Prestation
     setFormDuration(item.duration ?? 60);
     setFormBilling(item.billingType ?? "fixed");
     setFormAllowsBooking(item.allowsBooking ?? true);
@@ -132,6 +170,7 @@ export default function ProCatalogScreen() {
   const handleSave = () => {
     if (!formTitle.trim() || !formPrice.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const parsedStock = formStockQty.trim() !== "" ? Number(formStockQty) : null;
     const base: CatalogItem = {
       id: editingItem?.id ?? "i" + Date.now().toString().slice(-6),
       kind: formKind,
@@ -141,6 +180,12 @@ export default function ProCatalogScreen() {
       currency: "FCFA",
       photo: formPhoto,
     };
+    if (formKind === "article") {
+      base.unit = formUnit;
+      base.stockQty = parsedStock;
+      // Auto-show if ≤ 5, otherwise honour owner's choice
+      base.showStock = parsedStock != null && parsedStock <= 5 ? true : formShowStock;
+    }
     if (formKind === "prestation") {
       base.duration = formDuration;
       base.billingType = formBilling;
@@ -232,8 +277,34 @@ export default function ProCatalogScreen() {
               <View style={styles.cardFooter}>
                 <Text style={[styles.cardPrice, { color: colors.primary }]}>
                   {formatPrice(item.price, item.currency)}
+                  {item.kind === "article" && item.unit && item.unit !== "Unité" ? ` / ${item.unit}` : ""}
                   {item.billingType === "hourly" ? "/h" : ""}
                 </Text>
+                {/* Article: unité */}
+                {item.kind === "article" && item.unit && item.unit !== "Unité" && (
+                  <View style={[styles.unitBadge, { backgroundColor: colors.muted }]}>
+                    <Text style={[styles.unitText, { color: colors.mutedForeground }]}>/{item.unit}</Text>
+                  </View>
+                )}
+                {/* Article: stock */}
+                {item.kind === "article" && isStockVisibleToClient(item) && item.stockQty != null && (
+                  <View style={[styles.stockBadge, {
+                    backgroundColor: item.stockQty <= 5 ? "#FEF3C7" : "#DCFCE7",
+                  }]}>
+                    <Feather name="layers" size={11} color={item.stockQty <= 5 ? "#D97706" : "#16A34A"} />
+                    <Text style={[styles.stockText, { color: item.stockQty <= 5 ? "#D97706" : "#16A34A" }]}>
+                      {item.stockQty <= 5 ? `${item.stockQty} restant${item.stockQty > 1 ? "s" : ""}` : `En stock (${item.stockQty})`}
+                    </Text>
+                  </View>
+                )}
+                {/* Article: stock masqué (pro seulement) */}
+                {item.kind === "article" && item.stockQty != null && !isStockVisibleToClient(item) && (
+                  <View style={[styles.stockBadge, { backgroundColor: colors.muted }]}>
+                    <Feather name="eye-off" size={11} color={colors.mutedForeground} />
+                    <Text style={[styles.stockText, { color: colors.mutedForeground }]}>{item.stockQty} (masqué)</Text>
+                  </View>
+                )}
+                {/* Prestation: durée */}
                 {item.kind === "prestation" && item.duration && (
                   <View style={[styles.durationBadge, { backgroundColor: colors.muted }]}>
                     <Feather name="clock" size={11} color={colors.mutedForeground} />
@@ -395,7 +466,9 @@ export default function ProCatalogScreen() {
             {/* Price */}
             <View style={styles.field}>
               <Text style={[styles.label, { color: colors.text }]}>
-                Prix (FCFA) *{formKind === "prestation" && formBilling === "hourly" ? " — à l'heure" : ""}
+                Prix (FCFA) *
+                {formKind === "article" && formUnit !== "Unité" ? ` — par ${formUnit}` : ""}
+                {formKind === "prestation" && formBilling === "hourly" ? " — à l'heure" : ""}
               </Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
@@ -406,6 +479,84 @@ export default function ProCatalogScreen() {
                 keyboardType="number-pad"
               />
             </View>
+
+            {/* ── Article-only fields ── */}
+            {formKind === "article" && (
+              <>
+                {/* Unit of sale */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Unité de vente</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
+                    {UNIT_OPTIONS.map((u) => (
+                      <TouchableOpacity
+                        key={u.label}
+                        style={[styles.unitChip, {
+                          backgroundColor: formUnit === u.label ? colors.primary : colors.card,
+                          borderColor: formUnit === u.label ? colors.primary : colors.border,
+                        }]}
+                        onPress={() => setFormUnit(u.label)}
+                      >
+                        <Text style={[styles.unitChipText, { color: formUnit === u.label ? "#fff" : colors.text }]}>
+                          {u.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+
+                {/* Stock quantity */}
+                <View style={styles.field}>
+                  <Text style={[styles.label, { color: colors.text }]}>Quantité en stock</Text>
+                  <View style={styles.stockInputRow}>
+                    <TextInput
+                      style={[styles.stockInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                      value={formStockQty}
+                      onChangeText={setFormStockQty}
+                      placeholder="Laisser vide si non géré"
+                      placeholderTextColor={colors.mutedForeground}
+                      keyboardType="number-pad"
+                    />
+                    {formStockQty !== "" && (
+                      <TouchableOpacity
+                        style={[styles.stockClearBtn, { backgroundColor: colors.muted }]}
+                        onPress={() => setFormStockQty("")}
+                      >
+                        <Feather name="x" size={14} color={colors.mutedForeground} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {formStockQty !== "" && Number(formStockQty) <= 5 && (
+                    <View style={[styles.stockAutoAlert, { backgroundColor: "#FEF3C7" }]}>
+                      <Feather name="alert-triangle" size={13} color="#D97706" />
+                      <Text style={[styles.stockAutoText, { color: "#D97706" }]}>
+                        Stock ≤ 5 : affiché automatiquement aux clients comme "dernières unités"
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Show stock toggle — only if stock > 5 */}
+                {formStockQty !== "" && Number(formStockQty) > 5 && (
+                  <View style={[styles.toggleRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[styles.toggleIcon, { backgroundColor: formShowStock ? "#DCFCE7" : colors.muted }]}>
+                      <Feather name={formShowStock ? "eye" : "eye-off"} size={16} color={formShowStock ? "#16A34A" : colors.mutedForeground} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.toggleTitle, { color: colors.text }]}>Afficher le stock aux clients</Text>
+                      <Text style={[styles.toggleSub, { color: colors.mutedForeground }]}>
+                        {formShowStock ? "Les clients voient la quantité disponible" : "Le stock reste masqué pour les clients"}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={formShowStock}
+                      onValueChange={setFormShowStock}
+                      trackColor={{ false: colors.border, true: "#86EFAC" }}
+                      thumbColor={formShowStock ? "#16A34A" : colors.mutedForeground}
+                    />
+                  </View>
+                )}
+              </>
+            )}
 
             {/* Prestation-only fields */}
             {formKind === "prestation" && (
@@ -606,4 +757,29 @@ const styles = StyleSheet.create({
   bookingIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   bookingTitle: { fontSize: 14, fontWeight: "700" },
   bookingSubtitle: { fontSize: 12, marginTop: 2 },
+
+  // Unit of sale
+  unitBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  unitText: { fontSize: 11, fontWeight: "600" },
+  chipsRow: { gap: 8, paddingVertical: 2 },
+  unitChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100, borderWidth: 1.5 },
+  unitChipText: { fontSize: 13, fontWeight: "600" },
+
+  // Stock
+  stockBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  stockText: { fontSize: 11, fontWeight: "600" },
+  stockInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  stockInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, borderWidth: 1, fontSize: 15 },
+  stockClearBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  stockAutoAlert: { flexDirection: "row", alignItems: "flex-start", gap: 8, padding: 10, borderRadius: 10, marginTop: 2 },
+  stockAutoText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: "500" },
+
+  // Show-stock toggle row
+  toggleRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    padding: 14, borderRadius: 14, borderWidth: 1,
+  },
+  toggleIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  toggleTitle: { fontSize: 14, fontWeight: "700" },
+  toggleSub: { fontSize: 12, marginTop: 2 },
 });
