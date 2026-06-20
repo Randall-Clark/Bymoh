@@ -5,6 +5,7 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,6 +18,15 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGetBusinessCatalog,
+  useCreateCatalogItem,
+  useUpdateCatalogItem,
+  useDeleteCatalogItem,
+  getGetBusinessCatalogQueryKey,
+} from "@workspace/api-client-react";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -75,15 +85,6 @@ const UNIT_OPTIONS = [
   { label: "Boîte", short: "boîte" },
 ];
 
-const INITIAL_ITEMS: CatalogItem[] = [
-  { id: "1", kind: "article", category: "Plats", title: "Riz au poulet braisé", description: "Servi avec salade et alloco.", price: 2500, currency: "FCFA", unit: "Unité", stockQty: null },
-  { id: "2", kind: "article", category: "Plats", title: "Attiéké poisson braisé", description: "Attiéké frais avec poisson grillé.", price: 2000, currency: "FCFA", unit: "Unité", stockQty: null },
-  { id: "3", kind: "article", category: "Plats", title: "Fufu + sauce gombo", description: "Fufu de manioc, sauce gombo avec viande.", price: 1500, currency: "FCFA", unit: "Unité", stockQty: 8, showStock: true },
-  { id: "4", kind: "article", category: "Boissons", title: "Jus de bissap", description: "Jus naturel fait maison.", price: 300, currency: "FCFA", unit: "Unité", stockQty: 4, showStock: true },
-  { id: "5", kind: "article", category: "Boissons", title: "Coca-Cola", description: "Bouteille 33 cl.", price: 500, currency: "FCFA", unit: "Unité", stockQty: 24, showStock: false },
-  { id: "6", kind: "article", category: "Snacks", title: "Beignets haricots (3 pièces)", description: "Beignets croustillants à l'arachide.", price: 200, currency: "FCFA", unit: "Lot / Pack", stockQty: null },
-  { id: "7", kind: "prestation", title: "Livraison express", description: "Livraison dans Lomé sous 45 min.", price: 1000, currency: "FCFA", duration: 45, billingType: "fixed", allowsBooking: false },
-];
 
 /** Stock visible par le client : toujours vrai si ≤ 5, sinon selon la préférence du proprio */
 function isStockVisibleToClient(item: CatalogItem): boolean {
@@ -108,7 +109,10 @@ function formatDuration(mins: number): string {
 export default function ProCatalogScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [items, setItems] = useState<CatalogItem[]>(INITIAL_ITEMS);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const businessId = user?.businessIds?.[0] ?? "";
+
   const [modalVisible, setModalVisible] = useState(false);
   const [kindSelectorVisible, setKindSelectorVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
@@ -122,7 +126,7 @@ export default function ProCatalogScreen() {
   // Article fields
   const [formCategory, setFormCategory] = useState("");
   const [formUnit, setFormUnit] = useState("Unité");
-  const [formStockQty, setFormStockQty] = useState<string>("");  // "" = non géré
+  const [formStockQty, setFormStockQty] = useState<string>("");
   const [formShowStock, setFormShowStock] = useState(false);
   // Prestation fields
   const [formDuration, setFormDuration] = useState(60);
@@ -132,6 +136,44 @@ export default function ProCatalogScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  // ── API ──────────────────────────────────────────────────────────────────────
+  const { data: apiItems = [], isLoading } = useGetBusinessCatalog(businessId, {
+    query: { queryKey: getGetBusinessCatalogQueryKey(businessId), enabled: !!businessId },
+  });
+
+  const items: CatalogItem[] = apiItems.map((i) => ({
+    id: i.id,
+    kind: i.kind as ItemKind,
+    title: i.title,
+    description: i.description,
+    price: i.price,
+    currency: i.currency,
+    photo: i.photo ?? undefined,
+    category: i.category ?? undefined,
+    unit: i.unit ?? undefined,
+    stockQty: i.stockQty ?? null,
+    showStock: i.showStock,
+    duration: i.duration ?? undefined,
+    billingType: (i.billingType as BillingType) ?? "fixed",
+    allowsBooking: i.allowsBooking,
+  }));
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: getGetBusinessCatalogQueryKey(businessId) });
+
+  const createMutation = useCreateCatalogItem({
+    mutation: { onSuccess: () => { invalidate(); setModalVisible(false); resetForm(); } },
+  });
+  const updateMutation = useUpdateCatalogItem({
+    mutation: { onSuccess: () => { invalidate(); setModalVisible(false); resetForm(); } },
+  });
+  const deleteMutation = useDeleteCatalogItem({
+    mutation: { onSuccess: invalidate },
+  });
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  // ── Form helpers ─────────────────────────────────────────────────────────────
   const resetForm = () => {
     setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(undefined);
     setFormCategory(""); setFormUnit("Unité"); setFormStockQty(""); setFormShowStock(false);
@@ -151,12 +193,10 @@ export default function ProCatalogScreen() {
     setFormDesc(item.description);
     setFormPrice(String(item.price));
     setFormPhoto(item.photo);
-    // Article
     setFormCategory(item.category ?? "");
     setFormUnit(item.unit ?? "Unité");
     setFormStockQty(item.stockQty != null ? String(item.stockQty) : "");
     setFormShowStock(item.showStock ?? false);
-    // Prestation
     setFormDuration(item.duration ?? 60);
     setFormBilling(item.billingType ?? "fixed");
     setFormAllowsBooking(item.allowsBooking ?? true);
@@ -180,51 +220,75 @@ export default function ProCatalogScreen() {
   };
 
   const handleSave = () => {
-    if (!formTitle.trim() || !formPrice.trim()) return;
+    if (!formTitle.trim() || !formPrice.trim() || !businessId || isSaving) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const parsedStock = formStockQty.trim() !== "" ? Number(formStockQty) : null;
-    const base: CatalogItem = {
-      id: editingItem?.id ?? "i" + Date.now().toString().slice(-6),
-      kind: formKind,
-      title: formTitle.trim(),
-      description: formDesc.trim(),
-      price: Number(formPrice),
-      currency: "FCFA",
-      photo: formPhoto,
-    };
-    if (formKind === "article") {
-      base.category = formCategory.trim() || undefined;
-      base.unit = formUnit;
-      base.stockQty = parsedStock;
-      // Auto-show if ≤ 5, otherwise honour owner's choice
-      base.showStock = parsedStock != null && parsedStock <= 5 ? true : formShowStock;
-    }
-    if (formKind === "prestation") {
-      base.duration = formDuration;
-      base.billingType = formBilling;
-      base.allowsBooking = formAllowsBooking;
-    }
+    const showStock = parsedStock != null && parsedStock <= 5 ? true : formShowStock;
+    const payload =
+      formKind === "article"
+        ? {
+            kind: "article" as const,
+            title: formTitle.trim(),
+            description: formDesc.trim(),
+            price: Number(formPrice),
+            currency: "FCFA",
+            photo: formPhoto,
+            category: formCategory.trim() || undefined,
+            unit: formUnit,
+            stockQty: parsedStock,
+            showStock,
+          }
+        : {
+            kind: "prestation" as const,
+            title: formTitle.trim(),
+            description: formDesc.trim(),
+            price: Number(formPrice),
+            currency: "FCFA",
+            photo: formPhoto,
+            duration: formDuration,
+            billingType: formBilling,
+            allowsBooking: formAllowsBooking,
+          };
     if (editingItem) {
-      setItems((prev) => prev.map((i) => i.id === editingItem.id ? base : i));
+      updateMutation.mutate({ bizId: businessId, itemId: editingItem.id, data: payload });
     } else {
-      setItems((prev) => [...prev, base]);
+      createMutation.mutate({ businessId, data: payload });
     }
-    setModalVisible(false);
-    resetForm();
   };
 
   const handleDelete = (id: string) => {
+    if (!businessId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    deleteMutation.mutate({ bizId: businessId, itemId: id });
   };
 
   const articleCount = items.filter((i) => i.kind === "article").length;
   const prestationCount = items.filter((i) => i.kind === "prestation").length;
 
-  // Unique existing categories (for filter bar + quick-select chips in form)
+  // Unique existing categories (for quick-select chips in form)
   const existingCategories = Array.from(
     new Set(items.filter((i) => i.kind === "article" && i.category).map((i) => i.category as string))
   ).sort();
+
+  if (!businessId) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
+        <Feather name="briefcase" size={40} color={colors.mutedForeground} />
+        <Text style={[styles.emptyTitle, { color: colors.text, marginTop: 12 }]}>Aucun business enregistré</Text>
+        <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>
+          Créez votre espace professionnel pour gérer votre catalogue.
+        </Text>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={[styles.root, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   // Build sections: articles grouped by category, then prestations
   const sections: CatalogSection[] = (() => {
@@ -454,13 +518,17 @@ export default function ProCatalogScreen() {
               </Text>
             </View>
             <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: formTitle && formPrice ? colors.primary : colors.muted }]}
+              style={[styles.saveBtn, { backgroundColor: formTitle && formPrice && !isSaving ? colors.primary : colors.muted }]}
               onPress={handleSave}
-              disabled={!formTitle || !formPrice}
+              disabled={!formTitle || !formPrice || isSaving}
             >
-              <Text style={[styles.saveBtnText, { color: formTitle && formPrice ? "#fff" : colors.mutedForeground }]}>
-                Enregistrer
-              </Text>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={[styles.saveBtnText, { color: formTitle && formPrice ? "#fff" : colors.mutedForeground }]}>
+                  Enregistrer
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
 

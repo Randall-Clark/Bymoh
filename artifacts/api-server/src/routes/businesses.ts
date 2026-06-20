@@ -111,4 +111,107 @@ router.patch("/businesses/:bizId/services/:serviceId", requireAuth, async (req: 
   res.json(updated);
 });
 
+// ─── Catalogue (pro) ────────────────────────────────────────────────────────
+
+function toApiItem(row: typeof servicesTable.$inferSelect) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    description: row.description,
+    price: row.price,
+    currency: row.currency,
+    photo: row.imageUrl ?? undefined,
+    category: row.category ?? undefined,
+    unit: row.unit ?? undefined,
+    stockQty: row.stockQty ?? null,
+    showStock: row.showStock,
+    duration: row.durationMinutes ?? undefined,
+    billingType: row.billingType,
+    allowsBooking: row.allowsBooking,
+    isAvailable: row.isAvailable,
+    createdAt: row.createdAt,
+  };
+}
+
+router.get("/businesses/:id/catalog", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const rows = await db.select().from(servicesTable)
+    .where(eq(servicesTable.businessId, id))
+    .orderBy(servicesTable.createdAt);
+  res.json(rows.map(toApiItem));
+});
+
+router.post("/businesses/:id/catalog", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const body = req.body as Record<string, unknown>;
+  if (!body.title || body.price === undefined) {
+    res.status(400).json({ error: "title et price requis" }); return;
+  }
+  const kind = (body.kind as "article" | "prestation") ?? "prestation";
+  const [row] = await db.insert(servicesTable).values({
+    businessId: id,
+    kind,
+    title: body.title as string,
+    description: (body.description as string) ?? "",
+    price: body.price as number,
+    currency: (body.currency as string) ?? "FCFA",
+    imageUrl: (body.photo as string) ?? null,
+    durationMinutes: kind === "prestation" ? ((body.duration as number) ?? null) : null,
+    billingType: kind === "prestation" ? ((body.billingType as "fixed" | "hourly") ?? "fixed") : "fixed",
+    allowsBooking: kind === "prestation" ? ((body.allowsBooking as boolean) ?? true) : false,
+    category: kind === "article" ? ((body.category as string) ?? null) : null,
+    unit: kind === "article" ? ((body.unit as string) ?? null) : null,
+    stockQty: kind === "article" ? ((body.stockQty as number | null) ?? null) : null,
+    showStock: kind === "article" ? ((body.showStock as boolean) ?? false) : false,
+  }).returning();
+  res.status(201).json(toApiItem(row));
+});
+
+router.patch("/businesses/:bizId/catalog/:itemId", requireAuth, async (req: AuthRequest, res) => {
+  const bizId = req.params.bizId as string;
+  const itemId = req.params.itemId as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, bizId)).limit(1);
+  if (!biz || biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const body = req.body as Record<string, unknown>;
+  const updateData: Partial<typeof servicesTable.$inferInsert> = {};
+  if (body.title !== undefined) updateData.title = body.title as string;
+  if (body.description !== undefined) updateData.description = body.description as string;
+  if (body.price !== undefined) updateData.price = body.price as number;
+  if (body.currency !== undefined) updateData.currency = body.currency as string;
+  if (body.photo !== undefined) updateData.imageUrl = (body.photo as string) ?? null;
+  if (body.category !== undefined) updateData.category = (body.category as string) ?? null;
+  if (body.unit !== undefined) updateData.unit = (body.unit as string) ?? null;
+  if (body.stockQty !== undefined) updateData.stockQty = (body.stockQty as number | null) ?? null;
+  if (body.showStock !== undefined) updateData.showStock = body.showStock as boolean;
+  if (body.duration !== undefined) updateData.durationMinutes = (body.duration as number) ?? null;
+  if (body.billingType !== undefined) updateData.billingType = body.billingType as "fixed" | "hourly";
+  if (body.allowsBooking !== undefined) updateData.allowsBooking = body.allowsBooking as boolean;
+  if (body.isAvailable !== undefined) updateData.isAvailable = body.isAvailable as boolean;
+  const [updated] = await db.update(servicesTable).set(updateData)
+    .where(and(eq(servicesTable.id, itemId), eq(servicesTable.businessId, bizId))).returning();
+  if (!updated) { res.status(404).json({ error: "Élément introuvable" }); return; }
+  res.json(toApiItem(updated));
+});
+
+router.delete("/businesses/:bizId/catalog/:itemId", requireAuth, async (req: AuthRequest, res) => {
+  const bizId = req.params.bizId as string;
+  const itemId = req.params.itemId as string;
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, bizId)).limit(1);
+  if (!biz || biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  await db.delete(servicesTable)
+    .where(and(eq(servicesTable.id, itemId), eq(servicesTable.businessId, bizId)));
+  res.status(204).send();
+});
+
 export default router;

@@ -5,6 +5,8 @@ import { usersTable } from "./users";
 
 export const bookingModeEnum = pgEnum("booking_mode", ["table", "service", "none"]);
 export const dayOfWeekEnum = pgEnum("day_of_week", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+export const itemKindEnum = pgEnum("item_kind", ["article", "prestation"]);
+export const billingTypeEnum = pgEnum("billing_type", ["fixed", "hourly"]);
 
 export const businessesTable = pgTable("businesses", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -48,12 +50,21 @@ export const businessHoursTable = pgTable("business_hours", {
 export const servicesTable = pgTable("services", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   businessId: text("business_id").notNull().references(() => businessesTable.id, { onDelete: "cascade" }),
+  kind: itemKindEnum("kind").notNull().default("prestation"),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   price: real("price").notNull(),
   currency: text("currency").notNull().default("FCFA"),
   imageUrl: text("image_url"),
+  // Prestation fields
   durationMinutes: integer("duration_minutes"),
+  billingType: billingTypeEnum("billing_type").notNull().default("fixed"),
+  allowsBooking: boolean("allows_booking").notNull().default(true),
+  // Article fields
+  category: text("category"),
+  unit: text("unit"),
+  stockQty: integer("stock_qty"),
+  showStock: boolean("show_stock").notNull().default(false),
   isAvailable: boolean("is_available").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

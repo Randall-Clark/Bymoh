@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: catalog
+    description: Pro catalog management
 paths:
   /healthz:
     get:
@@ -24,7 +26,124 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /businesses/{businessId}/catalog:
+    get:
+      operationId: getBusinessCatalog
+      tags: [catalog]
+      summary: List all catalog items for a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of catalog items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CatalogItem"
+        "403":
+          description: Forbidden
+    post:
+      operationId: createCatalogItem
+      tags: [catalog]
+      summary: Create a catalog item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogItemInput"
+      responses:
+        "201":
+          description: Created item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogItem"
+        "400":
+          description: Validation error
+        "403":
+          description: Forbidden
+
+  /businesses/{bizId}/catalog/{itemId}:
+    patch:
+      operationId: updateCatalogItem
+      tags: [catalog]
+      summary: Update a catalog item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bizId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogItemUpdate"
+      responses:
+        "200":
+          description: Updated item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogItem"
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteCatalogItem
+      tags: [catalog]
+      summary: Delete a catalog item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: bizId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Forbidden
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +153,108 @@ components:
       required:
         - status
 
+    CatalogItem:
+      type: object
+      required: [id, kind, title, description, price, currency, billingType, allowsBooking, showStock, isAvailable, createdAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [article, prestation]
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+        photo:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        unit:
+          type: ["string", "null"]
+        stockQty:
+          type: ["integer", "null"]
+        showStock:
+          type: boolean
+        duration:
+          type: ["integer", "null"]
+        billingType:
+          type: string
+          enum: [fixed, hourly]
+        allowsBooking:
+          type: boolean
+        isAvailable:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CatalogItemInput:
+      type: object
+      required: [kind, title, price]
+      properties:
+        kind:
+          type: string
+          enum: [article, prestation]
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+        photo:
+          type: string
+        category:
+          type: string
+        unit:
+          type: string
+        stockQty:
+          type: ["integer", "null"]
+        showStock:
+          type: boolean
+        duration:
+          type: integer
+        billingType:
+          type: string
+          enum: [fixed, hourly]
+        allowsBooking:
+          type: boolean
+
+    CatalogItemUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        price:
+          type: number
+        currency:
+          type: string
+        photo:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+        unit:
+          type: ["string", "null"]
+        stockQty:
+          type: ["integer", "null"]
+        showStock:
+          type: boolean
+        duration:
+          type: ["integer", "null"]
+        billingType:
+          type: string
+          enum: [fixed, hourly]
+        allowsBooking:
+          type: boolean
+        isAvailable:
+          type: boolean
