@@ -810,14 +810,14 @@ const styles = StyleSheet.create({
   statPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
   statText: { fontSize: 11, fontWeight: "700" },
 
-  list: { paddingHorizontal: 20, paddingTop: 4 },
+  list: { paddingHorizontal: 20, paddingTop: 0 },
 
   filterBar: { borderBottomWidth: StyleSheet.hairlineWidth },
   filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingVertical: 5, alignItems: "center" },
   filterChip: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100, borderWidth: 1 },
   filterChipText: { fontSize: 12 },
 
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 8, paddingBottom: 8 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 4, paddingBottom: 6 },
   sectionHeaderLine: { width: 4, height: 20, borderRadius: 2 },
   sectionHeaderBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
   sectionHeaderText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.2 },
