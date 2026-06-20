@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
+import { getMediaUrl } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
 
 const { width: W } = Dimensions.get("window");
@@ -153,7 +155,15 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
         {/* Header area */}
         <View style={[styles.drawerHeader, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
           <View style={[styles.avatar, { backgroundColor: "#E84B1A" }]}>
-            <Text style={styles.avatarText}>{initials}</Text>
+            {user?.avatar ? (
+              <Image
+                source={{ uri: getMediaUrl(user.avatar) }}
+                style={styles.avatarImg}
+                contentFit="cover"
+              />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
@@ -247,7 +257,9 @@ const styles = StyleSheet.create({
     borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
+  avatarImg: { width: 46, height: 46, borderRadius: 23 },
   avatarText: { fontSize: 18, fontWeight: "800", color: "#fff" },
   userName: { fontSize: 15, fontWeight: "700" },
   proBadge: {

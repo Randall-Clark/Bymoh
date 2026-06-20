@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useRef, useEffect, useState } from "react";
 import {
@@ -18,6 +19,7 @@ import BusinessCard from "@/components/BusinessCard";
 import CategoryPill from "@/components/CategoryPill";
 import { CATEGORIES, MOCK_BUSINESSES } from "@/constants/mockData";
 import { useAuth } from "@/context/AuthContext";
+import { getMediaUrl } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Doodle grid constants ──────────────────────────────────────────────────────
@@ -352,7 +354,15 @@ export default function HomeScreen() {
           <View style={[styles.citySheetHandle, { backgroundColor: colors.border }]} />
           <View style={styles.menuSheetHeader}>
             <View style={[styles.menuAvatar, { backgroundColor: colors.accent }]}>
-              <Feather name="user" size={20} color={colors.primary} />
+              {user?.avatar ? (
+                <Image
+                  source={{ uri: getMediaUrl(user.avatar) }}
+                  style={styles.menuAvatarImg}
+                  contentFit="cover"
+                />
+              ) : (
+                <Feather name="user" size={20} color={colors.primary} />
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuSheetName, { color: colors.text }]}>{user?.name ?? "Invité"}</Text>
@@ -363,12 +373,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           {[
-            { icon: "user", label: "Mon profil", route: "/(tabs)/profile" },
-            { icon: "shopping-bag", label: "Mes commandes", route: "/orders" },
-            { icon: "heart", label: "Mes favoris", route: "/(tabs)/favorites" },
-            { icon: "bell", label: "Notifications", route: "/notifications" },
-            { icon: "briefcase", label: "Espace professionnel", route: "/pro/dashboard" },
-            { icon: "settings", label: "Paramètres", route: "/(tabs)/profile" },
+            { icon: "settings", label: "Paramètres généraux", route: "/(tabs)/profile" },
+            { icon: "briefcase", label: "Espace entreprise", route: "/pro/dashboard" },
+            { icon: "credit-card", label: "Portefeuille", route: "/pro/wallet" },
           ].map((item) => (
             <TouchableOpacity
               key={item.label}
@@ -500,6 +507,7 @@ const styles = StyleSheet.create({
   },
   menuItemIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   menuItemLabel: { flex: 1, fontSize: 15, fontWeight: "600" },
+  menuAvatarImg: { width: 46, height: 46, borderRadius: 23 },
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10, padding: 13, borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", zIndex: 2,
