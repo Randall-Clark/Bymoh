@@ -203,25 +203,6 @@ export default function ProDashboardScreen() {
           </View>
         </View>
 
-        {/* Visibility bar */}
-        <View style={[styles.visibilityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.visibilityHeader}>
-            <View style={[styles.visibilityIcon, { backgroundColor: colors.accent }]}>
-              <Feather name="zap" size={16} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.visibilityTitle, { color: colors.text }]}>Visibilité du profil</Text>
-              <Text style={[styles.visibilityLabel, { color: colors.mutedForeground }]}>
-                Complétez votre profil pour apparaître en premier
-              </Text>
-            </View>
-          </View>
-          <View style={[styles.progressBar, { backgroundColor: colors.muted }]}>
-            <View style={[styles.progressFill, { backgroundColor: colors.primary, width: "72%" }]} />
-          </View>
-          <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>72% complété</Text>
-        </View>
-
         {/* Recent bookings */}
         <View>
           <View style={styles.sectionHeader}>
@@ -351,15 +332,6 @@ const styles = StyleSheet.create({
   qActionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 },
   qAction: { width: "47%", alignItems: "center", gap: 8, paddingVertical: 18, borderRadius: 16, borderWidth: 1 },
   qLabel: { fontSize: 13, fontWeight: "600" },
-
-  visibilityCard: { borderRadius: 16, padding: 16, borderWidth: 1, gap: 12 },
-  visibilityHeader: { flexDirection: "row", gap: 12, alignItems: "center" },
-  visibilityIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  visibilityTitle: { fontSize: 15, fontWeight: "700" },
-  visibilityLabel: { fontSize: 12, marginTop: 2 },
-  progressBar: { height: 8, borderRadius: 4, overflow: "hidden" },
-  progressFill: { height: "100%", borderRadius: 4 },
-  progressLabel: { fontSize: 12 },
 
   bookingItem: {
     flexDirection: "row", alignItems: "center", gap: 12,
