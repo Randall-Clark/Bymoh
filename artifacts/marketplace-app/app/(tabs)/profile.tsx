@@ -228,6 +228,7 @@ export default function ProfileScreen() {
         {/* Client section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>MON ESPACE CLIENT</Text>
+          <MenuItem icon="credit-card" label="Mon portefeuille" onPress={() => router.push("/pro/wallet" as any)} />
           <MenuItem icon="clock" label="Historique des réservations" onPress={() => router.push("/orders")} />
           <MenuItem icon="heart" label="Mes favoris" onPress={() => router.push("/(tabs)/favorites")} />
           <MenuItem icon="bell" label="Notifications" onPress={() => router.push("/notifications")} />
