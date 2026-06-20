@@ -387,7 +387,7 @@ export default function ProCatalogScreen() {
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           {/* Modal header */}
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+          <View style={[styles.modalHeader, { paddingTop: topPad + 12, borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
               <Feather name="x" size={22} color={colors.text} />
             </TouchableOpacity>
@@ -413,7 +413,7 @@ export default function ProCatalogScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Photo */}
             <TouchableOpacity
               style={[styles.photoPicker, { backgroundColor: colors.muted, borderColor: colors.border }]}
