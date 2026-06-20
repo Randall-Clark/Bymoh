@@ -799,20 +799,20 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1,
+    paddingHorizontal: 20, paddingBottom: 8, borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 17, fontWeight: "700" },
-  addBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  headerTitle: { fontSize: 16, fontWeight: "700" },
+  addBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
 
-  statRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, paddingVertical: 12 },
-  statPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100 },
-  statText: { fontSize: 12, fontWeight: "700" },
+  statRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingVertical: 6 },
+  statPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100 },
+  statText: { fontSize: 11, fontWeight: "700" },
 
   list: { paddingHorizontal: 20, paddingTop: 4 },
 
   filterBar: { borderBottomWidth: StyleSheet.hairlineWidth },
-  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, paddingVertical: 8, alignItems: "center" },
-  filterChip: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  filterRow: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingVertical: 5, alignItems: "center" },
+  filterChip: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 100, borderWidth: 1 },
   filterChipText: { fontSize: 12 },
 
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingTop: 8, paddingBottom: 8 },
