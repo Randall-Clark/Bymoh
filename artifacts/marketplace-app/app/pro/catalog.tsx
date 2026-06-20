@@ -342,6 +342,8 @@ export default function ProCatalogScreen() {
         contentContainerStyle={[styles.list, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled={false}
+        automaticallyAdjustContentInsets={false}
+        contentInset={{ top: 0, bottom: 0 }}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Feather name="layers" size={40} color={colors.mutedForeground} />
