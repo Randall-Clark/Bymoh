@@ -14,6 +14,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetMyBusinessQueryKey,
+  useGetMyBusiness,
+  useSetBusinessActive,
+} from "@workspace/api-client-react";
 import { useAuth } from "@/context/AuthContext";
 import { getMediaUrl } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
@@ -39,8 +45,42 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const qc = useQueryClient();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const businessId = user?.businessIds?.[0] ?? "";
+  const { data: myBusiness } = useGetMyBusiness({
+    query: { queryKey: getGetMyBusinessQueryKey(), enabled: !!businessId },
+  });
+
+  const { mutate: setActive, isPending: isTogglingActive } = useSetBusinessActive({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getGetMyBusinessQueryKey() });
+      },
+      onError: () => Alert.alert("Erreur", "Impossible de modifier le statut. Réessayez."),
+    },
+  });
+
+  const handleToggleActive = () => {
+    if (!businessId) return;
+    const closing = myBusiness?.isActive !== false;
+    Alert.alert(
+      closing ? "Fermer le business ?" : "Réactiver le business ?",
+      closing
+        ? "Votre business ne sera plus visible par les clients. Vous pouvez le réactiver à tout moment."
+        : "Votre business redeviendra visible sur Kola.",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: closing ? "Fermer" : "Réactiver",
+          style: closing ? "destructive" : "default",
+          onPress: () => setActive({ businessId, data: { isActive: !closing } }),
+        },
+      ]
+    );
+  };
 
   const slideX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -213,8 +253,40 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
           ))}
         </View>
 
-        {/* Bottom: sign out */}
+        {/* Bottom: business toggle + sign out */}
         <View style={[styles.drawerFooter, { paddingBottom: botPad + 16, borderTopColor: colors.border }]}>
+          {!!businessId && (
+            <TouchableOpacity
+              style={[
+                styles.bizToggleBtn,
+                {
+                  backgroundColor: myBusiness?.isActive === false ? "#F0FDF4" : "#FFF7ED",
+                  borderColor: myBusiness?.isActive === false ? "#86EFAC" : "#FED7AA",
+                },
+              ]}
+              onPress={handleToggleActive}
+              disabled={isTogglingActive}
+              activeOpacity={0.75}
+            >
+              <Feather
+                name={myBusiness?.isActive === false ? "play-circle" : "pause-circle"}
+                size={16}
+                color={myBusiness?.isActive === false ? "#16A34A" : "#EA580C"}
+              />
+              <Text
+                style={[
+                  styles.bizToggleText,
+                  { color: myBusiness?.isActive === false ? "#16A34A" : "#EA580C" },
+                ]}
+              >
+                {isTogglingActive
+                  ? "En cours…"
+                  : myBusiness?.isActive === false
+                  ? "Réactiver le business"
+                  : "Mettre en pause le business"}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.75}>
             <Feather name="log-out" size={16} color="#EF4444" />
             <Text style={styles.signOutText}>Se déconnecter</Text>
@@ -313,6 +385,17 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
   },
+  bizToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  bizToggleText: { fontSize: 14, fontWeight: "600", flex: 1 },
   signOutBtn: {
     flexDirection: "row",
     alignItems: "center",

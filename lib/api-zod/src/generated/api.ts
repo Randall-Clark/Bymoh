@@ -18,6 +18,64 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Get the authenticated pro's own business (including when inactive)
+ */
+export const GetMyBusinessResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "categoryIcon": zod.string().optional(),
+  "description": zod.string().optional(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "coverUrl": zod.string().nullish(),
+  "rating": zod.number().optional(),
+  "reviewCount": zod.number().optional(),
+  "hasDelivery": zod.boolean().optional(),
+  "isOpen": zod.boolean(),
+  "isActive": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "bookingMode": zod.enum(['table', 'service', 'none']).optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Close or reopen a business (pro only)
+ */
+export const SetBusinessActiveParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const SetBusinessActiveBody = zod.object({
+  "isActive": zod.boolean()
+})
+
+export const SetBusinessActiveResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "categoryIcon": zod.string().optional(),
+  "description": zod.string().optional(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "coverUrl": zod.string().nullish(),
+  "rating": zod.number().optional(),
+  "reviewCount": zod.number().optional(),
+  "hasDelivery": zod.boolean().optional(),
+  "isOpen": zod.boolean(),
+  "isActive": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "bookingMode": zod.enum(['table', 'service', 'none']).optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List all catalog items for a business (pro only)
  */
 export const GetBusinessCatalogParams = zod.object({

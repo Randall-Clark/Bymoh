@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './activeUpdate';
 export * from './businessHourEntry';
 export * from './businessHourEntryDayOfWeek';
 export * from './businessHourInput';
@@ -20,6 +21,8 @@ export * from './catalogItemKind';
 export * from './catalogItemUpdate';
 export * from './catalogItemUpdateBillingType';
 export * from './healthStatus';
+export * from './myBusiness';
+export * from './myBusinessBookingMode';
 export * from './proBooking';
 export * from './proBookingBookingType';
 export * from './proBookingStatus';

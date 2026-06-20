@@ -24,6 +24,33 @@ router.get("/businesses", async (req, res) => {
   res.json(businesses);
 });
 
+router.get("/businesses/mine", requireAuth, async (req: AuthRequest, res) => {
+  const [biz] = await db.select().from(businessesTable)
+    .where(eq(businessesTable.ownerId, req.userId!)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Aucun business trouvé pour ce compte" }); return; }
+  const [hours, services] = await Promise.all([
+    db.select().from(businessHoursTable).where(eq(businessHoursTable.businessId, biz.id)),
+    db.select().from(servicesTable).where(eq(servicesTable.businessId, biz.id)),
+  ]);
+  res.json({ ...biz, hours, services });
+});
+
+router.patch("/businesses/:id/active", requireAuth, async (req: AuthRequest, res) => {
+  const id = req.params.id as string;
+  const { isActive } = req.body as { isActive?: boolean };
+  if (typeof isActive !== "boolean") {
+    res.status(400).json({ error: "isActive (boolean) requis" }); return;
+  }
+  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
+    .where(eq(businessesTable.id, id)).limit(1);
+  if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
+  if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+  const [updated] = await db.update(businessesTable)
+    .set({ isActive, updatedAt: new Date() })
+    .where(eq(businessesTable.id, id)).returning();
+  res.json(updated);
+});
+
 router.get("/businesses/:id", async (req, res) => {
   const id = req.params.id as string;
   const [business] = await db.select().from(businessesTable)

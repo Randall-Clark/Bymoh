@@ -253,3 +253,39 @@ export interface StatusUpdate {
   status: string;
 }
 
+export interface ActiveUpdate {
+  isActive: boolean;
+}
+
+export type MyBusinessBookingMode = typeof MyBusinessBookingMode[keyof typeof MyBusinessBookingMode];
+
+
+export const MyBusinessBookingMode = {
+  table: 'table',
+  service: 'service',
+  none: 'none',
+} as const;
+
+export interface MyBusiness {
+  id: string;
+  name: string;
+  category: string;
+  categoryIcon?: string;
+  description?: string;
+  phone: string;
+  /** @nullable */
+  email?: string | null;
+  address: string;
+  city: string;
+  /** @nullable */
+  coverUrl?: string | null;
+  rating?: number;
+  reviewCount?: number;
+  hasDelivery?: boolean;
+  isOpen: boolean;
+  isActive: boolean;
+  isVerified: boolean;
+  bookingMode?: MyBusinessBookingMode;
+  createdAt: string;
+}
+

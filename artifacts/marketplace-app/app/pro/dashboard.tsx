@@ -17,8 +17,10 @@ import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ProDrawerMenu from "@/components/ProDrawerMenu";
 import {
   getGetBusinessStatsQueryKey,
+  getGetMyBusinessQueryKey,
   getGetProBookingsQueryKey,
   useGetBusinessStats,
+  useGetMyBusiness,
   useGetProBookings,
 } from "@workspace/api-client-react";
 import { formatPrice } from "@/constants/mockData";
@@ -76,6 +78,10 @@ export default function ProDashboardScreen() {
   }, [shift]);
 
   // ── API ──────────────────────────────────────────────────────────────────────
+  const { data: myBusiness } = useGetMyBusiness({
+    query: { queryKey: getGetMyBusinessQueryKey(), enabled: !!businessId },
+  });
+
   const { data: stats } = useGetBusinessStats(businessId, {
     query: { queryKey: getGetBusinessStatsQueryKey(businessId), enabled: !!businessId },
   });
@@ -183,6 +189,19 @@ export default function ProDashboardScreen() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Business closed banner */}
+        {myBusiness?.isActive === false && (
+          <View style={[styles.pausedBanner, { backgroundColor: "#FFF7ED", borderColor: "#FED7AA" }]}>
+            <Feather name="pause-circle" size={18} color="#EA580C" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pausedTitle}>Business en pause</Text>
+              <Text style={styles.pausedSub}>
+                Votre commerce n'est plus visible sur Kola. Appuyez sur le menu ☰ pour le réactiver.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Stats */}
         <View style={styles.statsGrid}>
           <StatCard
@@ -436,4 +455,16 @@ const styles = StyleSheet.create({
   bookingService: { fontSize: 14, fontWeight: "700", marginBottom: 2 },
   bookingTime: { fontSize: 12 },
   emptyHint: { fontSize: 14, textAlign: "center", paddingVertical: 16 },
+
+  // ── Paused banner ──
+  pausedBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  pausedTitle: { fontSize: 14, fontWeight: "700", color: "#EA580C", marginBottom: 2 },
+  pausedSub: { fontSize: 12, lineHeight: 17, color: "#9A3412" },
 });

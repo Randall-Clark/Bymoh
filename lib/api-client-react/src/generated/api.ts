@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ActiveUpdate,
   BusinessHourEntry,
   BusinessHourInput,
   BusinessStats,
@@ -27,6 +28,7 @@ import type {
   CatalogItemInput,
   CatalogItemUpdate,
   HealthStatus,
+  MyBusiness,
   ProBooking,
   ProOrder,
   StatusUpdate
@@ -121,6 +123,155 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
+
+export const getGetMyBusinessUrl = () => {
+
+
+
+
+  return `/api/businesses/mine`
+}
+
+/**
+ * @summary Get the authenticated pro's own business (including when inactive)
+ */
+export const getMyBusiness = async ( options?: RequestInit): Promise<MyBusiness> => {
+
+  return customFetch<MyBusiness>(getGetMyBusinessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyBusinessQueryKey = () => {
+    return [
+    `/api/businesses/mine`
+    ] as const;
+    }
+
+
+export const getGetMyBusinessQueryOptions = <TData = Awaited<ReturnType<typeof getMyBusiness>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyBusinessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBusiness>>> = ({ signal }) => getMyBusiness({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyBusinessQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBusiness>>>
+export type GetMyBusinessQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the authenticated pro's own business (including when inactive)
+ */
+
+export function useGetMyBusiness<TData = Awaited<ReturnType<typeof getMyBusiness>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyBusinessQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetBusinessActiveUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/businesses/${businessId}/active`
+}
+
+/**
+ * @summary Close or reopen a business (pro only)
+ */
+export const setBusinessActive = async (businessId: string,
+    activeUpdate: ActiveUpdate, options?: RequestInit): Promise<MyBusiness> => {
+
+  return customFetch<MyBusiness>(getSetBusinessActiveUrl(businessId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      activeUpdate,)
+  }
+);}
+
+
+
+
+export const getSetBusinessActiveMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBusinessActive>>, TError,{businessId: string;data: BodyType<ActiveUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setBusinessActive>>, TError,{businessId: string;data: BodyType<ActiveUpdate>}, TContext> => {
+
+const mutationKey = ['setBusinessActive'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setBusinessActive>>, {businessId: string;data: BodyType<ActiveUpdate>}> = (props) => {
+          const {businessId,data} = props ?? {};
+
+          return  setBusinessActive(businessId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetBusinessActiveMutationResult = NonNullable<Awaited<ReturnType<typeof setBusinessActive>>>
+    export type SetBusinessActiveMutationBody = BodyType<ActiveUpdate>
+    export type SetBusinessActiveMutationError = ErrorType<void>
+
+    /**
+ * @summary Close or reopen a business (pro only)
+ */
+export const useSetBusinessActive = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBusinessActive>>, TError,{businessId: string;data: BodyType<ActiveUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setBusinessActive>>,
+        TError,
+        {businessId: string;data: BodyType<ActiveUpdate>},
+        TContext
+      > => {
+      return useMutation(getSetBusinessActiveMutationOptions(options));
+    }
 
 export const getGetBusinessCatalogUrl = (businessId: string,) => {
 

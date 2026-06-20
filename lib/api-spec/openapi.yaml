@@ -35,6 +35,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  # ── My business (pro) ─────────────────────────────────────────────────────
+  /businesses/mine:
+    get:
+      operationId: getMyBusiness
+      tags: [stats]
+      summary: Get the authenticated pro's own business (including when inactive)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Business object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyBusiness"
+        "404":
+          description: No business found
+
+  /businesses/{businessId}/active:
+    patch:
+      operationId: setBusinessActive
+      tags: [stats]
+      summary: Close or reopen a business (pro only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActiveUpdate"
+      responses:
+        "200":
+          description: Updated business
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyBusiness"
+        "400":
+          description: isActive required
+        "403":
+          description: Forbidden
+        "404":
+          description: Not found
+
   # ── Catalog ────────────────────────────────────────────────────────────────
   /businesses/{businessId}/catalog:
     get:
@@ -593,3 +644,53 @@ components:
       properties:
         status:
           type: string
+
+    ActiveUpdate:
+      type: object
+      required: [isActive]
+      properties:
+        isActive:
+          type: boolean
+
+    MyBusiness:
+      type: object
+      required: [id, name, category, phone, address, city, isActive, isOpen, isVerified, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        categoryIcon:
+          type: string
+        description:
+          type: string
+        phone:
+          type: string
+        email:
+          type: ["string", "null"]
+        address:
+          type: string
+        city:
+          type: string
+        coverUrl:
+          type: ["string", "null"]
+        rating:
+          type: number
+        reviewCount:
+          type: integer
+        hasDelivery:
+          type: boolean
+        isOpen:
+          type: boolean
+        isActive:
+          type: boolean
+        isVerified:
+          type: boolean
+        bookingMode:
+          type: string
+          enum: [table, service, none]
+        createdAt:
+          type: string
+          format: date-time
