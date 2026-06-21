@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ActiveBusinessProvider } from "@/context/ActiveBusinessContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { LocationProvider } from "@/context/LocationContext";
 import { OrdersProvider } from "@/context/OrdersContext";
 import { getBaseUrl, tokenStore } from "@/lib/api";
 
@@ -103,13 +104,15 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <AuthProvider>
-                <ActiveBusinessProvider>
-                  <CartProvider>
-                    <OrdersProvider>
-                      <RootLayoutNav />
-                    </OrdersProvider>
-                  </CartProvider>
-                </ActiveBusinessProvider>
+                <LocationProvider>
+                  <ActiveBusinessProvider>
+                    <CartProvider>
+                      <OrdersProvider>
+                        <RootLayoutNav />
+                      </OrdersProvider>
+                    </CartProvider>
+                  </ActiveBusinessProvider>
+                </LocationProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

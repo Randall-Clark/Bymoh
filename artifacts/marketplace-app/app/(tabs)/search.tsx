@@ -18,40 +18,11 @@ import { getSearchBusinessesQueryKey, useSearchBusinesses } from "@workspace/api
 import BusinessCard from "@/components/BusinessCard";
 import CategoryPill from "@/components/CategoryPill";
 import EmptyState from "@/components/EmptyState";
+import { ALL_CITIES, CITY_BY_COUNTRY } from "@/constants/cities";
 import { CATEGORIES } from "@/constants/mockData";
 import { useAuth } from "@/context/AuthContext";
+import { useLocation } from "@/context/LocationContext";
 import { useColors } from "@/hooks/useColors";
-
-// ─── Country → default city ────────────────────────────────────────────────────
-const CITY_BY_COUNTRY: Record<string, string> = {
-  TG: "Lomé",
-  BJ: "Cotonou",
-  CI: "Abidjan",
-  SN: "Dakar",
-  GH: "Accra",
-  CM: "Yaoundé",
-  ML: "Bamako",
-  BF: "Ouagadougou",
-};
-
-// ─── Available cities ──────────────────────────────────────────────────────────
-const ALL_CITIES: { name: string; country: string; flag: string }[] = [
-  { name: "Lomé",          country: "Togo",           flag: "🇹🇬" },
-  { name: "Kpalimé",       country: "Togo",           flag: "🇹🇬" },
-  { name: "Sokodé",        country: "Togo",           flag: "🇹🇬" },
-  { name: "Cotonou",       country: "Bénin",          flag: "🇧🇯" },
-  { name: "Porto-Novo",    country: "Bénin",          flag: "🇧🇯" },
-  { name: "Abidjan",       country: "Côte d'Ivoire",  flag: "🇨🇮" },
-  { name: "Bouaké",        country: "Côte d'Ivoire",  flag: "🇨🇮" },
-  { name: "Dakar",         country: "Sénégal",        flag: "🇸🇳" },
-  { name: "Saint-Louis",   country: "Sénégal",        flag: "🇸🇳" },
-  { name: "Accra",         country: "Ghana",          flag: "🇬🇭" },
-  { name: "Kumasi",        country: "Ghana",          flag: "🇬🇭" },
-  { name: "Yaoundé",       country: "Cameroun",       flag: "🇨🇲" },
-  { name: "Douala",        country: "Cameroun",       flag: "🇨🇲" },
-  { name: "Bamako",        country: "Mali",           flag: "🇲🇱" },
-  { name: "Ouagadougou",   country: "Burkina Faso",   flag: "🇧🇫" },
-];
 
 // ─── Filter / sort types ────────────────────────────────────────────────────────
 type SortKey = "relevance" | "rating" | "distance" | "popular";
@@ -82,8 +53,9 @@ export default function SearchScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  // Default city from user's country
-  const defaultCity = CITY_BY_COUNTRY[user?.countryCode ?? "TG"] ?? "Lomé";
+  // Default city: from saved address → user's country → Lomé
+  const { address } = useLocation();
+  const defaultCity = address?.city ?? CITY_BY_COUNTRY[user?.countryCode ?? "TG"] ?? "Lomé";
 
   // ── Search state ──
   const [query, setQuery] = useState("");
