@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -87,8 +88,6 @@ const PERSONAL_TRANSACTIONS: Transaction[] = [
   },
 ];
 
-// User has a business profile (mock)
-const HAS_BUSINESS = true;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -158,7 +157,7 @@ function TxRow({ tx, colors }: { tx: Transaction; colors: ReturnType<typeof useC
 
 // ─── Business wallet tab ───────────────────────────────────────────────────────
 
-function BusinessWallet({ colors, botPad }: { colors: ReturnType<typeof useColors>; botPad: number }) {
+function BusinessWallet({ colors, botPad, hasBusiness }: { colors: ReturnType<typeof useColors>; botPad: number; hasBusiness: boolean }) {
   const [withdrawModal, setWithdrawModal] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
@@ -190,6 +189,28 @@ function BusinessWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
       Alert.alert("Retrait initié", `${formatAmount(amt)} sera virée sur votre Mobile Money dans quelques minutes.`);
     }, 1200);
   };
+
+  if (!hasBusiness) {
+    return (
+      <View style={[styles.noBizWrap, { paddingBottom: botPad + 32 }]}>
+        <View style={[styles.noBizIcon, { backgroundColor: "#1E3A5F15" }]}>
+          <Feather name="briefcase" size={48} color="#1E3A5F" />
+        </View>
+        <Text style={[styles.noBizTitle, { color: "#1E3A5F" }]}>Aucune entreprise</Text>
+        <Text style={[styles.noBizSub, { color: "#6B7280" }]}>
+          Inscrivez votre commerce sur Kola Pro pour accéder à votre portefeuille business, encaisser des paiements et suivre vos revenus.
+        </Text>
+        <TouchableOpacity
+          style={[styles.noBizBtn, { backgroundColor: "#1E3A5F" }]}
+          onPress={() => router.push("/pro/register")}
+          activeOpacity={0.85}
+        >
+          <Feather name="plus-circle" size={18} color="#fff" />
+          <Text style={styles.noBizBtnText}>Inscrire mon commerce</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <>
@@ -470,13 +491,13 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
 export default function ProWalletScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  // If user has a business profile, default to business tab
-  const [activeTab, setActiveTab] = useState<"personal" | "business">(
-    HAS_BUSINESS ? "business" : "personal"
-  );
+  const hasBusiness = (user?.businessIds?.length ?? 0) > 0;
+
+  const [activeTab, setActiveTab] = useState<"personal" | "business">("personal");
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -489,32 +510,30 @@ export default function ProWalletScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      {/* Tab bar — only shown if user has a business */}
-      {HAS_BUSINESS && (
-        <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-          {(["personal", "business"] as const).map((tab) => {
-            const active = activeTab === tab;
-            const label = tab === "personal" ? "Personnel" : "Business";
-            const icon = tab === "personal" ? "user" : "briefcase";
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tab, active && { borderBottomColor: colors.primary, borderBottomWidth: 2.5 }]}
-                onPress={() => setActiveTab(tab)}
-              >
-                <Feather name={icon as any} size={15} color={active ? colors.primary : colors.mutedForeground} />
-                <Text style={[styles.tabText, { color: active ? colors.primary : colors.mutedForeground, fontWeight: active ? "700" : "500" }]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+      {/* Tab bar — always visible */}
+      <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        {(["personal", "business"] as const).map((tab) => {
+          const active = activeTab === tab;
+          const label = tab === "personal" ? "Personnel" : "Business";
+          const icon = tab === "personal" ? "user" : "briefcase";
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, active && { borderBottomColor: colors.primary, borderBottomWidth: 2.5 }]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Feather name={icon as any} size={15} color={active ? colors.primary : colors.mutedForeground} />
+              <Text style={[styles.tabText, { color: active ? colors.primary : colors.mutedForeground, fontWeight: active ? "700" : "500" }]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {/* Tab content */}
       {activeTab === "business"
-        ? <BusinessWallet colors={colors} botPad={botPad} />
+        ? <BusinessWallet colors={colors} botPad={botPad} hasBusiness={hasBusiness} />
         : <PersonalWallet colors={colors} botPad={botPad} />
       }
     </View>
@@ -607,6 +626,24 @@ const styles = StyleSheet.create({
 
   empty: { alignItems: "center", gap: 10, padding: 40 },
   emptyText: { fontSize: 14 },
+
+  // No business empty state
+  noBizWrap: {
+    flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 36,
+  },
+  noBizIcon: {
+    width: 96, height: 96, borderRadius: 48,
+    alignItems: "center", justifyContent: "center", marginBottom: 24,
+  },
+  noBizTitle: { fontSize: 22, fontWeight: "800", textAlign: "center", marginBottom: 12 },
+  noBizSub: {
+    fontSize: 15, lineHeight: 22, textAlign: "center", marginBottom: 36,
+  },
+  noBizBtn: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 28, paddingVertical: 16, borderRadius: 16,
+  },
+  noBizBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
