@@ -396,7 +396,7 @@ export default function HomeScreen() {
           </View>
           {[
             { icon: "settings", label: "Paramètres généraux", route: "/(tabs)/profile" },
-            { icon: "briefcase", label: "Espace entreprise", route: "/pro/dashboard" },
+            { icon: "briefcase", label: "Espace entreprise", route: "/pro/businesses" },
             { icon: "credit-card", label: "Portefeuille", route: "/pro/wallet" },
           ].map((item) => (
             <TouchableOpacity

@@ -63,9 +63,16 @@ export default function ProDashboardScreen() {
   const { selectedBusinessId } = useActiveBusiness();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const businessId = selectedBusinessId || user?.businessIds?.[0] || "";
+  const businessId = selectedBusinessId;
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Guard: always require an explicit business selection
+  useEffect(() => {
+    if (!selectedBusinessId) {
+      router.replace("/pro/businesses");
+    }
+  }, [selectedBusinessId]);
 
   const shift = useRef(new Animated.Value(0)).current;
   useEffect(() => {
