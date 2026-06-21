@@ -159,32 +159,28 @@ export default function HomeScreen() {
           ))}
         </Animated.View>
 
-        {/* Greeting row */}
+        {/* Header row: menu + address + notif */}
         <View style={styles.greet}>
           <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.75}>
             <Feather name="menu" size={22} color="#fff" />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.hello}>Bonjour 👋</Text>
-            <Text style={styles.name}>{user?.name ?? "Bienvenue"}</Text>
-          </View>
+
+          <TouchableOpacity style={styles.addressInline} onPress={() => setAddressModalVisible(true)} activeOpacity={0.75}>
+            <Feather name="map-pin" size={13} color="rgba(255,255,255,0.75)" />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.addressInlineLabel}>Livraison à</Text>
+              <Text style={styles.addressInlineValue} numberOfLines={1}>
+                {address?.label ?? `${activeCityEntry.flag} ${activeCity}`}
+              </Text>
+            </View>
+            <Feather name="chevron-down" size={13} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.notifBtn} onPress={() => router.push("/notifications")}>
             <Feather name="bell" size={20} color="#fff" />
             <View style={styles.notifDot} />
           </TouchableOpacity>
         </View>
-
-        {/* Address bar (Uber Eats style) */}
-        <TouchableOpacity style={styles.addressBar} onPress={() => setAddressModalVisible(true)} activeOpacity={0.75}>
-          <Feather name="map-pin" size={14} color="rgba(255,255,255,0.75)" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.addressBarLabel}>Livraison à</Text>
-            <Text style={styles.addressBarValue} numberOfLines={1}>
-              {address?.label ?? `${activeCityEntry.flag} ${activeCity}`}
-            </Text>
-          </View>
-          <Feather name="chevron-down" size={15} color="rgba(255,255,255,0.8)" />
-        </TouchableOpacity>
 
         {/* Search bar */}
         <TouchableOpacity
@@ -419,17 +415,15 @@ const styles = StyleSheet.create({
     position: "absolute", fontSize: 16, color: DOODLE_COLOR,
     fontWeight: "300", lineHeight: TILE, width: TILE, textAlign: "center",
   },
-  greet: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", zIndex: 2 },
-  hello: { fontSize: 13, color: "rgba(255,255,255,0.80)", fontWeight: "500" },
-  name: { fontSize: 22, fontWeight: "800", color: "#fff" },
-  addressBar: {
-    flexDirection: "row", alignItems: "center", gap: 10,
+  greet: { flexDirection: "row", alignItems: "center", gap: 10, zIndex: 2 },
+  addressInline: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "rgba(0,0,0,0.18)", borderRadius: 14,
-    paddingHorizontal: 14, paddingVertical: 11,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", zIndex: 2,
+    paddingHorizontal: 12, paddingVertical: 9,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
   },
-  addressBarLabel: { fontSize: 11, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginBottom: 1 },
-  addressBarValue: { fontSize: 15, color: "#fff", fontWeight: "700" },
+  addressInlineLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginBottom: 1 },
+  addressInlineValue: { fontSize: 14, color: "#fff", fontWeight: "700" },
   menuBtn: {
     width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
