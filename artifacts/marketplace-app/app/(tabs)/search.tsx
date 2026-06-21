@@ -34,6 +34,25 @@ const CITY_BY_COUNTRY: Record<string, string> = {
   BF: "Ouagadougou",
 };
 
+// ─── Available cities ──────────────────────────────────────────────────────────
+const ALL_CITIES: { name: string; country: string; flag: string }[] = [
+  { name: "Lomé",          country: "Togo",           flag: "🇹🇬" },
+  { name: "Kpalimé",       country: "Togo",           flag: "🇹🇬" },
+  { name: "Sokodé",        country: "Togo",           flag: "🇹🇬" },
+  { name: "Cotonou",       country: "Bénin",          flag: "🇧🇯" },
+  { name: "Porto-Novo",    country: "Bénin",          flag: "🇧🇯" },
+  { name: "Abidjan",       country: "Côte d'Ivoire",  flag: "🇨🇮" },
+  { name: "Bouaké",        country: "Côte d'Ivoire",  flag: "🇨🇮" },
+  { name: "Dakar",         country: "Sénégal",        flag: "🇸🇳" },
+  { name: "Saint-Louis",   country: "Sénégal",        flag: "🇸🇳" },
+  { name: "Accra",         country: "Ghana",          flag: "🇬🇭" },
+  { name: "Kumasi",        country: "Ghana",          flag: "🇬🇭" },
+  { name: "Yaoundé",       country: "Cameroun",       flag: "🇨🇲" },
+  { name: "Douala",        country: "Cameroun",       flag: "🇨🇲" },
+  { name: "Bamako",        country: "Mali",           flag: "🇲🇱" },
+  { name: "Ouagadougou",   country: "Burkina Faso",   flag: "🇧🇫" },
+];
+
 // ─── Filter / sort types ────────────────────────────────────────────────────────
 type SortKey = "relevance" | "rating" | "distance" | "popular";
 type RatingFilter = null | 3 | 4 | 4.5;
@@ -63,8 +82,8 @@ export default function SearchScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  // User city derived from their registered country code
-  const userCity = CITY_BY_COUNTRY[user?.countryCode ?? "TG"] ?? "Lomé";
+  // Default city from user's country
+  const defaultCity = CITY_BY_COUNTRY[user?.countryCode ?? "TG"] ?? "Lomé";
 
   // ── Search state ──
   const [query, setQuery] = useState("");
@@ -73,6 +92,7 @@ export default function SearchScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Filter state ──
+  const [selectedCity, setSelectedCity] = useState(defaultCity);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [openOnly, setOpenOnly] = useState(false);
   const [deliveryOnly, setDeliveryOnly] = useState(false);
@@ -92,9 +112,9 @@ export default function SearchScreen() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  // ── API call (city + category + text + delivery filtered server-side) ──
+  // ── API call ──
   const searchParams = {
-    city: userCity,
+    city: selectedCity,
     ...(selectedCategory ? { category: selectedCategory } : {}),
     ...(debouncedQuery ? { search: debouncedQuery } : {}),
     ...(deliveryOnly ? { hasDelivery: "true" as const } : {}),
@@ -104,7 +124,7 @@ export default function SearchScreen() {
     query: { queryKey: getSearchBusinessesQueryKey(searchParams), staleTime: 60_000 },
   });
 
-  // ── Client-side filters (openOnly, minRating) ──
+  // ── Client-side filters ──
   let results = (rawBusinesses ?? []).filter((b) => {
     if (openOnly && !b.isOpen) return false;
     if (minRating && (b.rating ?? 0) < minRating) return false;
@@ -118,6 +138,8 @@ export default function SearchScreen() {
     results = [...results].sort((a, b) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0));
   }
 
+  const cityChanged = selectedCity !== defaultCity;
+
   // ── Filter badge count ──
   const activeFilterCount = [
     openOnly,
@@ -125,9 +147,11 @@ export default function SearchScreen() {
     minRating !== null,
     selectedCategory !== null,
     sortBy !== "relevance",
+    cityChanged,
   ].filter(Boolean).length;
 
   const clearFilters = () => {
+    setSelectedCity(defaultCity);
     setSelectedCategory(null);
     setOpenOnly(false);
     setDeliveryOnly(false);
@@ -137,16 +161,12 @@ export default function SearchScreen() {
 
   const activeSortLabel = SORT_OPTIONS.find((s) => s.key === sortBy)?.label ?? "Pertinence";
 
+  const cityMeta = ALL_CITIES.find((c) => c.name === selectedCity);
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       {/* Search bar */}
       <View style={[styles.searchHeader, { paddingTop: topPad + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        {/* City badge */}
-        <View style={[styles.cityBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="map-pin" size={12} color={colors.primary} />
-          <Text style={[styles.cityBadgeText, { color: colors.text }]}>{userCity}</Text>
-        </View>
-
         <View style={styles.searchRow}>
           <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: focused ? colors.primary : colors.border, flex: 1 }]}>
             <Feather name="search" size={18} color={colors.mutedForeground} />
@@ -189,6 +209,20 @@ export default function SearchScreen() {
       {/* Quick filter bar */}
       <View style={[styles.quickBar, { borderBottomColor: colors.border }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickBarContent}>
+          {/* Location chip — always visible, highlighted when changed */}
+          <TouchableOpacity
+            style={[styles.chip, {
+              backgroundColor: cityChanged ? colors.primary : colors.card,
+              borderColor: cityChanged ? colors.primary : colors.border,
+            }]}
+            onPress={() => setFilterSheetOpen(true)}
+          >
+            <Feather name="map-pin" size={12} color={cityChanged ? "#fff" : colors.primary} />
+            <Text style={[styles.chipLabel, { color: cityChanged ? "#fff" : colors.text }]}>
+              {cityMeta ? `${cityMeta.flag} ${selectedCity}` : selectedCity}
+            </Text>
+          </TouchableOpacity>
+
           {/* Sort chip */}
           <TouchableOpacity
             style={[styles.chip, { backgroundColor: sortBy !== "relevance" ? colors.primary : colors.card, borderColor: sortBy !== "relevance" ? colors.primary : colors.border }]}
@@ -250,7 +284,7 @@ export default function SearchScreen() {
         <EmptyState
           icon="search"
           title="Aucun résultat"
-          subtitle={`Aucun commerce trouvé à ${userCity} avec ces critères`}
+          subtitle={`Aucun commerce trouvé à ${selectedCity} avec ces critères`}
           actionLabel="Effacer les filtres"
           onAction={clearFilters}
         />
@@ -263,7 +297,7 @@ export default function SearchScreen() {
           ListHeaderComponent={
             <View style={styles.resultsHeader}>
               <Text style={[styles.count, { color: colors.mutedForeground }]}>
-                {results.length} résultat{results.length > 1 ? "s" : ""} à {userCity}
+                {results.length} résultat{results.length > 1 ? "s" : ""} à {selectedCity}
               </Text>
               {activeFilterCount > 0 && (
                 <TouchableOpacity onPress={clearFilters}>
@@ -298,9 +332,48 @@ export default function SearchScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 24, paddingBottom: botPad + 24 }}>
-              {/* Sort */}
+
+              {/* ── Localisation ── */}
               <View style={styles.sheetSection}>
-                <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Trier par</Text>
+                <View style={styles.sheetSectionHeader}>
+                  <Feather name="map-pin" size={15} color={colors.primary} />
+                  <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Localisation</Text>
+                  {cityChanged && (
+                    <TouchableOpacity onPress={() => setSelectedCity(defaultCity)} style={[styles.resetCityBtn, { backgroundColor: colors.accent }]}>
+                      <Text style={[styles.resetCityText, { color: colors.primary }]}>Remettre {defaultCity}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityRow}>
+                  {ALL_CITIES.map((c) => {
+                    const active = selectedCity === c.name;
+                    return (
+                      <TouchableOpacity
+                        key={c.name}
+                        style={[styles.cityChip, {
+                          backgroundColor: active ? colors.primary : colors.background,
+                          borderColor: active ? colors.primary : colors.border,
+                        }]}
+                        onPress={() => setSelectedCity(c.name)}
+                      >
+                        <Text style={styles.cityFlag}>{c.flag}</Text>
+                        <View>
+                          <Text style={[styles.cityName, { color: active ? "#fff" : colors.text }]}>{c.name}</Text>
+                          <Text style={[styles.cityCountry, { color: active ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>{c.country}</Text>
+                        </View>
+                        {active && <Feather name="check" size={13} color="#fff" style={{ marginLeft: 2 }} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* ── Sort ── */}
+              <View style={styles.sheetSection}>
+                <View style={styles.sheetSectionHeader}>
+                  <Feather name="bar-chart-2" size={15} color={colors.primary} />
+                  <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Trier par</Text>
+                </View>
                 <View style={styles.sheetOptions}>
                   {SORT_OPTIONS.map((s) => {
                     const active = sortBy === s.key;
@@ -322,9 +395,12 @@ export default function SearchScreen() {
                 </View>
               </View>
 
-              {/* Rating */}
+              {/* ── Rating ── */}
               <View style={styles.sheetSection}>
-                <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Note minimale</Text>
+                <View style={styles.sheetSectionHeader}>
+                  <Feather name="star" size={15} color={colors.primary} />
+                  <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Note minimale</Text>
+                </View>
                 <View style={styles.ratingRow}>
                   {RATING_OPTIONS.map((r) => {
                     const active = minRating === r.value;
@@ -345,9 +421,12 @@ export default function SearchScreen() {
                 </View>
               </View>
 
-              {/* Toggles */}
+              {/* ── Options ── */}
               <View style={styles.sheetSection}>
-                <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Options</Text>
+                <View style={styles.sheetSectionHeader}>
+                  <Feather name="settings" size={15} color={colors.primary} />
+                  <Text style={[styles.sheetSectionTitle, { color: colors.text }]}>Options</Text>
+                </View>
                 <TouchableOpacity
                   style={[styles.toggleRow, { backgroundColor: colors.background, borderColor: colors.border }]}
                   onPress={() => setOpenOnly(!openOnly)}
@@ -402,14 +481,7 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
 
-  searchHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, gap: 8 },
-  cityBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1,
-  },
-  cityBadgeText: { fontSize: 12, fontWeight: "600" },
-
+  searchHeader: { paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
@@ -443,30 +515,50 @@ const styles = StyleSheet.create({
   clearAll: { fontSize: 13, fontWeight: "600" },
   card: {},
 
+  // Filter sheet
   sheetOverlay: { flex: 1, justifyContent: "flex-end" },
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
   sheet: {
     borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24,
-    gap: 20, maxHeight: "88%",
+    gap: 20, maxHeight: "92%",
   },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginBottom: 4 },
   sheetHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   sheetTitle: { fontSize: 20, fontWeight: "800" },
   sheetReset: { fontSize: 14, fontWeight: "600" },
+
   sheetSection: { gap: 12 },
-  sheetSectionTitle: { fontSize: 15, fontWeight: "700" },
+  sheetSectionHeader: { flexDirection: "row", alignItems: "center", gap: 7 },
+  sheetSectionTitle: { fontSize: 15, fontWeight: "700", flex: 1 },
+
+  // City selector
+  cityRow: { gap: 8, paddingVertical: 2 },
+  cityChip: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14, borderWidth: 1.5,
+  },
+  cityFlag: { fontSize: 20 },
+  cityName: { fontSize: 13, fontWeight: "700" },
+  cityCountry: { fontSize: 11, marginTop: 1 },
+  resetCityBtn: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+  },
+  resetCityText: { fontSize: 12, fontWeight: "600" },
+
   sheetOptions: { gap: 8 },
   sheetOption: {
     flexDirection: "row", alignItems: "center", gap: 12,
     padding: 14, borderRadius: 14, borderWidth: 1.5,
   },
   sheetOptionLabel: { fontSize: 14, fontWeight: "600" },
+
   ratingRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   ratingChip: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100, borderWidth: 1.5,
   },
   ratingChipLabel: { fontSize: 13, fontWeight: "600" },
+
   toggleRow: {
     flexDirection: "row", alignItems: "center", gap: 14,
     padding: 14, borderRadius: 16, borderWidth: 1,
@@ -475,6 +567,7 @@ const styles = StyleSheet.create({
   toggleLabel: { fontSize: 14, fontWeight: "700" },
   toggleSub: { fontSize: 12, marginTop: 2 },
   toggleDot: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+
   applyBtn: { paddingVertical: 16, borderRadius: 16, alignItems: "center" },
   applyBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });
