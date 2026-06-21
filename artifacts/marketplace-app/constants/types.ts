@@ -8,6 +8,7 @@ export interface User {
   businessIds: string[];
   favoriteIds: string[];
   avatar?: string;
+  countryCode?: string;
 }
 
 export interface Business {

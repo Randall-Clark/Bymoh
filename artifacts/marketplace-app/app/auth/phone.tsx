@@ -39,6 +39,7 @@ export default function PhoneScreen() {
     flag?: string;
     placeholder?: string;
     maxLength?: string;
+    countryCode?: string;
   }>();
 
   const isRegister = params.register === "true";
@@ -61,7 +62,10 @@ export default function PhoneScreen() {
     const fullPhone = `${selectedCountry.dialCode}${phone.replace(/\s/g, "")}`;
 
     if (isRegister) {
-      router.push({ pathname: "/auth/otp", params: { phone: fullPhone } });
+      router.push({
+        pathname: "/auth/otp",
+        params: { phone: fullPhone, countryCode: selectedCountry.code },
+      });
       return;
     }
 

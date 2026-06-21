@@ -16,7 +16,7 @@ import { useColors } from "@/hooks/useColors";
 export default function OtpScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, countryCode } = useLocalSearchParams<{ phone: string; countryCode?: string }>();
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
@@ -63,7 +63,7 @@ export default function OtpScreen() {
   const handleVerify = () => {
     if (!isComplete) return;
     // Use replace so the user cannot go back to OTP after verifying
-    router.replace({ pathname: "/auth/profile", params: { phone } });
+    router.replace({ pathname: "/auth/profile", params: { phone, countryCode: countryCode ?? "TG" } });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;

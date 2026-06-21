@@ -11,7 +11,7 @@ interface AuthContextValue {
   isNewUser: boolean;
   clearNewUser: () => void;
   checkPhone: (phone: string) => Promise<boolean>;
-  registerUser: (phone: string, name: string, email: string, pin: string) => Promise<void>;
+  registerUser: (phone: string, name: string, email: string, pin: string, countryCode?: string) => Promise<void>;
   loginWithPin: (phone: string, pin: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
@@ -24,6 +24,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const USER_KEY = "@kola_user";
 const FAV_KEY = "@kola_favs";
 const BIZ_KEY = "@kola_biz";
+const CC_KEY = "@kola_country";
 
 async function loadLocal<T>(key: string, fallback: T): Promise<T> {
   try {
@@ -32,7 +33,7 @@ async function loadLocal<T>(key: string, fallback: T): Promise<T> {
   } catch { return fallback; }
 }
 
-function buildUser(base: Record<string, unknown>, favoriteIds: string[], businessIds: string[]): User {
+function buildUser(base: Record<string, unknown>, favoriteIds: string[], businessIds: string[], countryCode = "TG"): User {
   return {
     id: base.id as string,
     phone: base.phone as string,
@@ -42,6 +43,7 @@ function buildUser(base: Record<string, unknown>, favoriteIds: string[], busines
     avatar: base.avatarUrl as string | undefined,
     businessIds,
     favoriteIds,
+    countryCode,
   };
 }
 
@@ -61,7 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const apiUser = await api.get<Record<string, unknown>>("/users/me");
             const favs = await loadLocal<string[]>(FAV_KEY, []);
             const biz = await loadLocal<string[]>(BIZ_KEY, []);
-            const u = buildUser(apiUser, favs, biz);
+            const cc = await loadLocal<string>(CC_KEY, "TG");
+            const u = buildUser(apiUser, favs, biz, cc);
             setUser(u);
             await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
           } catch {
@@ -84,14 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const registerUser = useCallback(async (
-    phone: string, name: string, email: string, pin: string,
+    phone: string, name: string, email: string, pin: string, countryCode = "TG",
   ): Promise<void> => {
+    await AsyncStorage.setItem(CC_KEY, JSON.stringify(countryCode));
     try {
       const { user: apiUser, token } = await api.post<{ user: Record<string, unknown>; token: string }>(
         "/auth/register", { phone, name, email, pin },
       );
       await tokenStore.set(token);
-      const u = buildUser(apiUser, [], []);
+      const u = buildUser(apiUser, [], [], countryCode);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
       setIsNewUser(true);
       setUser(u);
@@ -104,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: "client",
         businessIds: [],
         favoriteIds: [],
+        countryCode,
       };
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(localUser));
       setIsNewUser(true);
@@ -119,7 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await tokenStore.set(token);
       const favs = await loadLocal<string[]>(FAV_KEY, []);
       const biz = await loadLocal<string[]>(BIZ_KEY, []);
-      const u = buildUser(apiUser, favs, biz);
+      const cc = await loadLocal<string>(CC_KEY, "TG");
+      const u = buildUser(apiUser, favs, biz, cc);
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
       setUser(u);
       return true;
@@ -128,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await tokenStore.clear();
-    await AsyncStorage.multiRemove([USER_KEY, FAV_KEY, BIZ_KEY]);
+    await AsyncStorage.multiRemove([USER_KEY, FAV_KEY, BIZ_KEY, CC_KEY]);
     setUser(null);
     router.replace("/");
   }, []);

@@ -20,7 +20,7 @@ export default function ProfileSetupScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { registerUser } = useAuth();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
+  const { phone, countryCode } = useLocalSearchParams<{ phone: string; countryCode?: string }>();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -48,7 +48,7 @@ export default function ProfileSetupScreen() {
     }
     setLoading(true);
     try {
-      await registerUser(phone ?? "", name.trim(), email.trim(), pinStr);
+      await registerUser(phone ?? "", name.trim(), email.trim(), pinStr, countryCode ?? "TG");
       router.replace("/auth/purpose");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur lors de la création du compte.";

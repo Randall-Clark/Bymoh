@@ -50,13 +50,27 @@ const USE_NATIVE = Platform.OS !== "web";
 
 // ─── Cities / locations ─────────────────────────────────────────────────────────
 const CITIES = [
-  { id: "lome",     name: "Lomé",      country: "Togo",          flag: "🇹🇬" },
-  { id: "kara",     name: "Kara",      country: "Togo",          flag: "🇹🇬" },
-  { id: "cotonou",  name: "Cotonou",   country: "Bénin",         flag: "🇧🇯" },
-  { id: "abidjan",  name: "Abidjan",   country: "Côte d'Ivoire", flag: "🇨🇮" },
-  { id: "dakar",    name: "Dakar",     country: "Sénégal",       flag: "🇸🇳" },
-  { id: "accra",    name: "Accra",     country: "Ghana",         flag: "🇬🇭" },
+  { id: "lome",         name: "Lomé",         country: "Togo",          flag: "🇹🇬" },
+  { id: "kara",         name: "Kara",         country: "Togo",          flag: "🇹🇬" },
+  { id: "cotonou",      name: "Cotonou",      country: "Bénin",         flag: "🇧🇯" },
+  { id: "abidjan",      name: "Abidjan",      country: "Côte d'Ivoire", flag: "🇨🇮" },
+  { id: "dakar",        name: "Dakar",        country: "Sénégal",       flag: "🇸🇳" },
+  { id: "accra",        name: "Accra",        country: "Ghana",         flag: "🇬🇭" },
+  { id: "yaounde",      name: "Yaoundé",      country: "Cameroun",      flag: "🇨🇲" },
+  { id: "bamako",       name: "Bamako",       country: "Mali",          flag: "🇲🇱" },
+  { id: "ouagadougou",  name: "Ouagadougou",  country: "Burkina Faso",  flag: "🇧🇫" },
 ];
+
+const DEFAULT_CITY_BY_COUNTRY: Record<string, typeof CITIES[0]> = {
+  TG: CITIES[0],  // Lomé
+  BJ: CITIES[2],  // Cotonou
+  CI: CITIES[3],  // Abidjan
+  SN: CITIES[4],  // Dakar
+  GH: CITIES[5],  // Accra
+  CM: CITIES[6],  // Yaoundé
+  ML: CITIES[7],  // Bamako
+  BF: CITIES[8],  // Ouagadougou
+};
 
 // ─── Promo banners ──────────────────────────────────────────────────────────────
 const PROMO_BANNERS = [
@@ -101,6 +115,14 @@ export default function HomeScreen() {
   const [selectedCity, setSelectedCity] = useState(CITIES[0]);
   const [cityModalVisible, setCityModalVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+
+  // Set default city once from user's registration country code
+  useEffect(() => {
+    if (user?.countryCode) {
+      const city = DEFAULT_CITY_BY_COUNTRY[user.countryCode];
+      if (city) setSelectedCity(city);
+    }
+  }, [user?.countryCode]);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
