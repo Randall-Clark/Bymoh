@@ -165,7 +165,7 @@ export default function HomeScreen() {
   });
 
   const open = filtered.filter((b) => b.isOpen);
-  const nearby = filtered.filter((b) => parseFloat(b.distance) < 2.5);
+  const nearby = filtered.filter((b) => parseFloat(b.distance ?? "99") < 2.5);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>

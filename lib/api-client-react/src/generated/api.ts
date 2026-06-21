@@ -32,6 +32,7 @@ import type {
   MyBusiness,
   ProBooking,
   ProOrder,
+  SearchBusinessesParams,
   StatusUpdate,
   WalletData
 } from './api.schemas';
@@ -114,6 +115,90 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getHealthCheckQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSearchBusinessesUrl = (params?: SearchBusinessesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/businesses?${stringifiedParams}` : `/api/businesses`
+}
+
+/**
+ * @summary Search and filter businesses by city, category, and other criteria
+ */
+export const searchBusinesses = async (params?: SearchBusinessesParams, options?: RequestInit): Promise<MyBusiness[]> => {
+
+  return customFetch<MyBusiness[]>(getSearchBusinessesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchBusinessesQueryKey = (params?: SearchBusinessesParams,) => {
+    return [
+    `/api/businesses`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchBusinessesQueryOptions = <TData = Awaited<ReturnType<typeof searchBusinesses>>, TError = ErrorType<unknown>>(params?: SearchBusinessesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchBusinesses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchBusinessesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchBusinesses>>> = ({ signal }) => searchBusinesses(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchBusinesses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchBusinessesQueryResult = NonNullable<Awaited<ReturnType<typeof searchBusinesses>>>
+export type SearchBusinessesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Search and filter businesses by city, category, and other criteria
+ */
+
+export function useSearchBusinesses<TData = Awaited<ReturnType<typeof searchBusinesses>>, TError = ErrorType<unknown>>(
+ params?: SearchBusinessesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchBusinesses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchBusinessesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

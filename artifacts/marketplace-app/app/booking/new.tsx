@@ -59,7 +59,7 @@ export default function BookingScreen() {
 
   const isTableMode = bookingMode === "table";
   const business = MOCK_BUSINESSES.find((b) => b.id === businessId);
-  const service = business?.services.find((s) => s.id === serviceId);
+  const service = business?.services?.find((s) => s.id === serviceId);
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);

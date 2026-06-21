@@ -31,6 +31,8 @@ export * from './proOrder';
 export * from './proOrderDeliveryMethod';
 export * from './proOrderItem';
 export * from './proOrderStatus';
+export * from './searchBusinessesHasDelivery';
+export * from './searchBusinessesParams';
 export * from './statusUpdate';
 export * from './walletData';
 export * from './walletDataType';

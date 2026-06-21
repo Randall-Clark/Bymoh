@@ -25,7 +25,7 @@ export default function BusinessCard({ business, onPress, isFavorite, onFavorite
     >
       <View style={[styles.imageContainer, { backgroundColor: colors.muted }]}>
         <View style={[styles.imagePlaceholder, { backgroundColor: colors.muted }]}>
-          <Feather name={business.categoryIcon as any} size={36} color={colors.primary} />
+          <Feather name={(business.categoryIcon ?? "briefcase") as any} size={36} color={colors.primary} />
         </View>
         <View style={[styles.statusBadge, { backgroundColor: business.isOpen ? colors.success : colors.mutedForeground }]}>
           <Text style={styles.statusText}>{business.isOpen ? "Ouvert" : "Fermé"}</Text>
@@ -49,16 +49,18 @@ export default function BusinessCard({ business, onPress, isFavorite, onFavorite
         </View>
         <Text style={[styles.category, { color: colors.mutedForeground }]}>{business.city} · {business.category}</Text>
         <View style={styles.meta}>
-          <StarRating rating={business.rating} size={12} />
+          <StarRating rating={business.rating ?? 0} size={12} />
           <Text style={[styles.rating, { color: colors.mutedForeground }]}>
-            {business.rating} ({business.reviewCount})
+            {business.rating ?? 0} ({business.reviewCount ?? 0})
           </Text>
         </View>
         <View style={styles.footer}>
-          <View style={styles.infoRow}>
-            <Feather name="map-pin" size={12} color={colors.mutedForeground} />
-            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>{business.distance}</Text>
-          </View>
+          {business.distance ? (
+            <View style={styles.infoRow}>
+              <Feather name="map-pin" size={12} color={colors.mutedForeground} />
+              <Text style={[styles.infoText, { color: colors.mutedForeground }]}>{business.distance}</Text>
+            </View>
+          ) : null}
           {business.hasDelivery && (
             <View style={[styles.deliveryBadge, { backgroundColor: colors.accent }]}>
               <Feather name="package" size={10} color={colors.primary} />

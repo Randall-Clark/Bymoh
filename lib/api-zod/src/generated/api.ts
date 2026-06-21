@@ -18,6 +18,40 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Search and filter businesses by city, category, and other criteria
+ */
+export const SearchBusinessesQueryParams = zod.object({
+  "city": zod.coerce.string().optional().describe('Filter by city (e.g. Lomé, Cotonou)'),
+  "category": zod.coerce.string().optional().describe('Filter by category slug'),
+  "search": zod.coerce.string().optional().describe('Full-text search on name, description, category'),
+  "hasDelivery": zod.enum(['true', 'false']).optional().describe('Filter businesses that offer delivery')
+})
+
+export const SearchBusinessesResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "category": zod.string(),
+  "categoryIcon": zod.string().optional(),
+  "description": zod.string().optional(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "coverUrl": zod.string().nullish(),
+  "rating": zod.number().optional(),
+  "reviewCount": zod.number().optional(),
+  "hasDelivery": zod.boolean().optional(),
+  "isOpen": zod.boolean(),
+  "isActive": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullish(),
+  "isVerified": zod.boolean(),
+  "bookingMode": zod.enum(['table', 'service', 'none']).optional(),
+  "createdAt": zod.coerce.date()
+})
+export const SearchBusinessesResponse = zod.array(SearchBusinessesResponseItem)
+
+
+/**
  * @summary Get all businesses owned by the authenticated pro (including inactive)
  */
 export const GetMyBusinessesResponseItem = zod.object({

@@ -112,8 +112,8 @@ export default function BusinessDetailScreen() {
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <StarRating rating={business.rating} size={14} />
-              <Text style={[styles.statLabel, { color: colors.text }]}>{business.rating} ({business.reviewCount})</Text>
+              <StarRating rating={business.rating ?? 0} size={14} />
+              <Text style={[styles.statLabel, { color: colors.text }]}>{business.rating ?? 0} ({business.reviewCount ?? 0})</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <View style={styles.statItem}>
@@ -174,7 +174,7 @@ export default function BusinessDetailScreen() {
                 <Feather name="arrow-right" size={18} color="#fff" />
               </TouchableOpacity>
             )}
-            {business.services.map((s) => (
+            {(business.services ?? []).map((s) => (
               <ServiceCard
                 key={s.id}
                 service={s}

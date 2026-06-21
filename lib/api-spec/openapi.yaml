@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: businesses
+    description: Public business listing and search
   - name: catalog
     description: Pro catalog management
   - name: hours
@@ -36,6 +38,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Public business listing ────────────────────────────────────────────────
+  /businesses:
+    get:
+      operationId: searchBusinesses
+      tags: [businesses]
+      summary: Search and filter businesses by city, category, and other criteria
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by city (e.g. Lomé, Cotonou)
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by category slug
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Full-text search on name, description, category
+        - name: hasDelivery
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Filter businesses that offer delivery
+      responses:
+        "200":
+          description: List of matching active businesses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MyBusiness"
 
   # ── My business (pro) ─────────────────────────────────────────────────────
   /businesses/mine:

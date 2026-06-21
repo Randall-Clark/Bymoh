@@ -340,3 +340,30 @@ export interface MyBusiness {
   createdAt: string;
 }
 
+export type SearchBusinessesParams = {
+/**
+ * Filter by city (e.g. Lomé, Cotonou)
+ */
+city?: string;
+/**
+ * Filter by category slug
+ */
+category?: string;
+/**
+ * Full-text search on name, description, category
+ */
+search?: string;
+/**
+ * Filter businesses that offer delivery
+ */
+hasDelivery?: SearchBusinessesHasDelivery;
+};
+
+export type SearchBusinessesHasDelivery = typeof SearchBusinessesHasDelivery[keyof typeof SearchBusinessesHasDelivery];
+
+
+export const SearchBusinessesHasDelivery = {
+  true: 'true',
+  false: 'false',
+} as const;
+
