@@ -9,6 +9,33 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface OkResponse {
+  ok: boolean;
+}
+
+export type NotificationType = typeof NotificationType[keyof typeof NotificationType];
+
+
+export const NotificationType = {
+  order: 'order',
+  booking: 'booking',
+  promo: 'promo',
+  system: 'system',
+  delivery: 'delivery',
+} as const;
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  type: NotificationType;
+  isRead: boolean;
+  /** @nullable */
+  relatedId?: string | null;
+  createdAt: string;
+}
+
 export type CatalogItemKind = typeof CatalogItemKind[keyof typeof CatalogItemKind];
 
 

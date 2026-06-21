@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
@@ -10,8 +10,16 @@ router.get("/notifications", requireAuth, async (req: AuthRequest, res) => {
     .select()
     .from(notificationsTable)
     .where(eq(notificationsTable.userId, req.userId!))
-    .orderBy(notificationsTable.createdAt);
+    .orderBy(desc(notificationsTable.createdAt));
   res.json(notifs);
+});
+
+router.patch("/notifications/read-all", requireAuth, async (req: AuthRequest, res) => {
+  await db
+    .update(notificationsTable)
+    .set({ isRead: true })
+    .where(eq(notificationsTable.userId, req.userId!));
+  res.json({ ok: true });
 });
 
 router.patch("/notifications/:id/read", requireAuth, async (req: AuthRequest, res) => {
@@ -20,14 +28,6 @@ router.patch("/notifications/:id/read", requireAuth, async (req: AuthRequest, re
     .update(notificationsTable)
     .set({ isRead: true })
     .where(eq(notificationsTable.id, id));
-  res.json({ ok: true });
-});
-
-router.patch("/notifications/read-all", requireAuth, async (req: AuthRequest, res) => {
-  await db
-    .update(notificationsTable)
-    .set({ isRead: true })
-    .where(eq(notificationsTable.userId, req.userId!));
   res.json({ ok: true });
 });
 

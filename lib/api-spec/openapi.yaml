@@ -523,6 +523,56 @@ paths:
         "403":
           description: Forbidden
 
+  /notifications:
+    get:
+      operationId: getNotifications
+      summary: Get notifications for the current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of notifications (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/read-all:
+    patch:
+      operationId: markAllNotificationsRead
+      summary: Mark all notifications as read
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /notifications/{notifId}/read:
+    patch:
+      operationId: markNotificationRead
+      summary: Mark a single notification as read
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: notifId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -536,6 +586,36 @@ components:
           type: string
       required:
         - status
+
+    OkResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    Notification:
+      type: object
+      required: [id, userId, title, body, type, isRead, createdAt]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        type:
+          type: string
+          enum: [order, booking, promo, system, delivery]
+        isRead:
+          type: boolean
+        relatedId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
 
     # ── Catalog ──────────────────────────────────────────────────────────────
     CatalogItem:

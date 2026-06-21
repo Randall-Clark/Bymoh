@@ -479,3 +479,39 @@ export const WithdrawBusinessWalletResponse = zod.object({
 })
 
 
+/**
+ * @summary Get notifications for the current user
+ */
+export const GetNotificationsResponseItem = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "type": zod.enum(['order', 'booking', 'promo', 'system', 'delivery']),
+  "isRead": zod.boolean(),
+  "relatedId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const GetNotificationsResponse = zod.array(GetNotificationsResponseItem)
+
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
+ * @summary Mark a single notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  "notifId": zod.coerce.string()
+})
+
+export const MarkNotificationReadResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
