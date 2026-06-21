@@ -21,6 +21,7 @@ import type {
 
 import type {
   ActiveUpdate,
+  AmountInput,
   BusinessHourEntry,
   BusinessHourInput,
   BusinessStats,
@@ -31,7 +32,8 @@ import type {
   MyBusiness,
   ProBooking,
   ProOrder,
-  StatusUpdate
+  StatusUpdate,
+  WalletData
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1090,5 +1092,302 @@ export const useUpdateOrderStatus = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateOrderStatusMutationOptions(options));
+    }
+
+export const getGetPersonalWalletUrl = () => {
+
+
+
+
+  return `/api/wallets/personal`
+}
+
+/**
+ * @summary Get personal wallet and transactions
+ */
+export const getPersonalWallet = async ( options?: RequestInit): Promise<WalletData> => {
+
+  return customFetch<WalletData>(getGetPersonalWalletUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPersonalWalletQueryKey = () => {
+    return [
+    `/api/wallets/personal`
+    ] as const;
+    }
+
+
+export const getGetPersonalWalletQueryOptions = <TData = Awaited<ReturnType<typeof getPersonalWallet>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonalWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPersonalWalletQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonalWallet>>> = ({ signal }) => getPersonalWallet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPersonalWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPersonalWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getPersonalWallet>>>
+export type GetPersonalWalletQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get personal wallet and transactions
+ */
+
+export function useGetPersonalWallet<TData = Awaited<ReturnType<typeof getPersonalWallet>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonalWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPersonalWalletQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getTopupPersonalWalletUrl = () => {
+
+
+
+
+  return `/api/wallets/personal/topup`
+}
+
+/**
+ * @summary Initiate a Mobile Money top-up for personal wallet
+ */
+export const topupPersonalWallet = async (amountInput: AmountInput, options?: RequestInit): Promise<WalletData> => {
+
+  return customFetch<WalletData>(getTopupPersonalWalletUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      amountInput,)
+  }
+);}
+
+
+
+
+export const getTopupPersonalWalletMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof topupPersonalWallet>>, TError,{data: BodyType<AmountInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof topupPersonalWallet>>, TError,{data: BodyType<AmountInput>}, TContext> => {
+
+const mutationKey = ['topupPersonalWallet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof topupPersonalWallet>>, {data: BodyType<AmountInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  topupPersonalWallet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TopupPersonalWalletMutationResult = NonNullable<Awaited<ReturnType<typeof topupPersonalWallet>>>
+    export type TopupPersonalWalletMutationBody = BodyType<AmountInput>
+    export type TopupPersonalWalletMutationError = ErrorType<void>
+
+    /**
+ * @summary Initiate a Mobile Money top-up for personal wallet
+ */
+export const useTopupPersonalWallet = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof topupPersonalWallet>>, TError,{data: BodyType<AmountInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof topupPersonalWallet>>,
+        TError,
+        {data: BodyType<AmountInput>},
+        TContext
+      > => {
+      return useMutation(getTopupPersonalWalletMutationOptions(options));
+    }
+
+export const getGetBusinessWalletUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/wallets/business/${businessId}`
+}
+
+/**
+ * @summary Get business wallet and transactions
+ */
+export const getBusinessWallet = async (businessId: string, options?: RequestInit): Promise<WalletData> => {
+
+  return customFetch<WalletData>(getGetBusinessWalletUrl(businessId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBusinessWalletQueryKey = (businessId: string,) => {
+    return [
+    `/api/wallets/business/${businessId}`
+    ] as const;
+    }
+
+
+export const getGetBusinessWalletQueryOptions = <TData = Awaited<ReturnType<typeof getBusinessWallet>>, TError = ErrorType<void>>(businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBusinessWalletQueryKey(businessId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBusinessWallet>>> = ({ signal }) => getBusinessWallet(businessId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(businessId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBusinessWallet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBusinessWalletQueryResult = NonNullable<Awaited<ReturnType<typeof getBusinessWallet>>>
+export type GetBusinessWalletQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get business wallet and transactions
+ */
+
+export function useGetBusinessWallet<TData = Awaited<ReturnType<typeof getBusinessWallet>>, TError = ErrorType<void>>(
+ businessId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessWallet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBusinessWalletQueryOptions(businessId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getWithdrawBusinessWalletUrl = (businessId: string,) => {
+
+
+
+
+  return `/api/wallets/business/${businessId}/withdraw`
+}
+
+/**
+ * @summary Withdraw funds from business wallet to Mobile Money
+ */
+export const withdrawBusinessWallet = async (businessId: string,
+    amountInput: AmountInput, options?: RequestInit): Promise<WalletData> => {
+
+  return customFetch<WalletData>(getWithdrawBusinessWalletUrl(businessId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      amountInput,)
+  }
+);}
+
+
+
+
+export const getWithdrawBusinessWalletMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawBusinessWallet>>, TError,{businessId: string;data: BodyType<AmountInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof withdrawBusinessWallet>>, TError,{businessId: string;data: BodyType<AmountInput>}, TContext> => {
+
+const mutationKey = ['withdrawBusinessWallet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof withdrawBusinessWallet>>, {businessId: string;data: BodyType<AmountInput>}> = (props) => {
+          const {businessId,data} = props ?? {};
+
+          return  withdrawBusinessWallet(businessId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WithdrawBusinessWalletMutationResult = NonNullable<Awaited<ReturnType<typeof withdrawBusinessWallet>>>
+    export type WithdrawBusinessWalletMutationBody = BodyType<AmountInput>
+    export type WithdrawBusinessWalletMutationError = ErrorType<void>
+
+    /**
+ * @summary Withdraw funds from business wallet to Mobile Money
+ */
+export const useWithdrawBusinessWallet = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdrawBusinessWallet>>, TError,{businessId: string;data: BodyType<AmountInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof withdrawBusinessWallet>>,
+        TError,
+        {businessId: string;data: BodyType<AmountInput>},
+        TContext
+      > => {
+      return useMutation(getWithdrawBusinessWalletMutationOptions(options));
     }
 

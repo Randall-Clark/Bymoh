@@ -323,3 +323,125 @@ export const UpdateOrderStatusBody = zod.object({
 })
 
 
+/**
+ * @summary Get personal wallet and transactions
+ */
+export const GetPersonalWalletResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "type": zod.enum(['personal', 'business']),
+  "businessId": zod.string().nullish(),
+  "balance": zod.number(),
+  "pendingBalance": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "transactions": zod.array(zod.object({
+  "id": zod.string(),
+  "walletId": zod.string(),
+  "type": zod.enum(['credit', 'debit', 'pending']),
+  "label": zod.string(),
+  "sublabel": zod.string().nullish(),
+  "amount": zod.number(),
+  "relatedOrderId": zod.string().nullish(),
+  "relatedBookingId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Initiate a Mobile Money top-up for personal wallet
+ */
+
+
+
+export const TopupPersonalWalletBody = zod.object({
+  "amount": zod.number().min(1)
+})
+
+export const TopupPersonalWalletResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "type": zod.enum(['personal', 'business']),
+  "businessId": zod.string().nullish(),
+  "balance": zod.number(),
+  "pendingBalance": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "transactions": zod.array(zod.object({
+  "id": zod.string(),
+  "walletId": zod.string(),
+  "type": zod.enum(['credit', 'debit', 'pending']),
+  "label": zod.string(),
+  "sublabel": zod.string().nullish(),
+  "amount": zod.number(),
+  "relatedOrderId": zod.string().nullish(),
+  "relatedBookingId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get business wallet and transactions
+ */
+export const GetBusinessWalletParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+export const GetBusinessWalletResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "type": zod.enum(['personal', 'business']),
+  "businessId": zod.string().nullish(),
+  "balance": zod.number(),
+  "pendingBalance": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "transactions": zod.array(zod.object({
+  "id": zod.string(),
+  "walletId": zod.string(),
+  "type": zod.enum(['credit', 'debit', 'pending']),
+  "label": zod.string(),
+  "sublabel": zod.string().nullish(),
+  "amount": zod.number(),
+  "relatedOrderId": zod.string().nullish(),
+  "relatedBookingId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Withdraw funds from business wallet to Mobile Money
+ */
+export const WithdrawBusinessWalletParams = zod.object({
+  "businessId": zod.coerce.string()
+})
+
+
+
+
+export const WithdrawBusinessWalletBody = zod.object({
+  "amount": zod.number().min(1)
+})
+
+export const WithdrawBusinessWalletResponse = zod.object({
+  "id": zod.string(),
+  "userId": zod.string(),
+  "type": zod.enum(['personal', 'business']),
+  "businessId": zod.string().nullish(),
+  "balance": zod.number(),
+  "pendingBalance": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "transactions": zod.array(zod.object({
+  "id": zod.string(),
+  "walletId": zod.string(),
+  "type": zod.enum(['credit', 'debit', 'pending']),
+  "label": zod.string(),
+  "sublabel": zod.string().nullish(),
+  "amount": zod.number(),
+  "relatedOrderId": zod.string().nullish(),
+  "relatedBookingId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+

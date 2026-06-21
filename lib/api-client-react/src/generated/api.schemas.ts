@@ -249,6 +249,55 @@ export interface ProOrder {
   items: ProOrderItem[];
 }
 
+export type WalletTransactionType = typeof WalletTransactionType[keyof typeof WalletTransactionType];
+
+
+export const WalletTransactionType = {
+  credit: 'credit',
+  debit: 'debit',
+  pending: 'pending',
+} as const;
+
+export interface WalletTransaction {
+  id: string;
+  walletId: string;
+  type: WalletTransactionType;
+  label: string;
+  /** @nullable */
+  sublabel?: string | null;
+  amount: number;
+  /** @nullable */
+  relatedOrderId?: string | null;
+  /** @nullable */
+  relatedBookingId?: string | null;
+  createdAt: string;
+}
+
+export type WalletDataType = typeof WalletDataType[keyof typeof WalletDataType];
+
+
+export const WalletDataType = {
+  personal: 'personal',
+  business: 'business',
+} as const;
+
+export interface WalletData {
+  id: string;
+  userId: string;
+  type: WalletDataType;
+  /** @nullable */
+  businessId?: string | null;
+  balance: number;
+  pendingBalance: number;
+  createdAt: string;
+  transactions: WalletTransaction[];
+}
+
+export interface AmountInput {
+  /** @minimum 1 */
+  amount: number;
+}
+
 export interface StatusUpdate {
   status: string;
 }

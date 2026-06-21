@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Platform,
@@ -13,81 +14,19 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getGetBusinessWalletQueryKey,
+  getGetPersonalWalletQueryKey,
+  useGetBusinessWallet,
+  useGetPersonalWallet,
+  useTopupPersonalWallet,
+  useWithdrawBusinessWallet,
+  type WalletTransaction,
+} from "@workspace/api-client-react";
+import { useActiveBusiness } from "@/context/ActiveBusinessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-type TxType = "credit" | "debit" | "pending";
-
-type Transaction = {
-  id: string;
-  type: TxType;
-  label: string;
-  sublabel: string;
-  amount: number;
-  date: string;
-  canWithdraw: boolean;
-};
-
-// ─── Mock data ─────────────────────────────────────────────────────────────────
-
-const now = Date.now();
-const h = 3600 * 1000;
-
-/** Business wallet — revenus des ventes */
-const BUSINESS_TRANSACTIONS: Transaction[] = [
-  {
-    id: "b1", type: "credit",
-    label: "Commande #1089", sublabel: "Riz au poulet × 2 — Livré",
-    amount: 5000, date: new Date(now - 72 * h).toISOString(), canWithdraw: true,
-  },
-  {
-    id: "b2", type: "credit",
-    label: "Commande #1088", sublabel: "Attiéké poisson × 3 — Livré",
-    amount: 6000, date: new Date(now - 50 * h).toISOString(), canWithdraw: true,
-  },
-  {
-    id: "b3", type: "debit",
-    label: "Retrait vers Flooz", sublabel: "+228 90 12 34 56",
-    amount: -8000, date: new Date(now - 36 * h).toISOString(), canWithdraw: false,
-  },
-  {
-    id: "b4", type: "pending",
-    label: "Commande #1092", sublabel: "Fufu + sauce gombo — En cours",
-    amount: 1500, date: new Date(now - 10 * h).toISOString(), canWithdraw: false,
-  },
-  {
-    id: "b5", type: "pending",
-    label: "Commande #1093", sublabel: "Beignets × 4 — En livraison",
-    amount: 800, date: new Date(now - 2 * h).toISOString(), canWithdraw: false,
-  },
-];
-
-/** Portefeuille personnel — recharges et achats */
-const PERSONAL_TRANSACTIONS: Transaction[] = [
-  {
-    id: "p1", type: "credit",
-    label: "Recharge Flooz", sublabel: "+228 90 12 34 56",
-    amount: 20000, date: new Date(now - 48 * h).toISOString(), canWithdraw: true,
-  },
-  {
-    id: "p2", type: "debit",
-    label: "Commande #1091", sublabel: "Riz au poulet × 2 — Payé",
-    amount: -5000, date: new Date(now - 30 * h).toISOString(), canWithdraw: false,
-  },
-  {
-    id: "p3", type: "debit",
-    label: "Commande #1092", sublabel: "Jus de bissap × 3 — Payé",
-    amount: -900, date: new Date(now - 20 * h).toISOString(), canWithdraw: false,
-  },
-  {
-    id: "p4", type: "pending",
-    label: "Commande #1094", sublabel: "Attiéké poisson — En livraison",
-    amount: -2000, date: new Date(now - 1 * h).toISOString(), canWithdraw: false,
-  },
-];
-
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,21 +43,20 @@ function hoursAgo(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / (3600 * 1000);
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
+// ─── Transaction row ────────────────────────────────────────────────────────────
 
-function TxRow({ tx, colors }: { tx: Transaction; colors: ReturnType<typeof useColors> }) {
-  const hrs = hoursAgo(tx.date);
+function TxRow({ tx, colors }: { tx: WalletTransaction; colors: ReturnType<typeof useColors> }) {
+  const hrs = hoursAgo(tx.createdAt);
   const isCredit = tx.type === "credit";
   const isPending = tx.type === "pending";
-  const lockedCredit = isCredit && !tx.canWithdraw;
+  const isDebit = tx.type === "debit";
   const hoursLeft = Math.max(0, Math.ceil(24 - hrs));
 
   let iconName: string;
   let iconBg: string;
   let iconColor: string;
-  if (tx.type === "debit") { iconName = "arrow-up-left"; iconBg = "#FEE2E2"; iconColor = "#DC2626"; }
+  if (isDebit) { iconName = "arrow-up-left"; iconBg = "#FEE2E2"; iconColor = "#DC2626"; }
   else if (isPending) { iconName = "clock"; iconBg = "#FEF3C7"; iconColor = "#D97706"; }
-  else if (lockedCredit) { iconName = "lock"; iconBg = "#EDE9FE"; iconColor = "#7C3AED"; }
   else { iconName = "arrow-down-right"; iconBg = "#DCFCE7"; iconColor = "#16A34A"; }
 
   return (
@@ -128,226 +66,59 @@ function TxRow({ tx, colors }: { tx: Transaction; colors: ReturnType<typeof useC
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.txLabel, { color: colors.text }]}>{tx.label}</Text>
-        <Text style={[styles.txSub, { color: colors.mutedForeground }]}>{tx.sublabel}</Text>
-        {lockedCredit && (
-          <View style={[styles.lockBadge, { backgroundColor: "#EDE9FE" }]}>
-            <Feather name="lock" size={10} color="#7C3AED" />
-            <Text style={[styles.lockText, { color: "#7C3AED" }]}>Disponible dans {hoursLeft}h</Text>
-          </View>
-        )}
+        {tx.sublabel ? (
+          <Text style={[styles.txSub, { color: colors.mutedForeground }]}>{tx.sublabel}</Text>
+        ) : null}
         {isPending && (
           <View style={[styles.lockBadge, { backgroundColor: "#FEF3C7" }]}>
             <Feather name="clock" size={10} color="#D97706" />
-            <Text style={[styles.lockText, { color: "#D97706" }]}>En attente de finalisation</Text>
+            <Text style={[styles.lockText, { color: "#D97706" }]}>En cours de traitement</Text>
+          </View>
+        )}
+        {isCredit && hoursLeft > 0 && hrs < 24 && (
+          <View style={[styles.lockBadge, { backgroundColor: "#EDE9FE" }]}>
+            <Feather name="lock" size={10} color="#7C3AED" />
+            <Text style={[styles.lockText, { color: "#7C3AED" }]}>Disponible dans {hoursLeft}h</Text>
           </View>
         )}
       </View>
       <View style={{ alignItems: "flex-end", gap: 4 }}>
         <Text style={[
           styles.txAmount,
-          { color: tx.type === "debit" ? "#DC2626" : (isPending || lockedCredit) ? "#D97706" : "#16A34A" },
+          { color: isDebit ? "#DC2626" : isPending ? "#D97706" : "#16A34A" },
         ]}>
-          {tx.type === "debit" ? "−" : "+"}{formatAmount(tx.amount)}
+          {isDebit ? "−" : "+"}{formatAmount(tx.amount)}
         </Text>
-        <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDate(tx.date)}</Text>
+        <Text style={[styles.txDate, { color: colors.mutedForeground }]}>{formatDate(tx.createdAt)}</Text>
       </View>
     </View>
   );
 }
 
-// ─── Business wallet tab ───────────────────────────────────────────────────────
-
-function BusinessWallet({ colors, botPad, hasBusiness }: { colors: ReturnType<typeof useColors>; botPad: number; hasBusiness: boolean }) {
-  const [withdrawModal, setWithdrawModal] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawing, setWithdrawing] = useState(false);
-
-  const credits = BUSINESS_TRANSACTIONS.filter((t) => t.type === "credit" && t.canWithdraw);
-  const pending = BUSINESS_TRANSACTIONS.filter((t) => t.type === "pending" || (t.type === "credit" && !t.canWithdraw));
-  const debits = BUSINESS_TRANSACTIONS.filter((t) => t.type === "debit");
-
-  const totalAvailable = credits.reduce((s, t) => s + t.amount, 0) + debits.reduce((s, t) => s + t.amount, 0);
-  const totalPending = pending.reduce((s, t) => s + t.amount, 0);
-  const totalBalance = totalAvailable + totalPending;
-  const canWithdraw = totalAvailable >= 500;
-
-  const handleWithdraw = () => {
-    const amt = Number(withdrawAmount);
-    if (!amt || amt < 500) {
-      Alert.alert("Montant invalide", "Le montant minimum de retrait est 500 FCFA.");
-      return;
-    }
-    if (amt > totalAvailable) {
-      Alert.alert("Fonds insuffisants", "Vous ne pouvez retirer que votre solde disponible.");
-      return;
-    }
-    setWithdrawing(true);
-    setTimeout(() => {
-      setWithdrawing(false);
-      setWithdrawModal(false);
-      setWithdrawAmount("");
-      Alert.alert("Retrait initié", `${formatAmount(amt)} sera virée sur votre Mobile Money dans quelques minutes.`);
-    }, 1200);
-  };
-
-  if (!hasBusiness) {
-    return (
-      <View style={[styles.noBizWrap, { paddingBottom: botPad + 32 }]}>
-        <View style={[styles.noBizIcon, { backgroundColor: "#1E3A5F15" }]}>
-          <Feather name="briefcase" size={48} color="#1E3A5F" />
-        </View>
-        <Text style={[styles.noBizTitle, { color: "#1E3A5F" }]}>Aucune entreprise</Text>
-        <Text style={[styles.noBizSub, { color: "#6B7280" }]}>
-          Inscrivez votre commerce sur Kola Pro pour accéder à votre portefeuille business, encaisser des paiements et suivre vos revenus.
-        </Text>
-        <TouchableOpacity
-          style={[styles.noBizBtn, { backgroundColor: "#1E3A5F" }]}
-          onPress={() => router.push("/pro/register")}
-          activeOpacity={0.85}
-        >
-          <Feather name="plus-circle" size={18} color="#fff" />
-          <Text style={styles.noBizBtnText}>Inscrire mon commerce</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={[styles.content, { paddingBottom: botPad + 32 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Balance card */}
-        <View style={[styles.balanceCard, { backgroundColor: "#1E3A5F" }]}>
-          <View style={styles.decoCircle1} />
-          <View style={styles.decoCircle2} />
-          <View style={[styles.walletBadge, { backgroundColor: "rgba(255,255,255,0.15)" }]}>
-            <Feather name="briefcase" size={13} color="rgba(255,255,255,0.9)" />
-            <Text style={styles.walletBadgeText}>Business</Text>
-          </View>
-          <Text style={styles.balanceLabel}>Solde total business</Text>
-          <Text style={styles.balanceAmount}>{totalBalance.toLocaleString("fr-FR")} FCFA</Text>
-          <View style={styles.balanceSplit}>
-            <View style={styles.balanceSplitItem}>
-              <View style={[styles.splitDot, { backgroundColor: "#4ADE80" }]} />
-              <View>
-                <Text style={styles.splitLabel}>Disponible</Text>
-                <Text style={styles.splitValue}>{totalAvailable.toLocaleString("fr-FR")} FCFA</Text>
-              </View>
-            </View>
-            <View style={[styles.splitDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
-            <View style={styles.balanceSplitItem}>
-              <View style={[styles.splitDot, { backgroundColor: "#FCD34D" }]} />
-              <View>
-                <Text style={styles.splitLabel}>En attente</Text>
-                <Text style={styles.splitValue}>{totalPending.toLocaleString("fr-FR")} FCFA</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Info box */}
-        <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.infoIcon, { backgroundColor: "#EDE9FE" }]}>
-            <Feather name="lock" size={16} color="#7C3AED" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.infoTitle, { color: colors.text }]}>Règle de retrait</Text>
-            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-              Les fonds des commandes sont disponibles au retrait <Text style={{ fontWeight: "700" }}>après 24 heures</Text>. Les commandes en cours sont bloquées jusqu'à leur finalisation.
-            </Text>
-          </View>
-        </View>
-
-        {/* Withdraw button */}
-        <TouchableOpacity
-          style={[styles.withdrawBtn, { backgroundColor: canWithdraw ? colors.primary : colors.muted }]}
-          onPress={() => canWithdraw ? setWithdrawModal(true) : null}
-          activeOpacity={canWithdraw ? 0.85 : 1}
-        >
-          <Feather name="arrow-up" size={18} color={canWithdraw ? "#fff" : colors.mutedForeground} />
-          <Text style={[styles.withdrawBtnText, { color: canWithdraw ? "#fff" : colors.mutedForeground }]}>
-            {canWithdraw
-              ? `Retirer des fonds (${totalAvailable.toLocaleString("fr-FR")} FCFA dispo)`
-              : "Aucun fonds disponible"}
-          </Text>
-        </TouchableOpacity>
-
-        {/* History */}
-        <View>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Historique des transactions</Text>
-          <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {BUSINESS_TRANSACTIONS.map((tx) => <TxRow key={tx.id} tx={tx} colors={colors} />)}
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* Withdraw Modal */}
-      <Modal visible={withdrawModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Retrait Mobile Money</Text>
-            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
-              Solde disponible : <Text style={{ fontWeight: "700", color: "#16A34A" }}>{totalAvailable.toLocaleString("fr-FR")} FCFA</Text>
-            </Text>
-            <View style={styles.modalField}>
-              <Text style={[styles.modalLabel, { color: colors.text }]}>Montant à retirer (FCFA)</Text>
-              <TextInput
-                style={[styles.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
-                value={withdrawAmount}
-                onChangeText={setWithdrawAmount}
-                placeholder="Ex : 5000"
-                placeholderTextColor={colors.mutedForeground}
-                keyboardType="number-pad"
-              />
-            </View>
-            <View style={[styles.modalInfo, { backgroundColor: colors.background }]}>
-              <Feather name="smartphone" size={14} color={colors.primary} />
-              <Text style={[styles.modalInfoText, { color: colors.mutedForeground }]}>
-                Virement vers votre numéro Mobile Money enregistré
-              </Text>
-            </View>
-            <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                onPress={() => setWithdrawModal(false)}
-              >
-                <Text style={[styles.modalCancelText, { color: colors.text }]}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, { backgroundColor: colors.primary, opacity: withdrawing ? 0.7 : 1 }]}
-                onPress={handleWithdraw}
-                disabled={withdrawing}
-              >
-                <Text style={styles.modalConfirmText}>{withdrawing ? "Traitement..." : "Confirmer le retrait"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
-
-// ─── Personal wallet tab ───────────────────────────────────────────────────────
+// ─── Personal wallet tab ────────────────────────────────────────────────────────
 
 function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColors>; botPad: number }) {
+  const queryClient = useQueryClient();
   const [topupModal, setTopupModal] = useState(false);
   const [topupAmount, setTopupAmount] = useState("");
-  const [topping, setTopping] = useState(false);
 
-  const credits = PERSONAL_TRANSACTIONS.filter((t) => t.type === "credit");
-  const debits = PERSONAL_TRANSACTIONS.filter((t) => t.type === "debit");
-  const pending = PERSONAL_TRANSACTIONS.filter((t) => t.type === "pending");
+  const { data, isLoading } = useGetPersonalWallet({
+    query: { queryKey: getGetPersonalWalletQueryKey() },
+  });
 
-  const totalBalance = credits.reduce((s, t) => s + t.amount, 0)
-    + debits.reduce((s, t) => s + t.amount, 0)
-    + pending.reduce((s, t) => s + t.amount, 0);
-  const totalSpent = Math.abs(debits.reduce((s, t) => s + t.amount, 0));
-  const totalPending = Math.abs(pending.reduce((s, t) => s + t.amount, 0));
+  const { mutate: topup, isPending: topping } = useTopupPersonalWallet({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetPersonalWalletQueryKey() });
+        setTopupModal(false);
+        setTopupAmount("");
+        Alert.alert("Recharge initiée", `${formatAmount(Number(topupAmount))} sera crédité sur votre portefeuille.`);
+      },
+      onError: () => {
+        Alert.alert("Erreur", "Montant minimum : 100 FCFA.");
+      },
+    },
+  });
 
   const handleTopup = () => {
     const amt = Number(topupAmount);
@@ -355,14 +126,23 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
       Alert.alert("Montant invalide", "Le montant minimum de recharge est 100 FCFA.");
       return;
     }
-    setTopping(true);
-    setTimeout(() => {
-      setTopping(false);
-      setTopupModal(false);
-      setTopupAmount("");
-      Alert.alert("Recharge initiée", `${formatAmount(amt)} seront crédités depuis votre Mobile Money.`);
-    }, 1200);
+    topup({ data: { amount: amt } });
   };
+
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  const balance = data?.balance ?? 0;
+  const pendingBalance = data?.pendingBalance ?? 0;
+  const transactions = data?.transactions ?? [];
+  const totalSpent = transactions
+    .filter((t) => t.type === "debit")
+    .reduce((s, t) => s + t.amount, 0);
 
   return (
     <>
@@ -380,13 +160,13 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
             <Text style={styles.walletBadgeText}>Personnel</Text>
           </View>
           <Text style={styles.balanceLabel}>Solde disponible</Text>
-          <Text style={styles.balanceAmount}>{Math.max(0, totalBalance).toLocaleString("fr-FR")} FCFA</Text>
+          <Text style={styles.balanceAmount}>{balance.toLocaleString("fr-FR")} FCFA</Text>
           <View style={styles.balanceSplit}>
             <View style={styles.balanceSplitItem}>
               <View style={[styles.splitDot, { backgroundColor: "#FCD34D" }]} />
               <View>
                 <Text style={styles.splitLabel}>En cours</Text>
-                <Text style={styles.splitValue}>{totalPending.toLocaleString("fr-FR")} FCFA</Text>
+                <Text style={styles.splitValue}>{pendingBalance.toLocaleString("fr-FR")} FCFA</Text>
               </View>
             </View>
             <View style={[styles.splitDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
@@ -426,13 +206,13 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
         <View>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Historique</Text>
           <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {PERSONAL_TRANSACTIONS.length === 0 ? (
+            {transactions.length === 0 ? (
               <View style={styles.empty}>
                 <Feather name="inbox" size={36} color={colors.mutedForeground} />
                 <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Aucune transaction</Text>
               </View>
             ) : (
-              PERSONAL_TRANSACTIONS.map((tx) => <TxRow key={tx.id} tx={tx} colors={colors} />)
+              [...transactions].reverse().map((tx) => <TxRow key={tx.id} tx={tx} colors={colors} />)
             )}
           </View>
         </View>
@@ -467,7 +247,7 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
             <View style={styles.modalBtns}>
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                onPress={() => setTopupModal(false)}
+                onPress={() => { setTopupModal(false); setTopupAmount(""); }}
               >
                 <Text style={[styles.modalCancelText, { color: colors.text }]}>Annuler</Text>
               </TouchableOpacity>
@@ -477,6 +257,238 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
                 disabled={topping}
               >
                 <Text style={styles.modalConfirmText}>{topping ? "Traitement..." : "Confirmer la recharge"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// ─── Business wallet tab ────────────────────────────────────────────────────────
+
+function BusinessWallet({ colors, botPad, hasBusiness }: {
+  colors: ReturnType<typeof useColors>;
+  botPad: number;
+  hasBusiness: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { selectedBusinessId } = useActiveBusiness();
+  const [withdrawModal, setWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+
+  const { data, isLoading } = useGetBusinessWallet(selectedBusinessId, {
+    query: {
+      queryKey: getGetBusinessWalletQueryKey(selectedBusinessId),
+      enabled: !!selectedBusinessId && hasBusiness,
+    },
+  });
+
+  const { mutate: withdraw, isPending: withdrawing } = useWithdrawBusinessWallet({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetBusinessWalletQueryKey(selectedBusinessId) });
+        setWithdrawModal(false);
+        setWithdrawAmount("");
+        Alert.alert("Retrait initié", `${formatAmount(Number(withdrawAmount))} sera virée sur votre Mobile Money dans quelques minutes.`);
+      },
+      onError: () => {
+        Alert.alert("Erreur", "Solde insuffisant ou montant invalide. Minimum : 500 FCFA.");
+      },
+    },
+  });
+
+  const handleWithdraw = () => {
+    const amt = Number(withdrawAmount);
+    if (!amt || amt < 500) {
+      Alert.alert("Montant invalide", "Le montant minimum de retrait est 500 FCFA.");
+      return;
+    }
+    if (amt > (data?.balance ?? 0)) {
+      Alert.alert("Fonds insuffisants", "Vous ne pouvez retirer que votre solde disponible.");
+      return;
+    }
+    withdraw({ businessId: selectedBusinessId, data: { amount: amt } });
+  };
+
+  // No business registered
+  if (!hasBusiness) {
+    return (
+      <View style={[styles.noBizWrap, { paddingBottom: botPad + 32 }]}>
+        <View style={[styles.noBizIcon, { backgroundColor: "#1E3A5F15" }]}>
+          <Feather name="briefcase" size={48} color="#1E3A5F" />
+        </View>
+        <Text style={[styles.noBizTitle, { color: "#1E3A5F" }]}>Aucune entreprise</Text>
+        <Text style={[styles.noBizSub, { color: "#6B7280" }]}>
+          Inscrivez votre commerce sur Kola Pro pour accéder à votre portefeuille business, encaisser des paiements et suivre vos revenus.
+        </Text>
+        <TouchableOpacity
+          style={[styles.noBizBtn, { backgroundColor: "#1E3A5F" }]}
+          onPress={() => router.push("/pro/register")}
+          activeOpacity={0.85}
+        >
+          <Feather name="plus-circle" size={18} color="#fff" />
+          <Text style={styles.noBizBtnText}>Inscrire mon commerce</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Business registered but none selected in session
+  if (!selectedBusinessId) {
+    return (
+      <View style={[styles.noBizWrap, { paddingBottom: botPad + 32 }]}>
+        <View style={[styles.noBizIcon, { backgroundColor: "#1E3A5F15" }]}>
+          <Feather name="briefcase" size={48} color="#1E3A5F" />
+        </View>
+        <Text style={[styles.noBizTitle, { color: "#1E3A5F" }]}>Aucune entreprise sélectionnée</Text>
+        <Text style={[styles.noBizSub, { color: "#6B7280" }]}>
+          Sélectionnez une entreprise depuis l'espace pro pour voir son portefeuille.
+        </Text>
+        <TouchableOpacity
+          style={[styles.noBizBtn, { backgroundColor: "#1E3A5F" }]}
+          onPress={() => router.push("/pro/businesses")}
+          activeOpacity={0.85}
+        >
+          <Feather name="briefcase" size={18} color="#fff" />
+          <Text style={styles.noBizBtnText}>Choisir une entreprise</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color="#1E3A5F" size="large" />
+      </View>
+    );
+  }
+
+  const balance = data?.balance ?? 0;
+  const pendingBalance = data?.pendingBalance ?? 0;
+  const transactions = data?.transactions ?? [];
+  const canWithdraw = balance >= 500;
+
+  return (
+    <>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.content, { paddingBottom: botPad + 32 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Balance card */}
+        <View style={[styles.balanceCard, { backgroundColor: "#1E3A5F" }]}>
+          <View style={styles.decoCircle1} />
+          <View style={styles.decoCircle2} />
+          <View style={[styles.walletBadge, { backgroundColor: "rgba(255,255,255,0.15)" }]}>
+            <Feather name="briefcase" size={13} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.walletBadgeText}>Business</Text>
+          </View>
+          <Text style={styles.balanceLabel}>Solde total business</Text>
+          <Text style={styles.balanceAmount}>{(balance + pendingBalance).toLocaleString("fr-FR")} FCFA</Text>
+          <View style={styles.balanceSplit}>
+            <View style={styles.balanceSplitItem}>
+              <View style={[styles.splitDot, { backgroundColor: "#4ADE80" }]} />
+              <View>
+                <Text style={styles.splitLabel}>Disponible</Text>
+                <Text style={styles.splitValue}>{balance.toLocaleString("fr-FR")} FCFA</Text>
+              </View>
+            </View>
+            <View style={[styles.splitDivider, { backgroundColor: "rgba(255,255,255,0.2)" }]} />
+            <View style={styles.balanceSplitItem}>
+              <View style={[styles.splitDot, { backgroundColor: "#FCD34D" }]} />
+              <View>
+                <Text style={styles.splitLabel}>En attente</Text>
+                <Text style={styles.splitValue}>{pendingBalance.toLocaleString("fr-FR")} FCFA</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Info box */}
+        <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.infoIcon, { backgroundColor: "#EDE9FE" }]}>
+            <Feather name="lock" size={16} color="#7C3AED" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoTitle, { color: colors.text }]}>Règle de retrait</Text>
+            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
+              Les fonds des commandes sont disponibles au retrait <Text style={{ fontWeight: "700" }}>après 24 heures</Text>. Les commandes en cours sont bloquées jusqu'à leur finalisation.
+            </Text>
+          </View>
+        </View>
+
+        {/* Withdraw button */}
+        <TouchableOpacity
+          style={[styles.withdrawBtn, { backgroundColor: canWithdraw ? "#1E3A5F" : colors.muted }]}
+          onPress={() => canWithdraw ? setWithdrawModal(true) : null}
+          activeOpacity={canWithdraw ? 0.85 : 1}
+        >
+          <Feather name="arrow-up" size={18} color={canWithdraw ? "#fff" : colors.mutedForeground} />
+          <Text style={[styles.withdrawBtnText, { color: canWithdraw ? "#fff" : colors.mutedForeground }]}>
+            {canWithdraw
+              ? `Retirer des fonds (${balance.toLocaleString("fr-FR")} FCFA dispo)`
+              : "Aucun fonds disponible"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* History */}
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Historique des transactions</Text>
+          <View style={[styles.txCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {transactions.length === 0 ? (
+              <View style={styles.empty}>
+                <Feather name="inbox" size={36} color={colors.mutedForeground} />
+                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>Aucune transaction</Text>
+              </View>
+            ) : (
+              [...transactions].reverse().map((tx) => <TxRow key={tx.id} tx={tx} colors={colors} />)
+            )}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Withdraw Modal */}
+      <Modal visible={withdrawModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Retrait Mobile Money</Text>
+            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
+              Solde disponible : <Text style={{ fontWeight: "700", color: "#16A34A" }}>{balance.toLocaleString("fr-FR")} FCFA</Text>
+            </Text>
+            <View style={styles.modalField}>
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Montant à retirer (FCFA)</Text>
+              <TextInput
+                style={[styles.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
+                value={withdrawAmount}
+                onChangeText={setWithdrawAmount}
+                placeholder="Ex : 5000"
+                placeholderTextColor={colors.mutedForeground}
+                keyboardType="number-pad"
+              />
+            </View>
+            <View style={[styles.modalInfo, { backgroundColor: colors.background }]}>
+              <Feather name="smartphone" size={14} color="#1E3A5F" />
+              <Text style={[styles.modalInfoText, { color: colors.mutedForeground }]}>
+                Virement vers votre numéro Mobile Money enregistré
+              </Text>
+            </View>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
+                onPress={() => { setWithdrawModal(false); setWithdrawAmount(""); }}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.text }]}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: "#1E3A5F", opacity: withdrawing ? 0.7 : 1 }]}
+                onPress={handleWithdraw}
+                disabled={withdrawing}
+              >
+                <Text style={styles.modalConfirmText}>{withdrawing ? "Traitement..." : "Confirmer le retrait"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -510,7 +522,7 @@ export default function ProWalletScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      {/* Tab bar — always visible */}
+      {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
         {(["personal", "business"] as const).map((tab) => {
           const active = activeTab === tab;
@@ -544,13 +556,13 @@ export default function ProWalletScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1,
+    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 17, fontWeight: "700" },
+  headerTitle: { fontSize: 18, fontWeight: "800" },
 
-  // Tabs
   tabBar: {
     flexDirection: "row", borderBottomWidth: 1,
   },
@@ -560,45 +572,46 @@ const styles = StyleSheet.create({
   },
   tabText: { fontSize: 14 },
 
-  content: { paddingHorizontal: 20, paddingTop: 20, gap: 20 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  // Balance card
+  content: { paddingHorizontal: 20, paddingTop: 20, gap: 16 },
+
   balanceCard: {
-    borderRadius: 24, padding: 24, overflow: "hidden",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2, shadowRadius: 16, elevation: 8,
+    borderRadius: 24, padding: 24, gap: 6, overflow: "hidden", position: "relative",
   },
   decoCircle1: {
-    position: "absolute", width: 200, height: 200, borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.06)", top: -80, right: -60,
+    position: "absolute", width: 180, height: 180, borderRadius: 90,
+    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -40,
   },
   decoCircle2: {
-    position: "absolute", width: 140, height: 140, borderRadius: 70,
-    backgroundColor: "rgba(255,255,255,0.05)", bottom: -40, left: -30,
+    position: "absolute", width: 120, height: 120, borderRadius: 60,
+    backgroundColor: "rgba(255,255,255,0.05)", bottom: -40, left: -20,
   },
   walletBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 100, marginBottom: 14,
+    flexDirection: "row", alignItems: "center", gap: 6,
+    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 20, marginBottom: 8,
   },
-  walletBadgeText: { fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.9)" },
-  balanceLabel: { fontSize: 13, color: "rgba(255,255,255,0.65)", fontWeight: "600", marginBottom: 6 },
-  balanceAmount: { fontSize: 34, fontWeight: "900", color: "#fff", letterSpacing: -0.5, marginBottom: 20 },
-  balanceSplit: { flexDirection: "row", alignItems: "center", gap: 16 },
-  balanceSplitItem: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
-  splitDot: { width: 10, height: 10, borderRadius: 5 },
-  splitLabel: { fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: "600" },
-  splitValue: { fontSize: 14, color: "#fff", fontWeight: "700", marginTop: 2 },
+  walletBadgeText: { color: "rgba(255,255,255,0.9)", fontSize: 12, fontWeight: "700" },
+  balanceLabel: { color: "rgba(255,255,255,0.8)", fontSize: 13 },
+  balanceAmount: { color: "#fff", fontSize: 32, fontWeight: "900", letterSpacing: -0.5 },
+  balanceSplit: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 16 },
+  balanceSplitItem: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  splitDot: { width: 8, height: 8, borderRadius: 4 },
+  splitLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginBottom: 1 },
+  splitValue: { color: "#fff", fontSize: 13, fontWeight: "700" },
   splitDivider: { width: 1, height: 36 },
 
-  // Info
   infoBox: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    padding: 14, borderRadius: 14, borderWidth: 1,
+    flexDirection: "row", alignItems: "flex-start", gap: 14,
+    padding: 16, borderRadius: 16, borderWidth: 1,
   },
-  infoIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  infoTitle: { fontSize: 13, fontWeight: "700", marginBottom: 3 },
-  infoText: { fontSize: 12, lineHeight: 17 },
+  infoIcon: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
+  },
+  infoTitle: { fontSize: 14, fontWeight: "700", marginBottom: 4 },
+  infoText: { fontSize: 13, lineHeight: 19 },
 
   withdrawBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
@@ -606,19 +619,15 @@ const styles = StyleSheet.create({
   },
   withdrawBtnText: { fontSize: 15, fontWeight: "700" },
 
-  sectionTitle: { fontSize: 17, fontWeight: "700", marginBottom: 12 },
-  txCard: { borderRadius: 16, borderWidth: 1, overflow: "hidden" },
-  txRow: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  txIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  txLabel: { fontSize: 14, fontWeight: "600" },
-  txSub: { fontSize: 12, marginTop: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: "800", marginBottom: 10 },
+  txCard: { borderRadius: 18, borderWidth: 1, overflow: "hidden" },
+  txRow: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderBottomWidth: 1 },
+  txIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  txLabel: { fontSize: 14, fontWeight: "600", marginBottom: 2 },
+  txSub: { fontSize: 12, marginBottom: 4 },
   lockBadge: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 100,
-    alignSelf: "flex-start", marginTop: 5,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, alignSelf: "flex-start",
   },
   lockText: { fontSize: 11, fontWeight: "600" },
   txAmount: { fontSize: 14, fontWeight: "800" },
@@ -648,17 +657,28 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   modalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 18 },
-  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginBottom: 4 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#E5E7EB", alignSelf: "center" },
   modalTitle: { fontSize: 20, fontWeight: "800" },
-  modalSub: { fontSize: 14, marginTop: -10 },
+  modalSub: { fontSize: 14, marginTop: -8 },
   modalField: { gap: 8 },
   modalLabel: { fontSize: 14, fontWeight: "600" },
-  modalInput: { paddingHorizontal: 14, paddingVertical: 13, borderRadius: 12, borderWidth: 1, fontSize: 16 },
-  modalInfo: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10 },
+  modalInput: {
+    borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 16, fontWeight: "600",
+  },
+  modalInfo: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 14, borderRadius: 12,
+  },
   modalInfoText: { fontSize: 13, flex: 1 },
-  modalBtns: { flexDirection: "row", gap: 10 },
-  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 100, borderWidth: 1, alignItems: "center" },
+  modalBtns: { flexDirection: "row", gap: 12 },
+  modalCancelBtn: {
+    flex: 1, borderWidth: 1.5, borderRadius: 14,
+    paddingVertical: 14, alignItems: "center",
+  },
   modalCancelText: { fontSize: 15, fontWeight: "600" },
-  modalConfirmBtn: { flex: 2, paddingVertical: 14, borderRadius: 100, alignItems: "center" },
-  modalConfirmText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  modalConfirmBtn: {
+    flex: 2, borderRadius: 14, paddingVertical: 14, alignItems: "center",
+  },
+  modalConfirmText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 });

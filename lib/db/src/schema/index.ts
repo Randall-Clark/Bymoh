@@ -7,3 +7,4 @@ export * from "./reviews";
 export * from "./notifications";
 export * from "./drivers";
 export * from "./otp_codes";
+export * from "./wallets";

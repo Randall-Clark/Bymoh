@@ -20,6 +20,8 @@ tags:
     description: Pro booking management
   - name: proOrders
     description: Pro order management
+  - name: wallets
+    description: Personal and business wallet management
 paths:
   /healthz:
     get:
@@ -384,6 +386,99 @@ paths:
         "404":
           description: Not found
 
+  # ── Wallets ─────────────────────────────────────────────────────────────────
+  /wallets/personal:
+    get:
+      operationId: getPersonalWallet
+      tags: [wallets]
+      summary: Get personal wallet and transactions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Personal wallet data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletData"
+
+  /wallets/personal/topup:
+    post:
+      operationId: topupPersonalWallet
+      tags: [wallets]
+      summary: Initiate a Mobile Money top-up for personal wallet
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmountInput"
+      responses:
+        "200":
+          description: Updated wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletData"
+        "400":
+          description: Invalid amount
+
+  /wallets/business/{businessId}:
+    get:
+      operationId: getBusinessWallet
+      tags: [wallets]
+      summary: Get business wallet and transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Business wallet data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletData"
+        "403":
+          description: Forbidden
+
+  /wallets/business/{businessId}/withdraw:
+    post:
+      operationId: withdrawBusinessWallet
+      tags: [wallets]
+      summary: Withdraw funds from business wallet to Mobile Money
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: businessId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmountInput"
+      responses:
+        "200":
+          description: Updated wallet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletData"
+        "400":
+          description: Invalid amount or insufficient balance
+        "403":
+          description: Forbidden
+
 components:
   securitySchemes:
     bearerAuth:
@@ -637,6 +732,65 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProOrderItem"
+
+    # ── Wallet schemas ─────────────────────────────────────────────────────────
+    WalletTransaction:
+      type: object
+      required: [id, walletId, type, label, amount, createdAt]
+      properties:
+        id:
+          type: string
+        walletId:
+          type: string
+        type:
+          type: string
+          enum: [credit, debit, pending]
+        label:
+          type: string
+        sublabel:
+          type: ["string", "null"]
+        amount:
+          type: integer
+        relatedOrderId:
+          type: ["string", "null"]
+        relatedBookingId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    WalletData:
+      type: object
+      required: [id, userId, type, balance, pendingBalance, createdAt, transactions]
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [personal, business]
+        businessId:
+          type: ["string", "null"]
+        balance:
+          type: integer
+        pendingBalance:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletTransaction"
+
+    AmountInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: integer
+          minimum: 1
 
     StatusUpdate:
       type: object
