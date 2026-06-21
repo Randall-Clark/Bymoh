@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { setAuthTokenGetter, setBaseUrl } from "@workspace/api-client-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ActiveBusinessProvider } from "@/context/ActiveBusinessContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { OrdersProvider } from "@/context/OrdersContext";
@@ -69,6 +70,7 @@ function RootLayoutNav() {
         <Stack.Screen name="profile/edit" />
         <Stack.Screen name="profile/change-phone" />
         <Stack.Screen name="pro/register" />
+        <Stack.Screen name="pro/businesses" />
         <Stack.Screen name="pro/dashboard" />
         <Stack.Screen name="pro/catalog" />
         <Stack.Screen name="pro/orders" />
@@ -101,11 +103,13 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <AuthProvider>
-                <CartProvider>
-                  <OrdersProvider>
-                    <RootLayoutNav />
-                  </OrdersProvider>
-                </CartProvider>
+                <ActiveBusinessProvider>
+                  <CartProvider>
+                    <OrdersProvider>
+                      <RootLayoutNav />
+                    </OrdersProvider>
+                  </CartProvider>
+                </ActiveBusinessProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

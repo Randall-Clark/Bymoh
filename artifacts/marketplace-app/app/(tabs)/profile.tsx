@@ -238,7 +238,7 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ESPACE PROFESSIONNEL</Text>
           {user?.businessIds && user.businessIds.length > 0 ? (
-            <MenuItem icon="bar-chart-2" label="Tableau de bord Pro" onPress={() => router.push("/pro/dashboard")} />
+            <MenuItem icon="bar-chart-2" label="Espace Professionnel" onPress={() => router.push("/pro/businesses")} />
           ) : (
             <TouchableOpacity
               style={[styles.proPromo, { backgroundColor: colors.secondary }]}

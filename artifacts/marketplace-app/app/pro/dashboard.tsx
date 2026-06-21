@@ -17,13 +17,14 @@ import OrderStatusBadge from "@/components/OrderStatusBadge";
 import ProDrawerMenu from "@/components/ProDrawerMenu";
 import {
   getGetBusinessStatsQueryKey,
-  getGetMyBusinessQueryKey,
+  getGetMyBusinessesQueryKey,
   getGetProBookingsQueryKey,
   useGetBusinessStats,
-  useGetMyBusiness,
+  useGetMyBusinesses,
   useGetProBookings,
 } from "@workspace/api-client-react";
 import { formatPrice } from "@/constants/mockData";
+import { useActiveBusiness } from "@/context/ActiveBusinessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -59,9 +60,10 @@ export default function ProDashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { selectedBusinessId } = useActiveBusiness();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const businessId = user?.businessIds?.[0] ?? "";
+  const businessId = selectedBusinessId || user?.businessIds?.[0] || "";
 
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -78,9 +80,10 @@ export default function ProDashboardScreen() {
   }, [shift]);
 
   // ── API ──────────────────────────────────────────────────────────────────────
-  const { data: myBusiness } = useGetMyBusiness({
-    query: { queryKey: getGetMyBusinessQueryKey(), enabled: !!businessId },
+  const { data: myBusinesses = [] } = useGetMyBusinesses({
+    query: { queryKey: getGetMyBusinessesQueryKey(), enabled: !!businessId },
   });
+  const myBusiness = myBusinesses.find((b) => b.id === businessId);
 
   const { data: stats } = useGetBusinessStats(businessId, {
     query: { queryKey: getGetBusinessStatsQueryKey(businessId), enabled: !!businessId },

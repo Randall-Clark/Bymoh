@@ -18,9 +18,9 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary Get the authenticated pro's own business (including when inactive)
+ * @summary Get all businesses owned by the authenticated pro (including inactive)
  */
-export const GetMyBusinessResponse = zod.object({
+export const GetMyBusinessesResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
@@ -36,10 +36,12 @@ export const GetMyBusinessResponse = zod.object({
   "hasDelivery": zod.boolean().optional(),
   "isOpen": zod.boolean(),
   "isActive": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullish(),
   "isVerified": zod.boolean(),
   "bookingMode": zod.enum(['table', 'service', 'none']).optional(),
   "createdAt": zod.coerce.date()
 })
+export const GetMyBusinessesResponse = zod.array(GetMyBusinessesResponseItem)
 
 
 /**
@@ -69,6 +71,7 @@ export const SetBusinessActiveResponse = zod.object({
   "hasDelivery": zod.boolean().optional(),
   "isOpen": zod.boolean(),
   "isActive": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullish(),
   "isVerified": zod.boolean(),
   "bookingMode": zod.enum(['table', 'service', 'none']).optional(),
   "createdAt": zod.coerce.date()

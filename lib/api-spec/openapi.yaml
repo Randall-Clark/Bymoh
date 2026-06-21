@@ -38,20 +38,20 @@ paths:
   # ── My business (pro) ─────────────────────────────────────────────────────
   /businesses/mine:
     get:
-      operationId: getMyBusiness
+      operationId: getMyBusinesses
       tags: [stats]
-      summary: Get the authenticated pro's own business (including when inactive)
+      summary: Get all businesses owned by the authenticated pro (including inactive)
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Business object
+          description: Array of businesses
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MyBusiness"
-        "404":
-          description: No business found
+                type: array
+                items:
+                  $ref: "#/components/schemas/MyBusiness"
 
   /businesses/{businessId}/active:
     patch:
@@ -686,6 +686,9 @@ components:
           type: boolean
         isActive:
           type: boolean
+        pausedAt:
+          type: ["string", "null"]
+          format: date-time
         isVerified:
           type: boolean
         bookingMode:

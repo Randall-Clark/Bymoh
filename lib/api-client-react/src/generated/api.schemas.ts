@@ -284,6 +284,8 @@ export interface MyBusiness {
   hasDelivery?: boolean;
   isOpen: boolean;
   isActive: boolean;
+  /** @nullable */
+  pausedAt?: string | null;
   isVerified: boolean;
   bookingMode?: MyBusinessBookingMode;
   createdAt: string;

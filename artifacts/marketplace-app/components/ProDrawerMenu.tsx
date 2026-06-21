@@ -16,10 +16,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  getGetMyBusinessQueryKey,
-  useGetMyBusiness,
+  getGetMyBusinessesQueryKey,
+  useGetMyBusinesses,
   useSetBusinessActive,
 } from "@workspace/api-client-react";
+import { useActiveBusiness } from "@/context/ActiveBusinessContext";
 import { useAuth } from "@/context/AuthContext";
 import { getMediaUrl } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
@@ -49,32 +50,51 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const businessId = user?.businessIds?.[0] ?? "";
-  const { data: myBusiness } = useGetMyBusiness({
-    query: { queryKey: getGetMyBusinessQueryKey(), enabled: !!businessId },
+  const { selectedBusinessId } = useActiveBusiness();
+  const businessId = selectedBusinessId || user?.businessIds?.[0] || "";
+  const { data: myBusinesses = [] } = useGetMyBusinesses({
+    query: { queryKey: getGetMyBusinessesQueryKey(), enabled: !!businessId },
   });
+  const myBusiness = myBusinesses.find((b) => b.id === businessId);
+
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const isPauseExpired = myBusiness?.pausedAt
+    ? Date.now() - new Date(myBusiness.pausedAt).getTime() > THREE_DAYS_MS
+    : false;
 
   const { mutate: setActive, isPending: isTogglingActive } = useSetBusinessActive({
     mutation: {
       onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getGetMyBusinessQueryKey() });
+        qc.invalidateQueries({ queryKey: getGetMyBusinessesQueryKey() });
       },
-      onError: () => Alert.alert("Erreur", "Impossible de modifier le statut. Réessayez."),
+      onError: (err: any) => {
+        const msg = err?.data?.message ?? "Impossible de modifier le statut. Réessayez.";
+        Alert.alert("Erreur", msg);
+      },
     },
   });
 
   const handleToggleActive = () => {
     if (!businessId) return;
     const closing = myBusiness?.isActive !== false;
+
+    if (!closing && isPauseExpired) {
+      Alert.alert(
+        "Business définitivement fermé",
+        "Le délai de 3 jours est dépassé. Pour rouvrir, créez un nouveau commerce depuis l'espace entreprise."
+      );
+      return;
+    }
+
     Alert.alert(
-      closing ? "Fermer le business ?" : "Réactiver le business ?",
+      closing ? "Mettre en pause ?" : "Réactiver le business ?",
       closing
-        ? "Votre business ne sera plus visible par les clients. Vous pouvez le réactiver à tout moment."
+        ? "Votre business sera invisible aux clients. Vous avez 3 jours pour le réactiver, après quoi il sera définitivement fermé."
         : "Votre business redeviendra visible sur Kola.",
       [
         { text: "Annuler", style: "cancel" },
         {
-          text: closing ? "Fermer" : "Réactiver",
+          text: closing ? "Mettre en pause" : "Réactiver",
           style: closing ? "destructive" : "default",
           onPress: () => setActive({ businessId, data: { isActive: !closing } }),
         },
@@ -137,9 +157,9 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
     },
     {
       icon: "briefcase",
-      label: "Mon Business",
-      sublabel: "Tableau de bord",
-      onPress: onClose,
+      label: "Mes Entreprises",
+      sublabel: "Changer de commerce",
+      onPress: () => navigate("/pro/businesses"),
     },
     {
       icon: "bell",
@@ -255,7 +275,7 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
 
         {/* Bottom: business toggle + sign out */}
         <View style={[styles.drawerFooter, { paddingBottom: botPad + 16, borderTopColor: colors.border }]}>
-          {!!businessId && (
+          {!!businessId && !isPauseExpired && (
             <TouchableOpacity
               style={[
                 styles.bizToggleBtn,
@@ -286,6 +306,14 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
                   : "Mettre en pause le business"}
               </Text>
             </TouchableOpacity>
+          )}
+          {!!businessId && isPauseExpired && (
+            <View style={[styles.bizToggleBtn, { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }]}>
+              <Feather name="x-circle" size={16} color="#EF4444" />
+              <Text style={[styles.bizToggleText, { color: "#EF4444" }]}>
+                Business définitivement fermé
+              </Text>
+            </View>
           )}
           <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.75}>
             <Feather name="log-out" size={16} color="#EF4444" />

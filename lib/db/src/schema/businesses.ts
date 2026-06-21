@@ -30,6 +30,7 @@ export const businessesTable = pgTable("businesses", {
   bookingMode: bookingModeEnum("booking_mode").notNull().default("service"),
   isVerified: boolean("is_verified").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
+  pausedAt: timestamp("paused_at"),
   forfaitPaid: boolean("forfait_paid").notNull().default(false),
   latitude: real("latitude"),
   longitude: real("longitude"),

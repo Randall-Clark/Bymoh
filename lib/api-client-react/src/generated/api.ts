@@ -124,7 +124,7 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
-export const getGetMyBusinessUrl = () => {
+export const getGetMyBusinessesUrl = () => {
 
 
 
@@ -133,11 +133,11 @@ export const getGetMyBusinessUrl = () => {
 }
 
 /**
- * @summary Get the authenticated pro's own business (including when inactive)
+ * @summary Get all businesses owned by the authenticated pro (including inactive)
  */
-export const getMyBusiness = async ( options?: RequestInit): Promise<MyBusiness> => {
+export const getMyBusinesses = async ( options?: RequestInit): Promise<MyBusiness[]> => {
 
-  return customFetch<MyBusiness>(getGetMyBusinessUrl(),
+  return customFetch<MyBusiness[]>(getGetMyBusinessesUrl(),
   {
     ...options,
     method: 'GET'
@@ -150,45 +150,45 @@ export const getMyBusiness = async ( options?: RequestInit): Promise<MyBusiness>
 
 
 
-export const getGetMyBusinessQueryKey = () => {
+export const getGetMyBusinessesQueryKey = () => {
     return [
     `/api/businesses/mine`
     ] as const;
     }
 
 
-export const getGetMyBusinessQueryOptions = <TData = Awaited<ReturnType<typeof getMyBusiness>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetMyBusinessesQueryOptions = <TData = Awaited<ReturnType<typeof getMyBusinesses>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusinesses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetMyBusinessQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetMyBusinessesQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBusiness>>> = ({ signal }) => getMyBusiness({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyBusinesses>>> = ({ signal }) => getMyBusinesses({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData> & { queryKey: QueryKey }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyBusinesses>>, TError, TData> & { queryKey: QueryKey }
 }
 
-export type GetMyBusinessQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBusiness>>>
-export type GetMyBusinessQueryError = ErrorType<void>
+export type GetMyBusinessesQueryResult = NonNullable<Awaited<ReturnType<typeof getMyBusinesses>>>
+export type GetMyBusinessesQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get the authenticated pro's own business (including when inactive)
+ * @summary Get all businesses owned by the authenticated pro (including inactive)
  */
 
-export function useGetMyBusiness<TData = Awaited<ReturnType<typeof getMyBusiness>>, TError = ErrorType<void>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusiness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetMyBusinesses<TData = Awaited<ReturnType<typeof getMyBusinesses>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyBusinesses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetMyBusinessQueryOptions(options)
+  const queryOptions = getGetMyBusinessesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

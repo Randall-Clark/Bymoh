@@ -25,15 +25,13 @@ router.get("/businesses", async (req, res) => {
 });
 
 router.get("/businesses/mine", requireAuth, async (req: AuthRequest, res) => {
-  const [biz] = await db.select().from(businessesTable)
-    .where(eq(businessesTable.ownerId, req.userId!)).limit(1);
-  if (!biz) { res.status(404).json({ error: "Aucun business trouvé pour ce compte" }); return; }
-  const [hours, services] = await Promise.all([
-    db.select().from(businessHoursTable).where(eq(businessHoursTable.businessId, biz.id)),
-    db.select().from(servicesTable).where(eq(servicesTable.businessId, biz.id)),
-  ]);
-  res.json({ ...biz, hours, services });
+  const businesses = await db.select().from(businessesTable)
+    .where(eq(businessesTable.ownerId, req.userId!))
+    .orderBy(businessesTable.createdAt);
+  res.json(businesses);
 });
+
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 router.patch("/businesses/:id/active", requireAuth, async (req: AuthRequest, res) => {
   const id = req.params.id as string;
@@ -41,12 +39,31 @@ router.patch("/businesses/:id/active", requireAuth, async (req: AuthRequest, res
   if (typeof isActive !== "boolean") {
     res.status(400).json({ error: "isActive (boolean) requis" }); return;
   }
-  const [biz] = await db.select({ ownerId: businessesTable.ownerId }).from(businessesTable)
-    .where(eq(businessesTable.id, id)).limit(1);
+  const [biz] = await db.select({
+    ownerId: businessesTable.ownerId,
+    pausedAt: businessesTable.pausedAt,
+  }).from(businessesTable).where(eq(businessesTable.id, id)).limit(1);
   if (!biz) { res.status(404).json({ error: "Business introuvable" }); return; }
   if (biz.ownerId !== req.userId) { res.status(403).json({ error: "Accès refusé" }); return; }
+
+  if (isActive && biz.pausedAt) {
+    const elapsed = Date.now() - new Date(biz.pausedAt).getTime();
+    if (elapsed > THREE_DAYS_MS) {
+      res.status(403).json({
+        error: "Délai de réactivation expiré",
+        code: "PAUSE_EXPIRED",
+        message: "Le délai de 3 jours est dépassé. Votre business est définitivement fermé. Pour rouvrir, veuillez créer un nouveau commerce.",
+      }); return;
+    }
+  }
+
+  const now = new Date();
+  const updateData = isActive
+    ? { isActive: true, pausedAt: null as null, updatedAt: now }
+    : { isActive: false, pausedAt: now, updatedAt: now };
+
   const [updated] = await db.update(businessesTable)
-    .set({ isActive, updatedAt: new Date() })
+    .set(updateData)
     .where(eq(businessesTable.id, id)).returning();
   res.json(updated);
 });
@@ -68,6 +85,11 @@ router.post("/businesses", requireAuth, async (req: AuthRequest, res) => {
   const { name, category, phone, address } = b;
   if (!name || !category || !phone || !address) {
     res.status(400).json({ error: "Champs requis : name, category, phone, address" }); return;
+  }
+  const [{ bizCount }] = await db.select({ bizCount: count() }).from(businessesTable)
+    .where(eq(businessesTable.ownerId, req.userId!));
+  if ((bizCount ?? 0) >= 3) {
+    res.status(403).json({ error: "Limite atteinte. Vous ne pouvez pas enregistrer plus de 3 commerces." }); return;
   }
   const [business] = await db.insert(businessesTable).values({
     ownerId: req.userId!,
