@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { User } from "@/constants/types";
 import { api, tokenStore } from "@/lib/api";
@@ -129,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await tokenStore.clear();
     await AsyncStorage.multiRemove([USER_KEY, FAV_KEY, BIZ_KEY]);
     setUser(null);
+    router.replace("/");
   }, []);
 
   const updateUser = useCallback(async (updates: Partial<User>) => {

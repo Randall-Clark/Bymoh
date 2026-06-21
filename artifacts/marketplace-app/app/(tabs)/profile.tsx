@@ -85,7 +85,7 @@ export default function ProfileScreen() {
     confirm(
       "Se déconnecter",
       "Voulez-vous vraiment vous déconnecter ?",
-      async () => { await signOut(); router.replace("/"); },
+      () => { signOut(); },
       "Se déconnecter",
     );
   };
@@ -98,7 +98,7 @@ export default function ProfileScreen() {
     confirm(
       "Supprimer mon compte",
       "Cette action est irréversible. Toutes vos données seront effacées.",
-      async () => { await signOut(); router.replace("/"); },
+      () => { signOut(); },
       "Supprimer",
     );
   };

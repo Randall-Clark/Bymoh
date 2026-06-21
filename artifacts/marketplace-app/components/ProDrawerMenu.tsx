@@ -135,10 +135,9 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
       {
         text: "Se déconnecter",
         style: "destructive",
-        onPress: async () => {
+        onPress: () => {
           onClose();
-          await signOut();
-          router.replace("/");
+          signOut();
         },
       },
     ]);
