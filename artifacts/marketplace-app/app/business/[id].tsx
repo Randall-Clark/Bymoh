@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -132,13 +133,32 @@ export default function BusinessDetailScreen() {
           </View>
           <Text style={[styles.desc, { color: colors.mutedForeground }]}>{business.description}</Text>
           <View style={styles.contactRow}>
-            <TouchableOpacity style={[styles.contactBtn, { backgroundColor: colors.muted }]}>
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: colors.muted }]}
+              onPress={() => Linking.openURL(`tel:${business.phone}`)}
+            >
               <Feather name="phone" size={16} color={colors.text} />
               <Text style={[styles.contactLabel, { color: colors.text }]}>Appeler</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.contactBtn, { backgroundColor: colors.muted }]}>
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: colors.muted }]}
+              onPress={() =>
+                Linking.openURL(
+                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    `${business.address ?? ""} ${business.city}`.trim(),
+                  )}`,
+                )
+              }
+            >
               <Feather name="map-pin" size={16} color={colors.text} />
               <Text style={[styles.contactLabel, { color: colors.text }]}>Itinéraire</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.contactBtn, { backgroundColor: colors.muted }]}
+              onPress={() => Linking.openURL(`sms:${business.phone}`)}
+            >
+              <Feather name="message-circle" size={16} color={colors.text} />
+              <Text style={[styles.contactLabel, { color: colors.text }]}>Écrire</Text>
             </TouchableOpacity>
           </View>
         </View>
