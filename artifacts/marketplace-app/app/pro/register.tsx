@@ -407,18 +407,16 @@ export default function ProRegisterScreen() {
 
   const addService = () => {
     if (!formTitle.trim() || !formPrice.trim()) return;
-    const model = getBusinessModel(businessType);
-    const effectiveKind: ItemKind = model === "prestation" ? "prestation" : model === "article" ? "article" : formKind;
     const item = {
       id: Date.now().toString(),
-      kind: effectiveKind,
+      kind: formKind,
       title: formTitle.trim(),
       desc: formDesc.trim(),
       price: formPrice.trim(),
       photo: formPhoto,
-      duration: effectiveKind === "prestation" ? formDuration : undefined,
-      billingType: effectiveKind === "prestation" ? formBilling : undefined,
-      allowsBooking: effectiveKind === "prestation" ? formAllowsBooking : undefined,
+      duration: formKind === "prestation" ? formDuration : undefined,
+      billingType: formKind === "prestation" ? formBilling : undefined,
+      allowsBooking: formKind === "prestation" ? formAllowsBooking : undefined,
     };
     setServices((prev) => [...prev, item]);
     setFormTitle(""); setFormDesc(""); setFormPrice(""); setFormPhoto(null);
@@ -687,24 +685,14 @@ export default function ProRegisterScreen() {
 
         {/* ── Step 3: Catalogue ── */}
         {step === 3 && (() => {
-          const model = getBusinessModel(businessType);
-          const effectiveKind: ItemKind = showAddForm ? (model === "both" ? formKind : (model === "prestation" ? "prestation" : "article")) : "article";
-          const addLabel = model === "article" ? "Ajouter un article" : model === "prestation" ? "Ajouter une prestation" : "Ajouter un élément";
+          const effectiveKind: ItemKind = formKind;
           return (
           <View style={styles.fields}>
             {/* Model hint */}
-            <View style={[styles.modelHint, { backgroundColor: model === "prestation" ? "#F5F3FF" : model === "article" ? colors.accent : colors.muted }]}>
-              <Feather
-                name={model === "prestation" ? "calendar" : model === "article" ? "package" : "layers"}
-                size={15}
-                color={model === "prestation" ? "#7C3AED" : colors.primary}
-              />
-              <Text style={[styles.modelHintText, { color: model === "prestation" ? "#7C3AED" : colors.primary }]}>
-                {model === "article"
-                  ? "Ce business vend des articles — ajoutez vos produits avec leur prix."
-                  : model === "prestation"
-                  ? "Ce business propose des prestations — ajoutez vos services avec durée et option de réservation."
-                  : "Ce business peut vendre des articles et des prestations."}
+            <View style={[styles.modelHint, { backgroundColor: colors.muted }]}>
+              <Feather name="layers" size={15} color={colors.primary} />
+              <Text style={[styles.modelHintText, { color: colors.primary }]}>
+                Ajoutez des articles (produits à vendre) et/ou des prestations (services sur RDV).
               </Text>
             </View>
 
@@ -737,8 +725,8 @@ export default function ProRegisterScreen() {
               </View>
             ))}
 
-            {/* Kind selector (model = both and form not open) */}
-            {!showAddForm && showKindSelector && model === "both" && (
+            {/* Kind selector — always available */}
+            {!showAddForm && showKindSelector && (
               <View style={[styles.kindSelectorCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
                 <Text style={[styles.addFormTitle, { color: colors.text }]}>Que voulez-vous ajouter ?</Text>
                 <TouchableOpacity
@@ -917,14 +905,11 @@ export default function ProRegisterScreen() {
             ) : !showKindSelector ? (
               <TouchableOpacity
                 style={[styles.addServiceBtn, { borderColor: colors.primary, backgroundColor: colors.accent }]}
-                onPress={() => {
-                  if (model === "both") { setShowKindSelector(true); }
-                  else { setFormKind(model === "prestation" ? "prestation" : "article"); setShowAddForm(true); }
-                }}
+                onPress={() => setShowKindSelector(true)}
               >
                 <Feather name="plus-circle" size={20} color={colors.primary} />
                 <Text style={[styles.addServiceBtnText, { color: colors.primary }]}>
-                  {services.length === 0 ? addLabel : "Ajouter un autre"}
+                  {services.length === 0 ? "Ajouter un article ou une prestation" : "Ajouter un autre"}
                 </Text>
               </TouchableOpacity>
             ) : null}
