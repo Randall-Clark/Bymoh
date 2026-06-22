@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, bookingsTable, businessesTable, servicesTable, usersTable } from "@workspace/db";
+import { db, bookingsTable, businessesTable, servicesTable, usersTable, notificationsTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
@@ -47,6 +47,23 @@ router.post("/bookings", requireAuth, async (req: AuthRequest, res) => {
     notes: notes ?? null,
     status: "pending",
   }).returning();
+
+  const [biz] = await db
+    .select({ ownerId: businessesTable.ownerId })
+    .from(businessesTable)
+    .where(eq(businessesTable.id, businessId))
+    .limit(1);
+  if (biz) {
+    const typeLabel = bookingType === "table" ? "table" : "service";
+    await db.insert(notificationsTable).values({
+      userId: biz.ownerId,
+      title: "Nouvelle réservation",
+      body: `Réservation ${typeLabel} le ${date} à ${time}`,
+      type: "booking",
+      relatedId: booking.id,
+    });
+  }
+
   res.status(201).json(booking);
 });
 

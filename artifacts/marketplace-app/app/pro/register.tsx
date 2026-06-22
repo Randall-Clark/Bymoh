@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import StepProgress from "@/components/StepProgress";
 import PaymentModal from "@/components/PaymentModal";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { useColors } from "@/hooks/useColors";
 import { useInitiateRegistrationPayment } from "@workspace/api-client-react";
 
@@ -141,6 +142,10 @@ const CITIES = [
 ];
 
 const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+const DAY_MAP: Record<string, string> = {
+  Lun: "Mon", Mar: "Tue", Mer: "Wed", Jeu: "Thu", Ven: "Fri", Sam: "Sat", Dim: "Sun",
+};
 
 // ─── Business model logic ──────────────────────────────────────────────────────
 
@@ -452,16 +457,70 @@ export default function ProRegisterScreen() {
 
   const handleSubmit = async () => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    const newId = "b" + Date.now().toString().slice(-4);
-    addBusiness(newId);
-    setLoading(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(
-      "Business inscrit !",
-      "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Kola.",
-      [{ text: "Voir mon tableau de bord", onPress: () => router.replace("/pro/dashboard") }]
-    );
+    try {
+      const bookingMode = ARTICLE_TYPE_LIST.includes(businessType)
+        ? "none"
+        : businessType.includes("Restaurant") || businessType.includes("Café") || businessType.includes("Hôtel")
+          ? "table"
+          : "service";
+
+      const biz = await api.post<{ id: string }>("/businesses", {
+        name: bizName.trim(),
+        category: businessType,
+        sector,
+        phone: `${bizCountry.dialCode}${bizPhone}`.trim(),
+        email: bizEmail.trim() || undefined,
+        description: bizDescription.trim(),
+        address: address.trim(),
+        city,
+        hasDelivery: false,
+        bookingMode,
+        categoryIcon: "briefcase",
+      });
+
+      await api.patch(`/businesses/${biz.id}`, { forfaitPaid: true });
+
+      const hoursPayload = Object.entries(hours).map(([day, h]) => ({
+        day: DAY_MAP[day] ?? day,
+        openTime: h.open,
+        closeTime: h.close,
+        isClosed: h.closed,
+      }));
+      await api.put(`/businesses/${biz.id}/hours`, hoursPayload);
+
+      for (const svc of services) {
+        await api.post(`/businesses/${biz.id}/catalog`, {
+          kind: svc.kind,
+          title: svc.title,
+          description: svc.desc,
+          price: parseFloat(svc.price) || 0,
+          currency: "FCFA",
+          photo: svc.photo,
+          ...(svc.kind === "prestation"
+            ? {
+                duration: parseInt(svc.duration ?? "30", 10),
+                billingType: svc.billingType ?? "fixed",
+                allowsBooking: svc.allowsBooking ?? true,
+              }
+            : {}),
+        });
+      }
+
+      addBusiness(biz.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        "Business inscrit !",
+        "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Kola.",
+        [{ text: "Voir mon tableau de bord", onPress: () => router.replace("/pro/dashboard") }]
+      );
+    } catch (err) {
+      Alert.alert(
+        "Erreur",
+        err instanceof Error ? err.message : "Impossible de créer le business. Réessayez.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const InputField = ({ label, value, onChangeText, placeholder, keyboardType = "default" }: any) => (

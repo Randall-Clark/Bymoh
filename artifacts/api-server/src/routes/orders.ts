@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { db, ordersTable, orderItemsTable, businessesTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, businessesTable, notificationsTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../lib/auth";
 
 const router = Router();
@@ -65,6 +65,22 @@ router.post("/orders", requireAuth, async (req: AuthRequest, res) => {
       currency: i.currency ?? "FCFA",
     })),
   );
+
+  const [biz] = await db
+    .select({ ownerId: businessesTable.ownerId, name: businessesTable.name })
+    .from(businessesTable)
+    .where(eq(businessesTable.id, businessId))
+    .limit(1);
+  if (biz) {
+    await db.insert(notificationsTable).values({
+      userId: biz.ownerId,
+      title: "Nouvelle commande",
+      body: `Vous avez reçu une commande de ${total.toLocaleString("fr-FR")} FCFA`,
+      type: "order",
+      relatedId: order.id,
+    });
+  }
+
   res.status(201).json(order);
 });
 
