@@ -342,6 +342,21 @@ export interface TopupInitInput {
   phone?: string | null;
 }
 
+export type RegistrationPaymentInputMethod = typeof RegistrationPaymentInputMethod[keyof typeof RegistrationPaymentInputMethod];
+
+
+export const RegistrationPaymentInputMethod = {
+  moov_money: 'moov_money',
+  mtn_momo: 'mtn_momo',
+  card: 'card',
+} as const;
+
+export interface RegistrationPaymentInput {
+  method: RegistrationPaymentInputMethod;
+  /** @nullable */
+  phone?: string | null;
+}
+
 export interface TopupInitResult {
   transactionId: string;
   /** @nullable */

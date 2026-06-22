@@ -34,6 +34,8 @@ export * from './proOrder';
 export * from './proOrderDeliveryMethod';
 export * from './proOrderItem';
 export * from './proOrderStatus';
+export * from './registrationPaymentInput';
+export * from './registrationPaymentInputMethod';
 export * from './searchBusinessesHasDelivery';
 export * from './searchBusinessesParams';
 export * from './statusUpdate';

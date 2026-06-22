@@ -34,6 +34,7 @@ import type {
   OkResponse,
   ProBooking,
   ProOrder,
+  RegistrationPaymentInput,
   SearchBusinessesParams,
   StatusUpdate,
   TopupInitInput,
@@ -1329,6 +1330,77 @@ export const useTopupPersonalWallet = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getTopupPersonalWalletMutationOptions(options));
+    }
+
+export const getInitiateRegistrationPaymentUrl = () => {
+
+
+
+
+  return `/api/payments/registration/initiate`
+}
+
+/**
+ * @summary Initiate 10 000 FCFA business registration payment via CinetPay
+ */
+export const initiateRegistrationPayment = async (registrationPaymentInput: RegistrationPaymentInput, options?: RequestInit): Promise<TopupInitResult> => {
+
+  return customFetch<TopupInitResult>(getInitiateRegistrationPaymentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      registrationPaymentInput,)
+  }
+);}
+
+
+
+
+export const getInitiateRegistrationPaymentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initiateRegistrationPayment>>, TError,{data: BodyType<RegistrationPaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof initiateRegistrationPayment>>, TError,{data: BodyType<RegistrationPaymentInput>}, TContext> => {
+
+const mutationKey = ['initiateRegistrationPayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof initiateRegistrationPayment>>, {data: BodyType<RegistrationPaymentInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  initiateRegistrationPayment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InitiateRegistrationPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof initiateRegistrationPayment>>>
+    export type InitiateRegistrationPaymentMutationBody = BodyType<RegistrationPaymentInput>
+    export type InitiateRegistrationPaymentMutationError = ErrorType<void>
+
+    /**
+ * @summary Initiate 10 000 FCFA business registration payment via CinetPay
+ */
+export const useInitiateRegistrationPayment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initiateRegistrationPayment>>, TError,{data: BodyType<RegistrationPaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof initiateRegistrationPayment>>,
+        TError,
+        {data: BodyType<RegistrationPaymentInput>},
+        TContext
+      > => {
+      return useMutation(getInitiateRegistrationPaymentMutationOptions(options));
     }
 
 export const getInitiateTopupUrl = () => {

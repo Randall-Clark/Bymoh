@@ -469,6 +469,29 @@ paths:
         "400":
           description: Invalid amount
 
+  /payments/registration/initiate:
+    post:
+      operationId: initiateRegistrationPayment
+      tags: [payments]
+      summary: Initiate 10 000 FCFA business registration payment via CinetPay
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationPaymentInput"
+      responses:
+        "200":
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopupInitResult"
+        "400":
+          description: Invalid input
+
   /wallets/personal/topup/initiate:
     post:
       operationId: initiateTopup
@@ -946,6 +969,16 @@ components:
         amount:
           type: integer
           minimum: 100
+        method:
+          type: string
+          enum: [moov_money, mtn_momo, card]
+        phone:
+          type: ["string", "null"]
+
+    RegistrationPaymentInput:
+      type: object
+      required: [method]
+      properties:
         method:
           type: string
           enum: [moov_money, mtn_momo, card]

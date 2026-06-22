@@ -415,6 +415,21 @@ export const TopupPersonalWalletResponse = zod.object({
 
 
 /**
+ * @summary Initiate 10 000 FCFA business registration payment via CinetPay
+ */
+export const InitiateRegistrationPaymentBody = zod.object({
+  "method": zod.enum(['moov_money', 'mtn_momo', 'card']),
+  "phone": zod.string().nullish()
+})
+
+export const InitiateRegistrationPaymentResponse = zod.object({
+  "transactionId": zod.string(),
+  "paymentUrl": zod.string().nullish(),
+  "sandbox": zod.boolean()
+})
+
+
+/**
  * @summary Initiate a payment via CinetPay (Moov Money, MTN MoMo, card)
  */
 export const initiateTopupBodyAmountMin = 100;

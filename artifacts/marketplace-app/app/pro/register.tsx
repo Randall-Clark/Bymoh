@@ -20,8 +20,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import StepProgress from "@/components/StepProgress";
+import PaymentModal from "@/components/PaymentModal";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useInitiateRegistrationPayment } from "@workspace/api-client-react";
 
 // ─── Data ──────────────────────────────────────────────────────────────────────
 
@@ -342,6 +344,8 @@ export default function ProRegisterScreen() {
   const { addBusiness } = useAuth();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [paymentModal, setPaymentModal] = useState(false);
+  const { mutateAsync: initiateRegistrationPayment } = useInitiateRegistrationPayment();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom;
 
@@ -981,7 +985,7 @@ export default function ProRegisterScreen() {
 
             <TouchableOpacity
               style={[styles.payBtn, { backgroundColor: colors.primary }]}
-              onPress={handleSubmit}
+              onPress={() => setPaymentModal(true)}
               disabled={loading}
               activeOpacity={0.88}
             >
@@ -990,11 +994,25 @@ export default function ProRegisterScreen() {
             </TouchableOpacity>
 
             <Text style={[styles.legalText, { color: colors.mutedForeground }]}>
-              Paiement sécurisé · Mobile Money · Flooz · T-Money
+              Paiement sécurisé via CinetPay · Moov Money · MTN MoMo · Carte bancaire
             </Text>
           </View>
         )}
       </ScrollView>
+
+      {/* Payment modal — step 4 */}
+      <PaymentModal
+        visible={paymentModal}
+        onClose={() => setPaymentModal(false)}
+        onInitiate={async ({ method, phone }) => {
+          const result = await initiateRegistrationPayment({ data: { method, phone } });
+          return result;
+        }}
+        onSuccess={() => {
+          setPaymentModal(false);
+          handleSubmit();
+        }}
+      />
 
       {/* Footer: next button */}
       {step < 4 && (
