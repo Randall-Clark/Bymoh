@@ -36,6 +36,8 @@ import type {
   ProOrder,
   SearchBusinessesParams,
   StatusUpdate,
+  TopupInitInput,
+  TopupInitResult,
   WalletData
 } from './api.schemas';
 
@@ -1327,6 +1329,77 @@ export const useTopupPersonalWallet = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getTopupPersonalWalletMutationOptions(options));
+    }
+
+export const getInitiateTopupUrl = () => {
+
+
+
+
+  return `/api/wallets/personal/topup/initiate`
+}
+
+/**
+ * @summary Initiate a payment via CinetPay (Moov Money, MTN MoMo, card)
+ */
+export const initiateTopup = async (topupInitInput: TopupInitInput, options?: RequestInit): Promise<TopupInitResult> => {
+
+  return customFetch<TopupInitResult>(getInitiateTopupUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      topupInitInput,)
+  }
+);}
+
+
+
+
+export const getInitiateTopupMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initiateTopup>>, TError,{data: BodyType<TopupInitInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof initiateTopup>>, TError,{data: BodyType<TopupInitInput>}, TContext> => {
+
+const mutationKey = ['initiateTopup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof initiateTopup>>, {data: BodyType<TopupInitInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  initiateTopup(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InitiateTopupMutationResult = NonNullable<Awaited<ReturnType<typeof initiateTopup>>>
+    export type InitiateTopupMutationBody = BodyType<TopupInitInput>
+    export type InitiateTopupMutationError = ErrorType<void>
+
+    /**
+ * @summary Initiate a payment via CinetPay (Moov Money, MTN MoMo, card)
+ */
+export const useInitiateTopup = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initiateTopup>>, TError,{data: BodyType<TopupInitInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof initiateTopup>>,
+        TError,
+        {data: BodyType<TopupInitInput>},
+        TContext
+      > => {
+      return useMutation(getInitiateTopupMutationOptions(options));
     }
 
 export const getGetBusinessWalletUrl = (businessId: string,) => {

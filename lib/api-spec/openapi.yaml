@@ -469,6 +469,29 @@ paths:
         "400":
           description: Invalid amount
 
+  /wallets/personal/topup/initiate:
+    post:
+      operationId: initiateTopup
+      tags: [wallets]
+      summary: Initiate a payment via CinetPay (Moov Money, MTN MoMo, card)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopupInitInput"
+      responses:
+        "200":
+          description: Payment initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopupInitResult"
+        "400":
+          description: Invalid input
+
   /wallets/business/{businessId}:
     get:
       operationId: getBusinessWallet
@@ -915,6 +938,30 @@ components:
         amount:
           type: integer
           minimum: 1
+
+    TopupInitInput:
+      type: object
+      required: [amount, method]
+      properties:
+        amount:
+          type: integer
+          minimum: 100
+        method:
+          type: string
+          enum: [moov_money, mtn_momo, card]
+        phone:
+          type: ["string", "null"]
+
+    TopupInitResult:
+      type: object
+      required: [transactionId, sandbox]
+      properties:
+        transactionId:
+          type: string
+        paymentUrl:
+          type: ["string", "null"]
+        sandbox:
+          type: boolean
 
     StatusUpdate:
       type: object

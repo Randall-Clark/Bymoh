@@ -325,6 +325,30 @@ export interface AmountInput {
   amount: number;
 }
 
+export type TopupInitInputMethod = typeof TopupInitInputMethod[keyof typeof TopupInitInputMethod];
+
+
+export const TopupInitInputMethod = {
+  moov_money: 'moov_money',
+  mtn_momo: 'mtn_momo',
+  card: 'card',
+} as const;
+
+export interface TopupInitInput {
+  /** @minimum 100 */
+  amount: number;
+  method: TopupInitInputMethod;
+  /** @nullable */
+  phone?: string | null;
+}
+
+export interface TopupInitResult {
+  transactionId: string;
+  /** @nullable */
+  paymentUrl?: string | null;
+  sandbox: boolean;
+}
+
 export interface StatusUpdate {
   status: string;
 }

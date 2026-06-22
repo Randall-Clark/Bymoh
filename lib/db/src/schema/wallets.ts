@@ -22,6 +22,7 @@ export const walletTransactionsTable = pgTable("wallet_transactions", {
   label: text("label").notNull(),
   sublabel: text("sublabel"),
   amount: integer("amount").notNull(),
+  paymentRef: text("payment_ref"),
   relatedOrderId: text("related_order_id"),
   relatedBookingId: text("related_booking_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

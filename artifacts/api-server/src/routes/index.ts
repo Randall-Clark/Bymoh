@@ -10,6 +10,7 @@ import reviewsRouter from "./reviews";
 import notificationsRouter from "./notifications";
 import driversRouter from "./drivers";
 import walletsRouter from "./wallets";
+import paymentsRouter from "./payments";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(reviewsRouter);
 router.use(notificationsRouter);
 router.use(driversRouter);
 router.use(walletsRouter);
+router.use(paymentsRouter);
 
 export default router;

@@ -20,13 +20,14 @@ import {
   getGetPersonalWalletQueryKey,
   useGetBusinessWallet,
   useGetPersonalWallet,
-  useTopupPersonalWallet,
+  useInitiateTopup,
   useWithdrawBusinessWallet,
   type WalletTransaction,
 } from "@workspace/api-client-react";
 import { useActiveBusiness } from "@/context/ActiveBusinessContext";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import PaymentModal from "@/components/PaymentModal";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -99,35 +100,13 @@ function TxRow({ tx, colors }: { tx: WalletTransaction; colors: ReturnType<typeo
 
 function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColors>; botPad: number }) {
   const queryClient = useQueryClient();
-  const [topupModal, setTopupModal] = useState(false);
-  const [topupAmount, setTopupAmount] = useState("");
+  const [paymentModal, setPaymentModal] = useState(false);
 
   const { data, isLoading } = useGetPersonalWallet({
     query: { queryKey: getGetPersonalWalletQueryKey() },
   });
 
-  const { mutate: topup, isPending: topping } = useTopupPersonalWallet({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetPersonalWalletQueryKey() });
-        setTopupModal(false);
-        setTopupAmount("");
-        Alert.alert("Recharge initiée", `${formatAmount(Number(topupAmount))} sera crédité sur votre portefeuille.`);
-      },
-      onError: () => {
-        Alert.alert("Erreur", "Montant minimum : 100 FCFA.");
-      },
-    },
-  });
-
-  const handleTopup = () => {
-    const amt = Number(topupAmount);
-    if (!amt || amt < 100) {
-      Alert.alert("Montant invalide", "Le montant minimum de recharge est 100 FCFA.");
-      return;
-    }
-    topup({ data: { amount: amt } });
-  };
+  const { mutateAsync: initiateTopup } = useInitiateTopup();
 
   if (isLoading) {
     return (
@@ -183,7 +162,7 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
         {/* Topup button */}
         <TouchableOpacity
           style={[styles.withdrawBtn, { backgroundColor: colors.primary }]}
-          onPress={() => setTopupModal(true)}
+          onPress={() => setPaymentModal(true)}
         >
           <Feather name="plus-circle" size={18} color="#fff" />
           <Text style={[styles.withdrawBtnText, { color: "#fff" }]}>Recharger le portefeuille</Text>
@@ -218,50 +197,18 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
         </View>
       </ScrollView>
 
-      {/* Topup Modal */}
-      <Modal visible={topupModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Recharger via Mobile Money</Text>
-            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
-              Flooz ou T-Money · Minimum 100 FCFA
-            </Text>
-            <View style={styles.modalField}>
-              <Text style={[styles.modalLabel, { color: colors.text }]}>Montant (FCFA)</Text>
-              <TextInput
-                style={[styles.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
-                value={topupAmount}
-                onChangeText={setTopupAmount}
-                placeholder="Ex : 10000"
-                placeholderTextColor={colors.mutedForeground}
-                keyboardType="number-pad"
-              />
-            </View>
-            <View style={[styles.modalInfo, { backgroundColor: colors.background }]}>
-              <Feather name="smartphone" size={14} color={colors.primary} />
-              <Text style={[styles.modalInfoText, { color: colors.mutedForeground }]}>
-                Débit depuis votre numéro Mobile Money enregistré
-              </Text>
-            </View>
-            <View style={styles.modalBtns}>
-              <TouchableOpacity
-                style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                onPress={() => { setTopupModal(false); setTopupAmount(""); }}
-              >
-                <Text style={[styles.modalCancelText, { color: colors.text }]}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalConfirmBtn, { backgroundColor: colors.primary, opacity: topping ? 0.7 : 1 }]}
-                onPress={handleTopup}
-                disabled={topping}
-              >
-                <Text style={styles.modalConfirmText}>{topping ? "Traitement..." : "Confirmer la recharge"}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PaymentModal
+        visible={paymentModal}
+        onClose={() => setPaymentModal(false)}
+        onInitiate={async (params) => {
+          const result = await initiateTopup({ data: params });
+          return result;
+        }}
+        onSuccess={() => {
+          setPaymentModal(false);
+          queryClient.invalidateQueries({ queryKey: getGetPersonalWalletQueryKey() });
+        }}
+      />
     </>
   );
 }

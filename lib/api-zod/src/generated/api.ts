@@ -415,6 +415,26 @@ export const TopupPersonalWalletResponse = zod.object({
 
 
 /**
+ * @summary Initiate a payment via CinetPay (Moov Money, MTN MoMo, card)
+ */
+export const initiateTopupBodyAmountMin = 100;
+
+
+
+export const InitiateTopupBody = zod.object({
+  "amount": zod.number().min(initiateTopupBodyAmountMin),
+  "method": zod.enum(['moov_money', 'mtn_momo', 'card']),
+  "phone": zod.string().nullish()
+})
+
+export const InitiateTopupResponse = zod.object({
+  "transactionId": zod.string(),
+  "paymentUrl": zod.string().nullish(),
+  "sandbox": zod.boolean()
+})
+
+
+/**
  * @summary Get business wallet and transactions
  */
 export const GetBusinessWalletParams = zod.object({
