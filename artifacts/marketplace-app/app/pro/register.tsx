@@ -510,7 +510,7 @@ export default function ProRegisterScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         "Business inscrit !",
-        "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Kola.",
+        "Votre business est maintenant en ligne. Les clients peuvent vous trouver sur Bymoh.",
         [{ text: "Voir mon tableau de bord", onPress: () => router.replace("/pro/dashboard") }]
       );
     } catch (err) {
@@ -1012,7 +1012,7 @@ export default function ProRegisterScreen() {
               </View>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               {[
-                "Profil business visible sur Kola",
+                "Profil business visible sur Bymoh",
                 "Catalogue de produits / services illimité",
                 "Réservations en ligne 24h/24",
                 "Commandes & gestion des livraisons",

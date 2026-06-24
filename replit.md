@@ -1,4 +1,4 @@
-# Lokali
+# Bymoh
 
 Marketplace mobile local (iOS/Android) permettant aux clients de trouver, réserver et commander auprès de commerces locaux, et aux professionnels de gérer leur business.
 
@@ -23,7 +23,7 @@ Marketplace mobile local (iOS/Android) permettant aux clients de trouver, réser
 
 ## Where things live
 
-- `artifacts/marketplace-app/` — app Expo (Lokali)
+- `artifacts/marketplace-app/` — app Expo (Bymoh)
   - `app/` — écrans (expo-router file-based routing)
   - `app/(tabs)/` — onglets client : Accueil, Recherche, Favoris, Profil
   - `app/auth/` — auth flow : phone → OTP → profile

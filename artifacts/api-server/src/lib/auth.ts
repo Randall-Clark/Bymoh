@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { NextFunction, Request, Response } from "express";
 
-const SECRET = process.env.SESSION_SECRET ?? "kola-dev-secret";
+const SECRET = process.env.SESSION_SECRET ?? "bymoh-dev-secret";
 
 export function hashPin(pin: string): string {
   return crypto.createHmac("sha256", SECRET).update(pin).digest("hex");

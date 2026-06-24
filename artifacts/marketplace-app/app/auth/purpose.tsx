@@ -44,7 +44,7 @@ export default function PurposeScreen() {
       {/* Title block */}
       <View style={styles.titleBlock}>
         <Text style={[styles.title, { color: colors.text }]}>
-          Bienvenue sur Kola
+          Bienvenue sur Bymoh
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
           Que souhaitez-vous faire ? Vous pourrez{"\n"}changer à tout moment.

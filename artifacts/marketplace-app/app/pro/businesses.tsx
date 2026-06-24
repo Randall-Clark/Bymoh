@@ -56,7 +56,7 @@ export default function BusinessesScreen() {
           <Feather name="arrow-left" size={22} color="#fff" />
         </TouchableOpacity>
         <View style={{ flex: 1, paddingHorizontal: 12 }}>
-          <Text style={styles.headerSub}>Kola Pro</Text>
+          <Text style={styles.headerSub}>Bymoh Pro</Text>
           <Text style={styles.headerTitle}>Mes Entreprises</Text>
         </View>
         {businesses.length < 3 && (
@@ -84,7 +84,7 @@ export default function BusinessesScreen() {
             Aucune entreprise enregistrée
           </Text>
           <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-            Rejoignez Kola Pro et commencez à gérer votre commerce directement depuis l'application.
+            Rejoignez Bymoh Pro et commencez à gérer votre commerce directement depuis l'application.
           </Text>
           <TouchableOpacity
             style={[styles.createBtn, { backgroundColor: colors.primary }]}

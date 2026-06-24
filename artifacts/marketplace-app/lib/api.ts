@@ -12,7 +12,7 @@ export const getBaseUrl = (): string => {
   return "http://localhost:8080/api";
 };
 
-const TOKEN_KEY = "@kola_token";
+const TOKEN_KEY = "@bymoh_token";
 
 export const tokenStore = {
   async get(): Promise<string | null> {

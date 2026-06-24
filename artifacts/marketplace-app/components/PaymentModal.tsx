@@ -160,7 +160,7 @@ export default function PaymentModal({ visible, onClose, onInitiate, onSuccess }
             <>
               <Text style={[styles.title, { color: colors.text }]}>Choisir le moyen de paiement</Text>
               <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-                Rechargez votre portefeuille Kola
+                Rechargez votre portefeuille Bymoh
               </Text>
               <View style={styles.methodList}>
                 {METHODS.map((m) => {

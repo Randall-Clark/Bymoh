@@ -68,7 +68,7 @@ router.post("/payments/registration/initiate", requireAuth, async (req: AuthRequ
   await db.insert(walletTransactionsTable).values({
     walletId: wallet.id,
     type: "pending",
-    label: "Frais d'inscription Kola Pro",
+    label: "Frais d'inscription Bymoh Pro",
     sublabel: "REGISTRATION",
     amount: REGISTRATION_FEE,
     paymentRef: transactionId,
@@ -85,7 +85,7 @@ router.post("/payments/registration/initiate", requireAuth, async (req: AuthRequ
     transaction_id: transactionId,
     amount: REGISTRATION_FEE,
     currency: "XOF",
-    description: "Inscription Kola Pro — Frais d'activation (paiement unique)",
+    description: "Inscription Bymoh Pro — Frais d'activation (paiement unique)",
     notify_url: `${protocol}://${domain}/api/payments/webhook/cinetpay`,
     return_url: `${protocol}://${domain}/api/payments/return`,
     channels: METHOD_CHANNEL[method] ?? "MOBILE_MONEY",
@@ -180,7 +180,7 @@ router.post("/payments/webhook/cinetpay", async (req, res) => {
         await db.insert(notificationsTable).values({
           userId: wallet.userId,
           title: "Business activé 🎉",
-          body: "Votre business est maintenant actif sur Kola. Bienvenue parmi les pros !",
+          body: "Votre business est maintenant actif sur Bymoh. Bienvenue parmi les pros !",
           type: "system",
           relatedId: biz.id,
         });

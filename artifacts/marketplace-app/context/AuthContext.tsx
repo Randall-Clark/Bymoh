@@ -21,10 +21,10 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const USER_KEY = "@kola_user";
-const FAV_KEY = "@kola_favs";
-const BIZ_KEY = "@kola_biz";
-const CC_KEY = "@kola_country";
+const USER_KEY = "@bymoh_user";
+const FAV_KEY = "@bymoh_favs";
+const BIZ_KEY = "@bymoh_biz";
+const CC_KEY = "@bymoh_country";
 
 async function loadLocal<T>(key: string, fallback: T): Promise<T> {
   try {

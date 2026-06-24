@@ -219,7 +219,7 @@ export default function OrdersScreen() {
               <Feather name="check-circle" size={14} color="#059669" />
               <Text style={styles.refundInfoText}>
                 Vous avez payé en ligne ({formatPrice(cancelTarget.servicePrice)}).
-                Kola vous remboursera automatiquement sous 24–48h si l'annulation est dans les délais.
+                Bymoh vous remboursera automatiquement sous 24–48h si l'annulation est dans les délais.
               </Text>
             </View>
           )}

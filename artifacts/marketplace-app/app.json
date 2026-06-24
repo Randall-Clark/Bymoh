@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Kola",
+    "name": "Bymoh",
     "slug": "marketplace-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "kola",
+    "scheme": "bymoh",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.kola.app"
+      "bundleIdentifier": "com.bymoh.app"
     },
     "android": {
-      "package": "com.kola.app",
+      "package": "com.bymoh.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#E84B1A"

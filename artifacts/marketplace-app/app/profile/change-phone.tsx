@@ -136,7 +136,7 @@ export default function ChangePhoneScreen() {
             </View>
             <Text style={[styles.title, { color: colors.text }]}>Quel est votre nouveau numéro ?</Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              Entrez le numéro que vous souhaitez utiliser pour votre compte Kola.
+              Entrez le numéro que vous souhaitez utiliser pour votre compte Bymoh.
             </Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.card, borderColor: isPhoneValid ? colors.primary : colors.border, color: colors.text }]}

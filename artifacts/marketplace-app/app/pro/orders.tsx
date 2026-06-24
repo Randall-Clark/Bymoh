@@ -152,7 +152,7 @@ export default function ProOrdersScreen() {
       <View style={[styles.escrowBanner, { backgroundColor: "#EFF6FF", borderBottomColor: "#BFDBFE" }]}>
         <Feather name="lock" size={14} color="#2563EB" />
         <Text style={styles.escrowText}>
-          Les paiements en ligne sont retenus par Kola et versés <Text style={{ fontWeight: "700" }}>24h après la prestation</Text>
+          Les paiements en ligne sont retenus par Bymoh et versés <Text style={{ fontWeight: "700" }}>24h après la prestation</Text>
         </Text>
       </View>
 

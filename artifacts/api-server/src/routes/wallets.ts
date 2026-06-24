@@ -133,7 +133,7 @@ router.post("/wallets/personal/topup/initiate", requireAuth, async (req: AuthReq
     transaction_id: transactionId,
     amount,
     currency: "XOF",
-    description: `Recharge portefeuille Kola — ${METHOD_LABEL[method]}`,
+    description: `Recharge portefeuille Bymoh — ${METHOD_LABEL[method]}`,
     notify_url: notifyUrl,
     return_url: returnUrl,
     channels: METHOD_CHANNEL[method] ?? "MOBILE_MONEY",

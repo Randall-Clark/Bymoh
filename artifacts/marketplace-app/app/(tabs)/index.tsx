@@ -56,7 +56,7 @@ const PROMO_BANNERS = [
   {
     id: "p1",
     title: "1ère livraison offerte",
-    sub: "Sur votre 1ère commande Kola",
+    sub: "Sur votre 1ère commande Bymoh",
     cta: "Commander",
     bg: "#FF6835",
     icon: "gift",

@@ -11,8 +11,8 @@ interface OrdersContextValue {
 
 const OrdersContext = createContext<OrdersContextValue | null>(null);
 
-const BOOKINGS_KEY = "@kola_bookings";
-const ORDERS_KEY = "@kola_orders";
+const BOOKINGS_KEY = "@bymoh_bookings";
+const ORDERS_KEY = "@bymoh_orders";
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const [bookings, setBookings] = useState<Booking[]>([]);

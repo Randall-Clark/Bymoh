@@ -206,7 +206,7 @@ export default function ProDashboardScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.pausedTitle}>Business en pause</Text>
               <Text style={styles.pausedSub}>
-                Votre commerce n'est plus visible sur Kola. Appuyez sur le menu ☰ pour le réactiver.
+                Votre commerce n'est plus visible sur Bymoh. Appuyez sur le menu ☰ pour le réactiver.
               </Text>
             </View>
           </View>

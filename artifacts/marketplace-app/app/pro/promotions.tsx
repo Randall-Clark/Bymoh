@@ -50,7 +50,7 @@ const INITIAL_PROMOS: Promo[] = [
   {
     id: "p2",
     title: "Première commande",
-    description: "Offre de bienvenue pour les nouveaux clients Kola",
+    description: "Offre de bienvenue pour les nouveaux clients Bymoh",
     type: "fixed",
     value: 500,
     minOrder: 2000,

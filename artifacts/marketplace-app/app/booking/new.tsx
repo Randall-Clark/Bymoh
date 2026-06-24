@@ -316,7 +316,7 @@ export default function BookingScreen() {
             <View style={[styles.escrowCard, { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }]}>
               <Feather name="lock" size={14} color="#16A34A" />
               <Text style={styles.escrowCardText}>
-                <Text style={{ fontWeight: "700" }}>Paiement sécurisé par Kola : </Text>
+                <Text style={{ fontWeight: "700" }}>Paiement sécurisé par Bymoh : </Text>
                 Les fonds sont retenus et versés au business 24h après la prestation accomplie.
               </Text>
             </View>

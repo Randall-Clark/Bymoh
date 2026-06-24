@@ -90,7 +90,7 @@ export default function ProDrawerMenu({ visible, onClose }: Props) {
       closing ? "Mettre en pause ?" : "Réactiver le business ?",
       closing
         ? "Votre business sera invisible aux clients. Vous avez 3 jours pour le réactiver, après quoi il sera définitivement fermé."
-        : "Votre business redeviendra visible sur Kola.",
+        : "Votre business redeviendra visible sur Bymoh.",
       [
         { text: "Annuler", style: "cancel" },
         {

@@ -327,8 +327,8 @@ export default function ProBusinessProfileScreen() {
             <View style={[styles.escrowBox, { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" }]}>
               <Feather name="lock" size={14} color="#16A34A" />
               <Text style={[styles.escrowText, { color: "#15803D" }]}>
-                <Text style={{ fontWeight: "700" }}>Escrow Kola : </Text>
-                Tous les paiements en ligne sont retenus par Kola et versés sur votre wallet 24h après la prestation accomplie.
+                <Text style={{ fontWeight: "700" }}>Escrow Bymoh : </Text>
+                Tous les paiements en ligne sont retenus par Bymoh et versés sur votre wallet 24h après la prestation accomplie.
               </Text>
             </View>
 
@@ -346,7 +346,7 @@ export default function ProBusinessProfileScreen() {
           <View style={[styles.infoBox, { backgroundColor: colors.accent, borderColor: colors.primary + "30" }]}>
             <Feather name="info" size={15} color={colors.primary} />
             <Text style={[styles.infoBoxText, { color: colors.primary }]}>
-              Ces informations sont visibles par les clients sur votre page publique Kola.
+              Ces informations sont visibles par les clients sur votre page publique Bymoh.
             </Text>
           </View>
         </ScrollView>

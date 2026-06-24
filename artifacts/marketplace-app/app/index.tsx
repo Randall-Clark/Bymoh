@@ -121,7 +121,7 @@ export default function SplashScreen() {
             </View>
           </Animated.View>
 
-          <Text style={styles.appName}>Kola</Text>
+          <Text style={styles.appName}>Bymoh</Text>
 
           <Text style={styles.tagline}>
             Tous les commerces et{"\n"}services près de chez vous.

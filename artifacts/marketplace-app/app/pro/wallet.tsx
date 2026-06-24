@@ -176,7 +176,7 @@ function PersonalWallet({ colors, botPad }: { colors: ReturnType<typeof useColor
           <View style={{ flex: 1 }}>
             <Text style={[styles.infoTitle, { color: colors.text }]}>Paiement sécurisé</Text>
             <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-              Votre portefeuille personnel sert à payer vos commandes sur Kola. Rechargez-le via Mobile Money (Flooz, T-Money).
+              Votre portefeuille personnel sert à payer vos commandes sur Bymoh. Rechargez-le via Mobile Money (Flooz, T-Money).
             </Text>
           </View>
         </View>
@@ -268,7 +268,7 @@ function BusinessWallet({ colors, botPad, hasBusiness }: {
         </View>
         <Text style={[styles.noBizTitle, { color: "#1E3A5F" }]}>Aucune entreprise</Text>
         <Text style={[styles.noBizSub, { color: "#6B7280" }]}>
-          Inscrivez votre commerce sur Kola Pro pour accéder à votre portefeuille business, encaisser des paiements et suivre vos revenus.
+          Inscrivez votre commerce sur Bymoh Pro pour accéder à votre portefeuille business, encaisser des paiements et suivre vos revenus.
         </Text>
         <TouchableOpacity
           style={[styles.noBizBtn, { backgroundColor: "#1E3A5F" }]}

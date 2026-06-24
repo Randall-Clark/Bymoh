@@ -1,3 +1,4 @@
+- [App name](app-name.md) — App renamed to "Bymoh" (was "Kola"); bundle IDs com.bymoh.app; AsyncStorage keys use @bymoh_ prefix.
 - [Express 5 params typing](express5-params.md) — req.params values are string|string[] in Express 5 types; always cast `req.params.foo as string`.
 - [Drizzle insert Partial spread](drizzle-insert-partial.md) — never spread `Partial<table.$inferInsert>` into db.insert(); map required fields explicitly.
 - [DB schema push](db-schema.md) — run typecheck:libs before leaf typechecks after changing lib/db schema; push with `pnpm --filter @workspace/db run push`.
