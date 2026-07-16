@@ -33,15 +33,13 @@ export async function verifyOTP(phone: string, token: string) {
 
 /**
  * Check whether a phone number already has an account in the users table.
- * Returns the user id if found, null otherwise.
+ * Uses a security-definer RPC function so it works for unauthenticated callers
+ * (plain SELECT is blocked by RLS before the user has a session).
  */
 export async function checkPhoneExists(phone: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('users')
-    .select('id')
-    .eq('phone', phone)
-    .maybeSingle();
-  return data?.id ?? null;
+  const { data, error } = await supabase.rpc('check_phone_registered', { p_phone: phone });
+  if (error) throw error;
+  return data === true ? phone : null;
 }
 
 /**
