@@ -58,7 +58,15 @@ export default function CompleteProfileScreen() {
       // Redirect to PIN setup (not directly to app)
       router.replace('/(auth)/set-pin');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur lors de la création du profil';
+      // Supabase PostgrestError is not instanceof Error — extract message explicitly
+      let msg = 'Erreur lors de la création du profil';
+      if (err && typeof err === 'object') {
+        const e = err as Record<string, unknown>;
+        msg = (typeof e.message === 'string' ? e.message : null)
+          ?? (typeof e.details === 'string' ? e.details : null)
+          ?? (typeof e.code === 'string' ? `code: ${e.code}` : null)
+          ?? msg;
+      }
       Alert.alert('Erreur', msg);
     } finally {
       setLoading(false);
