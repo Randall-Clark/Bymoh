@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { OTPInput } from '@/components/forms/OTPInput';
-import { sendOTP, verifyOTP } from '@/lib/supabase';
+import { sendOTP, verifyOTP, supabase } from '@/lib/supabase';
 
 const CODE_LENGTH = 6;
 const RESEND_COOLDOWN = 60;
@@ -48,9 +48,29 @@ export default function OTPScreen() {
     if (value.length < CODE_LENGTH) return;
     setLoading(true);
     try {
-      await verifyOTP(phone ?? '', value);
-      // Explicit navigation to profile completion (new account flow)
-      router.replace('/(auth)/complete-profile');
+      const { session } = await verifyOTP(phone ?? '', value);
+
+      // Smart routing: check whether this user already has a profile
+      if (session?.user?.id) {
+        const { data: existing } = await supabase
+          .from('users')
+          .select('id, pin_hash')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (existing?.pin_hash) {
+          // Fully set-up returning user — go straight to app
+          router.replace('/(client)');
+        } else if (existing) {
+          // Has profile but PIN not set yet
+          router.replace('/(auth)/set-pin');
+        } else {
+          // Brand new user — complete profile
+          router.replace('/(auth)/complete-profile');
+        }
+      } else {
+        router.replace('/(auth)/complete-profile');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Code incorrect';
       Alert.alert('Erreur', msg);
