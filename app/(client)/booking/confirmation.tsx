@@ -1,0 +1,53 @@
+import { router } from 'expo-router';
+import React from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+
+export default function BookingConfirmationScreen() {
+  const insets = useSafeAreaInsets();
+  const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
+
+  return (
+    <View style={[styles.root, { paddingBottom: botPad + 24 }]}>
+      <View style={styles.content}>
+        <View style={styles.checkCircle}>
+          <Feather name="check" size={48} color="#fff" />
+        </View>
+        <Text style={styles.title}>Réservation confirmée !</Text>
+        <Text style={styles.subtitle}>
+          Votre réservation a bien été enregistrée. Le professionnel vous contactera pour confirmer le rendez-vous.
+        </Text>
+        <View style={styles.infoCard}>
+          <Feather name="info" size={16} color="#FF6835" />
+          <Text style={styles.infoText}>
+            Vous recevrez une notification dès que votre réservation est confirmée.
+          </Text>
+        </View>
+      </View>
+      <View style={styles.actions}>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/(client)/history')}>
+          <Text style={styles.primaryBtnText}>Voir mes réservations</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.replace('/(client)')}>
+          <Text style={styles.secondaryBtnText}>Retour à l'accueil</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#F8F7F4', paddingHorizontal: 32 },
+  content: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20 },
+  checkCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#22C55E', alignItems: 'center', justifyContent: 'center', shadowColor: '#22C55E', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 12 },
+  title: { fontSize: 28, fontWeight: '800', color: '#111827', textAlign: 'center' },
+  subtitle: { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 23 },
+  infoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#FEF2EC', borderRadius: 14, padding: 14 },
+  infoText: { flex: 1, fontSize: 13, color: '#6B7280', lineHeight: 19 },
+  actions: { gap: 12 },
+  primaryBtn: { backgroundColor: '#FF6835', padding: 18, borderRadius: 100, alignItems: 'center' },
+  primaryBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  secondaryBtn: { padding: 16, borderRadius: 100, alignItems: 'center', borderWidth: 1.5, borderColor: '#E5E7EB' },
+  secondaryBtnText: { fontSize: 15, fontWeight: '600', color: '#374151' },
+});
