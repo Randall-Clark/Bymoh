@@ -27,6 +27,28 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
+/**
+ * Build a valid E.164 phone number.
+ * Handles 3 cases the user might enter:
+ *   "+2290152622918"  → kept as-is (already E.164)
+ *   "2290152622918"   → country code already included without + → "+2290152622918"
+ *   "0152622918"      → local number, prefix with countryDialCode → "+2290152622918"
+ */
+function buildE164(input: string, dialCode: string): string {
+  const clean = input.replace(/[\s\-().]/g, '');
+
+  // Already has + prefix — trust it as-is
+  if (clean.startsWith('+')) return clean;
+
+  const digits = dialCode.replace('+', ''); // e.g. "229"
+
+  // User typed the full number without + (e.g. "2290152622918" when +229 is selected)
+  if (clean.startsWith(digits)) return `+${clean}`;
+
+  // User typed only the local part (e.g. "0152622918")
+  return `${dialCode}${clean}`;
+}
+
 const COUNTRY_CODES = [
   { code: '+225', flag: '🇨🇮', name: 'CI' },
   { code: '+233', flag: '🇬🇭', name: 'GH' },
@@ -54,9 +76,7 @@ export default function PhoneScreen() {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
-      const fullPhone = data.phone.startsWith('+')
-        ? data.phone
-        : `${countryCode.code}${data.phone}`;
+      const fullPhone = buildE164(data.phone, countryCode.code);
 
       if (isLogin) {
         // Login: check if phone is registered, then go to PIN screen
