@@ -23,7 +23,11 @@ export default function ProfileScreen() {
         text: 'Déconnecter',
         style: 'destructive',
         onPress: async () => {
-          await signOut();
+          try {
+            await signOut();
+          } catch {
+            // Si Supabase échoue (token expiré, réseau…), on nettoie quand même
+          }
           clearAuth();
           clearFavorites();
           clearCart();
