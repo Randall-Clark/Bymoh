@@ -15,22 +15,22 @@ const STATUS_LABELS: Record<BookingStatus, string> = {
 
 export default function ProBookingsScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const queryClient = useQueryClient();
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const { data: bookings = [] } = useQuery<Booking[]>({
-    queryKey: ['pro-bookings', session?.user?.id],
+    queryKey: ['pro-bookings', profile?.id],
     queryFn: async () => {
-      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_id', session?.user?.id ?? '');
+      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_id', profile?.id ?? '');
       const bizIds = (biz ?? []).map((b: { id: string }) => b.id);
       if (bizIds.length === 0) return [];
       const { data, error } = await supabase.from('bookings').select('*').in('business_id', bizIds).order('date', { ascending: true });
       if (error) throw error;
       return data as Booking[];
     },
-    enabled: !!session?.user?.id,
+    enabled: !!profile?.id,
     staleTime: 30_000,
   });
 

@@ -17,16 +17,16 @@ const PLANS = [
 
 export default function RegisterPaymentScreen() {
   const insets = useSafeAreaInsets();
-  const { session, setProfile } = useAuthStore();
+  const { profile, setProfile } = useAuthStore();
   const [selectedPlan, setSelectedPlan] = useState('free');
   const [loading, setLoading] = useState(false);
 
   const complete = async () => {
-    if (!session?.user?.id) { Alert.alert('Non connecté'); return; }
+    if (!profile?.id) { Alert.alert('Non connecté'); return; }
     setLoading(true);
     try {
       const biz = {
-        owner_id: session.user.id,
+        owner_id: profile.id,
         name: (registerDraft as any).name,
         category: (registerDraft as any).category,
         phone: (registerDraft as any).phone,
@@ -56,9 +56,9 @@ export default function RegisterPaymentScreen() {
       }
 
       // Update profile role to pro
-      const { error: profileError } = await supabase.from('users').update({ role: 'pro' }).eq('id', session.user.id);
+      const { error: profileError } = await supabase.from('users').update({ role: 'pro' }).eq('id', profile.id);
       if (!profileError) {
-        const { data: p } = await supabase.from('users').select('*').eq('id', session.user.id).single();
+        const { data: p } = await supabase.from('users').select('*').eq('id', profile.id).single();
         if (p) setProfile(p as any);
       }
 

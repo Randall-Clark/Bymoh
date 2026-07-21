@@ -20,7 +20,7 @@ const queryClient = new QueryClient();
 const PROTECTED = ['(client)', '(pro)'];
 
 function AuthGuard() {
-  const { session, profile, isLoading } = useAuth();
+  const { isAuthenticated, profile, isLoading } = useAuth();
   const segments = useSegments();
 
   useEffect(() => {
@@ -29,20 +29,14 @@ function AuthGuard() {
     const inProtected = first ? PROTECTED.includes(first) : false;
     const inAuth = first === '(auth)';
 
-    if (!session && inProtected) {
-      // Not logged in — send to landing
+    if (!isAuthenticated && inProtected) {
       router.replace('/');
-    } else if (session && !profile && !inAuth) {
-      // Logged in but no profile yet → complete profile
-      router.replace('/(auth)/complete-profile');
-    } else if (session && profile && !profile.pin_hash && !inAuth) {
-      // Profile exists but PIN not configured yet → set PIN
-      router.replace('/(auth)/set-pin');
-    } else if (session && profile && profile.pin_hash && (first === undefined || inAuth)) {
-      // Fully set up → go to app
+    } else if (isAuthenticated && profile && (first === undefined || inAuth)) {
       router.replace('/(client)');
+    } else if (isAuthenticated && !profile && !inAuth) {
+      router.replace('/(auth)/complete-profile');
     }
-  }, [session, profile, isLoading, segments]);
+  }, [isAuthenticated, profile, isLoading, segments]);
 
   return null;
 }

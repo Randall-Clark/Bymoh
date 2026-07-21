@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore } from '@/stores/authStore';
+import { useAuth } from '@/hooks/useAuth';
 
 const { width: W } = Dimensions.get('window');
 const BG = '#E84B1A';
@@ -39,7 +39,7 @@ const SLIDES = [
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { session, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading } = useAuth();
 
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
@@ -62,12 +62,12 @@ export default function OnboardingScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && session) {
+    if (!isLoading && isAuthenticated) {
       router.replace('/(client)');
     }
-  }, [session, isLoading]);
+  }, [isAuthenticated, isLoading]);
 
-  if (session) return null;
+  if (isAuthenticated) return null;
 
   const topPad = Platform.OS === 'web' ? 48 : insets.top + 16;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -75,7 +75,6 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Logo */}
       <View style={[styles.logoRow, { paddingTop: topPad }]}>
         <Image
           source={require('../assets/images/bymoh-logo.png')}
@@ -84,7 +83,6 @@ export default function OnboardingScreen() {
         />
       </View>
 
-      {/* Carousel */}
       <View style={styles.carouselArea}>
         <FlatList
           ref={flatListRef}
@@ -115,7 +113,6 @@ export default function OnboardingScreen() {
         </View>
       </View>
 
-      {/* Buttons */}
       <View style={[styles.bottom, { paddingBottom: botPad + 24 }]}>
         <TouchableOpacity
           style={[styles.ctaBtn, !ready && { opacity: 0.6 }]}

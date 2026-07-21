@@ -12,7 +12,7 @@ import type { DeliveryMethod } from '@/types';
 
 export default function DeliveryScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const { items, businessId, businessName, totalAmount, clearCart } = useCart();
   const [deliveryType, setDeliveryType] = useState<DeliveryMethod>('pickup');
   const [address, setAddress] = useState('');
@@ -28,7 +28,7 @@ export default function DeliveryScreen() {
       Alert.alert('Adresse requise', 'Entrez votre adresse de livraison.');
       return;
     }
-    if (!session?.user?.id) {
+    if (!profile?.id) {
       Alert.alert('Non connecté');
       return;
     }
@@ -37,7 +37,7 @@ export default function DeliveryScreen() {
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert({
-          user_id: session.user.id,
+          user_id: profile.id,
           business_id: businessId,
           status: 'pending',
           delivery_method: deliveryType,

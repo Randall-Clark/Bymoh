@@ -20,7 +20,7 @@ const defaultSchedule = (): Schedule =>
 
 export default function ProHoursScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const [schedule, setSchedule] = useState<Schedule>(defaultSchedule());
   const [businessId, setBusinessId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export default function ProHoursScreen() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('businesses').select('id').eq('owner_id', session?.user?.id ?? '').limit(1).single();
+      const { data } = await supabase.from('businesses').select('id').eq('owner_id', profile?.id ?? '').limit(1).single();
       if (data) {
         setBusinessId(data.id);
         const { data: hours } = await supabase.from('business_hours').select('*').eq('business_id', data.id);
@@ -42,7 +42,7 @@ export default function ProHoursScreen() {
         }
       }
     })();
-  }, [session?.user?.id]);
+  }, [profile?.id]);
 
   const save = async () => {
     if (!businessId) { Alert.alert('Aucun commerce', 'Créez d\'abord un commerce.'); return; }

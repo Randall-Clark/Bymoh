@@ -12,7 +12,7 @@ import type { Business } from '@/types';
 
 export default function ProProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const [business, setBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
@@ -23,12 +23,12 @@ export default function ProProfileScreen() {
       const { data } = await supabase
         .from('businesses')
         .select('*')
-        .eq('owner_id', session?.user?.id ?? '')
+        .eq('owner_id', profile?.id ?? '')
         .limit(1)
         .single();
       if (data) setBusiness(data as Business);
     })();
-  }, [session?.user?.id]);
+  }, [profile?.id]);
 
   const save = async () => {
     if (!business) return;

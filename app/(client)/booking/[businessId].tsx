@@ -42,7 +42,7 @@ function getNextDays(n: number): Date[] {
 export default function BookingScreen() {
   const insets = useSafeAreaInsets();
   const { businessId } = useLocalSearchParams<{ businessId: string }>();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const { data: business } = useBusiness(businessId ?? '');
   const { data: catalog = [] } = useBusinessCatalog(businessId ?? '');
   const services = (catalog as CatalogItem[]).filter((i) => i.allows_booking);
@@ -62,14 +62,14 @@ export default function BookingScreen() {
       Alert.alert('Sélection incomplète', 'Veuillez choisir un service, une date et un horaire.');
       return;
     }
-    if (!session?.user?.id) {
+    if (!profile?.id) {
       Alert.alert('Non connecté', 'Vous devez être connecté pour réserver.');
       return;
     }
     setLoading(true);
     try {
       const { error } = await supabase.from('bookings').insert({
-        user_id: session.user.id,
+        user_id: profile.id,
         business_id: businessId,
         service_id: selectedService.id,
         booking_type: 'appointment',

@@ -28,22 +28,22 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 export default function ProOrdersScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const queryClient = useQueryClient();
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const { data: orders = [] } = useQuery<OrderRow[]>({
-    queryKey: ['pro-orders', session?.user?.id],
+    queryKey: ['pro-orders', profile?.id],
     queryFn: async () => {
-      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_id', session?.user?.id ?? '');
+      const { data: biz } = await supabase.from('businesses').select('id').eq('owner_id', profile?.id ?? '');
       const bizIds = (biz ?? []).map((b: { id: string }) => b.id);
       if (bizIds.length === 0) return [];
       const { data, error } = await supabase.from('orders').select('*, items:order_items(title, quantity)').in('business_id', bizIds).order('created_at', { ascending: false });
       if (error) throw error;
       return data as OrderRow[];
     },
-    enabled: !!session?.user?.id,
+    enabled: !!profile?.id,
     staleTime: 30_000,
   });
 

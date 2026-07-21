@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { Feather } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { sendOTP, checkPhoneExists } from '@/lib/supabase';
+import { api } from '@/lib/api';
 
 const schema = z.object({
   phone: z
@@ -27,25 +27,11 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-/**
- * Build a valid E.164 phone number.
- * Handles 3 cases the user might enter:
- *   "+2290152622918"  → kept as-is (already E.164)
- *   "2290152622918"   → country code already included without + → "+2290152622918"
- *   "0152622918"      → local number, prefix with countryDialCode → "+2290152622918"
- */
 function buildE164(input: string, dialCode: string): string {
   const clean = input.replace(/[\s\-().]/g, '');
-
-  // Already has + prefix — trust it as-is
   if (clean.startsWith('+')) return clean;
-
-  const digits = dialCode.replace('+', ''); // e.g. "229"
-
-  // User typed the full number without + (e.g. "2290152622918" when +229 is selected)
+  const digits = dialCode.replace('+', '');
   if (clean.startsWith(digits)) return `+${clean}`;
-
-  // User typed only the local part (e.g. "0152622918")
   return `${dialCode}${clean}`;
 }
 
@@ -79,9 +65,9 @@ export default function PhoneScreen() {
       const fullPhone = buildE164(data.phone, countryCode.code);
 
       if (isLogin) {
-        // Login: check if phone is registered, then go to PIN screen
-        const userId = await checkPhoneExists(fullPhone);
-        if (!userId) {
+        // Vérifier si le numéro est enregistré via l'API Express
+        const result = await api.post<{ exists: boolean }>('/auth/check-phone', { phone: fullPhone });
+        if (!result.exists) {
           Alert.alert(
             'Numéro non trouvé',
             "Ce numéro n'est pas encore enregistré. Créez un compte.",
@@ -94,12 +80,11 @@ export default function PhoneScreen() {
         }
         router.push({ pathname: '/(auth)/pin-login', params: { phone: fullPhone } });
       } else {
-        // Signup: send OTP
-        await sendOTP(fullPhone);
-        router.push({ pathname: '/(auth)/otp', params: { phone: fullPhone } });
+        // Inscription : aller vers le formulaire nom + NIP
+        router.push({ pathname: '/(auth)/signup', params: { phone: fullPhone } });
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur lors de l\'envoi';
+      const msg = err instanceof Error ? err.message : 'Erreur de connexion au serveur';
       Alert.alert('Erreur', msg);
     } finally {
       setLoading(false);
@@ -113,7 +98,6 @@ export default function PhoneScreen() {
         contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Back */}
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
           <Feather name="arrow-left" size={22} color="#111827" />
         </TouchableOpacity>
@@ -128,11 +112,10 @@ export default function PhoneScreen() {
           <Text style={styles.subtitle}>
             {isLogin
               ? 'Entrez votre numéro pour accéder à votre compte.'
-              : 'Entrez votre numéro. Nous vous enverrons un code de vérification par SMS.'}
+              : 'Entrez votre numéro de téléphone pour commencer.'}
           </Text>
         </View>
 
-        {/* Phone input */}
         <View style={styles.phoneRow}>
           <TouchableOpacity
             style={styles.codeBtn}
@@ -165,7 +148,6 @@ export default function PhoneScreen() {
           </View>
         </View>
 
-        {/* Country picker */}
         {pickerVisible && (
           <View style={styles.picker}>
             {COUNTRY_CODES.map((cc) => (
@@ -185,7 +167,7 @@ export default function PhoneScreen() {
         )}
 
         <Button
-          title={loading ? 'Vérification…' : isLogin ? 'Continuer' : 'Recevoir le code'}
+          title={loading ? 'Vérification…' : 'Continuer'}
           onPress={handleSubmit(onSubmit)}
           loading={loading}
           fullWidth

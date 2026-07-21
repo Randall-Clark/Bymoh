@@ -17,21 +17,21 @@ interface Stats {
 
 export default function ProDashboardScreen() {
   const insets = useSafeAreaInsets();
-  const { profile, session } = useAuthStore();
+  const { profile } = useAuthStore();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const { data: businesses = [] } = useQuery({
-    queryKey: ['pro-businesses', session?.user?.id],
+    queryKey: ['pro-businesses', profile?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('businesses')
         .select('id, name, is_active, is_verified')
-        .eq('owner_id', session?.user?.id ?? '');
+        .eq('owner_id', profile?.id ?? '');
       if (error) throw error;
       return data;
     },
-    enabled: !!session?.user?.id,
+    enabled: !!profile?.id,
     staleTime: 30_000,
   });
 

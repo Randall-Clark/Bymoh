@@ -47,10 +47,11 @@ export default function SetPINScreen() {
   };
 
   const handleSave = async (pin: string) => {
-    if (!session?.user?.id) return;
+    const userId = profile?.id ?? session?.user?.id;
+    if (!userId) return;
     setLoading(true);
     try {
-      await setPIN(session.user.id, pin);
+      await setPIN(userId, pin);
       if (profile) {
         setProfile({ ...profile, pin_hash: 'configured' });
       }

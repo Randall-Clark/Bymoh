@@ -9,6 +9,7 @@ export default function AuthLayout() {
       <Stack.Screen name="complete-profile" />
       <Stack.Screen name="set-pin" />
       <Stack.Screen name="pin-login" />
+      <Stack.Screen name="signup" />
     </Stack>
   );
 }

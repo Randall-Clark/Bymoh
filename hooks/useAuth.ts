@@ -1,58 +1,96 @@
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { api, getApiToken, removeApiToken, normalizeProfile } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { Profile } from '@/types';
 
-/** Initialise Supabase auth listener and sync with Zustand store. */
 export function useAuth() {
-  const { session, profile, isLoading, setSession, setProfile, setLoading, clearAuth } =
-    useAuthStore();
+  const {
+    token, session, profile, isLoading,
+    setToken, setSession, setProfile, setLoading, clearAuth,
+  } = useAuthStore();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (s?.user) {
-        fetchProfile(s.user.id).then(setProfile);
-      }
-      setLoading(false);
-    });
+    let cancelled = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+    async function init() {
+      setLoading(true);
+
+      // 1. Try Express API token (accounts created via new signup flow)
+      const savedToken = await getApiToken();
+      if (savedToken) {
+        try {
+          const data = await api.get<Record<string, unknown>>('/users/me');
+          if (!cancelled) {
+            setToken(savedToken);
+            setProfile(normalizeProfile(data));
+            setLoading(false);
+            return;
+          }
+        } catch {
+          await removeApiToken();
+          if (!cancelled) setToken(null);
+        }
+      }
+
+      // 2. Fall back to Supabase session (existing test accounts)
+      const { data: { session: s } } = await supabase.auth.getSession();
+      if (!cancelled) {
+        setSession(s);
+        if (s?.user) {
+          setLoading(true);
+          const p = await fetchSupabaseProfile(s.user.id);
+          if (!cancelled) setProfile(p);
+        }
+        setLoading(false);
+      }
+    }
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, s) => {
+      if (cancelled) return;
       setSession(s);
       if (s?.user) {
         setLoading(true);
-        const p = await fetchProfile(s.user.id);
-        setProfile(p);
+        const p = await fetchSupabaseProfile(s.user.id);
+        if (!cancelled) setProfile(p);
       } else {
-        setProfile(null);
+        const t = await getApiToken();
+        if (!t) setProfile(null);
       }
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
+    await removeApiToken();
     await supabase.auth.signOut();
     clearAuth();
   };
 
   return {
+    token,
     session,
     profile,
     isLoading,
-    isAuthenticated: !!session,
+    isAuthenticated: !!token || !!session,
     hasProfile: !!profile,
     signOut,
   };
 }
 
-async function fetchProfile(userId: string): Promise<Profile | null> {
+async function fetchSupabaseProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('id', userId)
     .single();
   if (error) return null;
-  return data as Profile;
+  return data as unknown as Profile;
 }

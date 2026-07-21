@@ -11,16 +11,16 @@ import type { CatalogItem } from '@/types';
 
 export default function CatalogIndexScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const queryClient = useQueryClient();
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const [bizId, setBizId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    supabase.from('businesses').select('id').eq('owner_id', session?.user?.id ?? '').limit(1).single()
+    supabase.from('businesses').select('id').eq('owner_id', profile?.id ?? '').limit(1).single()
       .then(({ data }) => { if (data) setBizId(data.id); });
-  }, [session?.user?.id]);
+  }, [profile?.id]);
 
   const { data: items = [] } = useQuery<CatalogItem[]>({
     queryKey: ['pro-catalog', bizId],

@@ -41,38 +41,38 @@ const BOOKING_STATUS_MAP: Record<BookingStatus, string> = {
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
-  const { session } = useAuthStore();
+  const { profile } = useAuthStore();
   const [tab, setTab] = useState<Tab>('orders');
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const { data: orders = [] } = useQuery<OrderRow[]>({
-    queryKey: ['orders', session?.user?.id],
+    queryKey: ['orders', profile?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
         .select('*, business:businesses(name), items:order_items(title, quantity)')
-        .eq('user_id', session?.user?.id ?? '')
+        .eq('user_id', profile?.id ?? '')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as OrderRow[];
     },
-    enabled: !!session?.user?.id,
+    enabled: !!profile?.id,
     staleTime: 30_000,
   });
 
   const { data: bookings = [] } = useQuery<BookingRow[]>({
-    queryKey: ['bookings', session?.user?.id],
+    queryKey: ['bookings', profile?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('bookings')
         .select('*, business:businesses(name), service:services(title)')
-        .eq('user_id', session?.user?.id ?? '')
+        .eq('user_id', profile?.id ?? '')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as BookingRow[];
     },
-    enabled: !!session?.user?.id,
+    enabled: !!profile?.id,
     staleTime: 30_000,
   });
 

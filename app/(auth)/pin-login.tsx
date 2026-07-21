@@ -10,7 +10,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { OTPInput } from '@/components/forms/OTPInput';
-import { signInWithPIN } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { api, saveApiToken, normalizeProfile } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 
 const PIN_LENGTH = 6;
 
@@ -19,18 +21,43 @@ export default function PINLoginScreen() {
   const { phone } = useLocalSearchParams<{ phone: string }>();
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
+  const { setToken, setProfile } = useAuthStore();
 
   const handleComplete = async (value: string) => {
     if (value.length < PIN_LENGTH) return;
     setLoading(true);
     try {
-      await signInWithPIN(phone ?? '', value);
-      // onAuthStateChange in useAuth handles routing via AuthGuard
+      // Essayer d'abord l'API Express (comptes créés via inscription)
+      try {
+        const result = await api.post<{ token: string; user: Record<string, unknown> }>(
+          '/auth/login',
+          { phone: phone ?? '', pin: value },
+        );
+        await saveApiToken(result.token);
+        setToken(result.token);
+        setProfile(normalizeProfile(result.user));
+        // AuthGuard prend le relais pour naviguer
+        return;
+      } catch {
+        // Pas de compte Express → essayer Supabase (comptes test existants)
+      }
+
+      // Connexion Supabase pour les comptes créés via l'ancien flux
+      const { error } = await supabase.auth.signInWithPassword({
+        phone: phone ?? '',
+        password: value,
+      });
+      if (error) {
+        throw new Error(
+          error.message === 'Invalid login credentials'
+            ? 'NIP incorrect. Réessayez.'
+            : error.message,
+        );
+      }
+      // onAuthStateChange dans useAuth gère le profil et la navigation
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'NIP incorrect';
-      Alert.alert('NIP incorrect', msg === 'Invalid login credentials'
-        ? 'Le NIP saisi est incorrect. Réessayez.'
-        : msg);
+      Alert.alert('NIP incorrect', msg);
       setPin('');
     } finally {
       setLoading(false);
