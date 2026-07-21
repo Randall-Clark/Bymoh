@@ -31,7 +31,7 @@ export default function ProfileScreen() {
           clearAuth();
           clearFavorites();
           clearCart();
-          router.replace('/(auth)/phone');
+          router.replace('/');
         },
       },
     ]);
