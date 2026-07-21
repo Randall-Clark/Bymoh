@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, MapPressEvent, Region } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocationStore } from '@/stores/locationStore';
 import { ALL_CITIES } from '@/types';
@@ -24,12 +24,79 @@ interface Props {
 
 type Tab = 'list' | 'map';
 
-const DEFAULT_REGION: Region = {
-  latitude: 6.3654,
-  longitude: 2.4183,
-  latitudeDelta: 0.5,
-  longitudeDelta: 0.5,
-};
+function buildLeafletHtml(lat: number, lon: number): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body, #map { width:100%; height:100%; }
+    .leaflet-control-attribution { display:none; }
+    .confirm-bar {
+      position:absolute; bottom:0; left:0; right:0; z-index:9999;
+      background:#fff; padding:12px 16px;
+      border-top:1px solid #E5E7EB;
+      display:flex; align-items:center; gap:10px;
+    }
+    .confirm-bar span {
+      flex:1; font-size:13px; color:#111827; font-family:sans-serif;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .confirm-btn {
+      background:#FF6835; color:#fff; border:none; border-radius:10px;
+      padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer;
+      font-family:sans-serif; white-space:nowrap;
+    }
+    .hint {
+      position:absolute; top:8px; left:50%; transform:translateX(-50%);
+      z-index:9999; background:rgba(0,0,0,0.6); color:#fff;
+      padding:6px 14px; border-radius:20px; font-size:12px;
+      font-family:sans-serif; pointer-events:none; white-space:nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="hint" id="hint">Appuyez sur la carte pour choisir</div>
+  <div class="confirm-bar" id="bar" style="display:none">
+    <span id="addr">—</span>
+    <button class="confirm-btn" onclick="confirm()">Confirmer</button>
+  </div>
+  <script>
+    var map = L.map('map', { zoomControl:true }).setView([${lat},${lon}], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19
+    }).addTo(map);
+
+    var marker = null;
+    var chosen = null;
+
+    var icon = L.divIcon({
+      html:'<div style="width:28px;height:28px;background:#FF6835;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>',
+      iconSize:[28,28], iconAnchor:[14,28], className:''
+    });
+
+    map.on('click', function(e){
+      var lat = e.latlng.lat, lon = e.latlng.lng;
+      chosen = {lat: lat, lon: lon};
+      if (marker) marker.setLatLng(e.latlng);
+      else marker = L.marker(e.latlng, {icon:icon}).addTo(map);
+      document.getElementById('hint').style.display = 'none';
+      document.getElementById('addr').textContent = lat.toFixed(5) + ', ' + lon.toFixed(5);
+      document.getElementById('bar').style.display = 'flex';
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'pick', lat:lat, lon:lon}));
+    });
+
+    function confirm(){
+      if (chosen) window.ReactNativeWebView.postMessage(JSON.stringify({type:'confirm', lat:chosen.lat, lon:chosen.lon}));
+    }
+  </script>
+</body>
+</html>`;
+}
 
 export function LocationPickerModal({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
@@ -38,11 +105,10 @@ export function LocationPickerModal({ visible, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const [markerCoords, setMarkerCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_REGION);
+  const [mapCenter, setMapCenter] = useState({ lat: 6.3654, lon: 2.4183 });
   const [reverseLoading, setReverseLoading] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
-  const mapRef = useRef<MapView>(null);
+  const webviewKey = useRef(0);
 
   const filtered = ALL_CITIES.filter(
     (c) =>
@@ -61,37 +127,6 @@ export function LocationPickerModal({ visible, onClose }: Props) {
     if (query.trim().length > 2) handleSelectCity(query.trim());
   };
 
-  const handleGPS = async () => {
-    setGpsLoading(true);
-    setGpsError(null);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setGpsError('Permission refusée');
-        setGpsLoading(false);
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = loc.coords;
-
-      if (tab === 'map') {
-        const region = { latitude, longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 };
-        setMarkerCoords({ latitude, longitude });
-        setMapRegion(region);
-        mapRef.current?.animateToRegion(region, 600);
-        await reverseGeocode(latitude, longitude);
-      } else {
-        const [place] = await Location.reverseGeocodeAsync({ latitude, longitude });
-        const name = place?.city ?? place?.subregion ?? place?.region ?? null;
-        if (name) { setCity(name); onClose(); }
-        else setGpsError('Position non reconnue');
-      }
-    } catch {
-      setGpsError('Impossible de récupérer la position');
-    }
-    setGpsLoading(false);
-  };
-
   const reverseGeocode = async (lat: number, lon: number) => {
     setReverseLoading(true);
     setPendingLabel(null);
@@ -100,7 +135,7 @@ export function LocationPickerModal({ visible, onClose }: Props) {
       if (place) {
         const label = [place.street, place.district ?? place.subregion, place.city]
           .filter(Boolean).join(', ');
-        setPendingLabel(label || place.city || place.region || `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+        setPendingLabel(label || place.city || `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
       } else {
         setPendingLabel(`${lat.toFixed(4)}, ${lon.toFixed(4)}`);
       }
@@ -110,19 +145,41 @@ export function LocationPickerModal({ visible, onClose }: Props) {
     setReverseLoading(false);
   };
 
-  const handleMapPress = async (e: MapPressEvent) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
-    setMarkerCoords({ latitude, longitude });
-    await reverseGeocode(latitude, longitude);
+  const handleGPS = async () => {
+    setGpsLoading(true);
+    setGpsError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { setGpsError('Permission refusée'); setGpsLoading(false); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+
+      if (tab === 'map') {
+        setMapCenter({ lat: latitude, lon: longitude });
+        webviewKey.current += 1;
+      } else {
+        const [place] = await Location.reverseGeocodeAsync({ latitude, longitude });
+        const name = place?.city ?? place?.subregion ?? place?.region ?? null;
+        if (name) { setCity(name); onClose(); }
+        else setGpsError('Position non reconnue');
+      }
+    } catch { setGpsError('Impossible de récupérer la position'); }
+    setGpsLoading(false);
   };
 
-  const handleConfirmMap = () => {
-    if (pendingLabel) {
-      setCity(pendingLabel);
-      setPendingLabel(null);
-      setMarkerCoords(null);
-      onClose();
-    }
+  const handleWebViewMessage = async (event: { nativeEvent: { data: string } }) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'pick') {
+        await reverseGeocode(msg.lat, msg.lon);
+      } else if (msg.type === 'confirm') {
+        if (pendingLabel) {
+          setCity(pendingLabel);
+          setPendingLabel(null);
+          onClose();
+        }
+      }
+    } catch { /* ignore parse errors */ }
   };
 
   return (
@@ -153,20 +210,18 @@ export function LocationPickerModal({ visible, onClose }: Props) {
 
         {/* Tabs */}
         <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'list' && styles.tabBtnActive]}
-            onPress={() => setTab('list')}
-          >
-            <Feather name="list" size={14} color={tab === 'list' ? '#FF6835' : '#6B7280'} />
-            <Text style={[styles.tabLabel, tab === 'list' && styles.tabLabelActive]}>Villes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'map' && styles.tabBtnActive]}
-            onPress={() => setTab('map')}
-          >
-            <Feather name="map" size={14} color={tab === 'map' ? '#FF6835' : '#6B7280'} />
-            <Text style={[styles.tabLabel, tab === 'map' && styles.tabLabelActive]}>Carte</Text>
-          </TouchableOpacity>
+          {(['list', 'map'] as Tab[]).map((t) => (
+            <TouchableOpacity
+              key={t}
+              style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
+              onPress={() => setTab(t)}
+            >
+              <Feather name={t === 'list' ? 'list' : 'map'} size={14} color={tab === t ? '#FF6835' : '#6B7280'} />
+              <Text style={[styles.tabLabel, tab === t && styles.tabLabelActive]}>
+                {t === 'list' ? 'Villes' : 'Carte'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* ── LIST TAB ── */}
@@ -190,7 +245,6 @@ export function LocationPickerModal({ visible, onClose }: Props) {
                 </TouchableOpacity>
               )}
             </View>
-
             {query.trim().length > 2 && (
               <TouchableOpacity style={styles.confirmRow} onPress={handleManual} activeOpacity={0.8}>
                 <Feather name="map-pin" size={16} color="#FF6835" />
@@ -198,7 +252,6 @@ export function LocationPickerModal({ visible, onClose }: Props) {
                 <Feather name="arrow-right" size={16} color="#FF6835" />
               </TouchableOpacity>
             )}
-
             <Text style={styles.sectionLabel}>Villes disponibles</Text>
             <ScrollView style={styles.list} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {filtered.map((c) => {
@@ -226,46 +279,30 @@ export function LocationPickerModal({ visible, onClose }: Props) {
         {/* ── MAP TAB ── */}
         {tab === 'map' && (
           <View style={styles.mapContainer}>
-            <Text style={styles.mapHint}>
-              <Feather name="info" size={12} color="#9CA3AF" /> Appuyez sur la carte pour placer votre adresse
-            </Text>
-            <MapView
-              ref={mapRef}
+            {reverseLoading && (
+              <View style={styles.reverseBar}>
+                <ActivityIndicator size="small" color="#FF6835" />
+                <Text style={styles.reverseText}>Identification de l'adresse…</Text>
+              </View>
+            )}
+            {pendingLabel && !reverseLoading && (
+              <View style={styles.reverseBar}>
+                <Feather name="map-pin" size={14} color="#FF6835" />
+                <Text style={styles.reverseText} numberOfLines={1}>{pendingLabel}</Text>
+              </View>
+            )}
+            <WebView
+              key={webviewKey.current}
               style={styles.map}
-              initialRegion={mapRegion}
-              onPress={handleMapPress}
-              showsUserLocation
-              showsMyLocationButton={false}
-            >
-              {markerCoords && (
-                <Marker coordinate={markerCoords} pinColor="#FF6835" />
-              )}
-            </MapView>
-
-            {/* Pending address bar */}
-            <View style={styles.mapFooter}>
-              {reverseLoading ? (
-                <View style={styles.mapAddressRow}>
-                  <ActivityIndicator size="small" color="#FF6835" />
-                  <Text style={styles.mapAddressText}>Identification de l'adresse…</Text>
-                </View>
-              ) : pendingLabel ? (
-                <View style={styles.mapAddressRow}>
-                  <Feather name="map-pin" size={16} color="#FF6835" />
-                  <Text style={styles.mapAddressText} numberOfLines={2}>{pendingLabel}</Text>
-                </View>
-              ) : (
-                <Text style={styles.mapPlaceholder}>Aucun point sélectionné</Text>
-              )}
-              <TouchableOpacity
-                style={[styles.confirmMapBtn, !pendingLabel && styles.confirmMapBtnDisabled]}
-                onPress={handleConfirmMap}
-                disabled={!pendingLabel || reverseLoading}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.confirmMapBtnText}>Confirmer</Text>
-              </TouchableOpacity>
-            </View>
+              source={{ html: buildLeafletHtml(mapCenter.lat, mapCenter.lon) }}
+              onMessage={handleWebViewMessage}
+              javaScriptEnabled
+              domStorageEnabled
+              originWhitelist={['*']}
+              scrollEnabled={false}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            />
           </View>
         )}
       </View>
@@ -283,10 +320,7 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
     gap: 12,
   },
-  handle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 4,
-  },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginBottom: 4 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 17, fontWeight: '800', color: '#111827' },
   gpsBtn: {
@@ -296,14 +330,8 @@ const styles = StyleSheet.create({
   },
   gpsBtnLabel: { fontSize: 14, fontWeight: '600', color: '#FF6835' },
   gpsError: { fontSize: 12, color: '#EF4444', marginTop: 2 },
-  tabRow: {
-    flexDirection: 'row', gap: 8,
-    backgroundColor: '#F3F4F6', borderRadius: 12, padding: 4,
-  },
-  tabBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 8, borderRadius: 9,
-  },
+  tabRow: { flexDirection: 'row', gap: 8, backgroundColor: '#F3F4F6', borderRadius: 12, padding: 4 },
+  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 9 },
   tabBtnActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
   tabLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   tabLabelActive: { color: '#FF6835' },
@@ -330,19 +358,12 @@ const styles = StyleSheet.create({
   cityName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   cityNameActive: { color: '#FF6835' },
   cityCountry: { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  mapContainer: { flex: 1, gap: 8, minHeight: 380 },
-  mapHint: { fontSize: 12, color: '#9CA3AF', textAlign: 'center' },
-  map: { flex: 1, borderRadius: 16, overflow: 'hidden', minHeight: 280 },
-  mapFooter: {
-    backgroundColor: '#F9FAFB', borderRadius: 14, padding: 14, gap: 10,
-    borderWidth: 1, borderColor: '#E5E7EB',
+  mapContainer: { flex: 1, minHeight: 360, gap: 8 },
+  reverseBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF2EC', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#FED7AA',
   },
-  mapAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  mapAddressText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827' },
-  mapPlaceholder: { fontSize: 13, color: '#9CA3AF', textAlign: 'center' },
-  confirmMapBtn: {
-    backgroundColor: '#FF6835', borderRadius: 12, paddingVertical: 12, alignItems: 'center',
-  },
-  confirmMapBtnDisabled: { backgroundColor: '#F3F4F6' },
-  confirmMapBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  reverseText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#FF6835' },
+  map: { flex: 1, borderRadius: 16, overflow: Platform.OS === 'android' ? 'hidden' : 'visible' },
 });
