@@ -15,10 +15,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
+import { useLocationStore } from '@/stores/locationStore';
 import { useBusinesses } from '@/hooks/useBusinesses';
 import { useLocation } from '@/hooks/useLocation';
 import { isBusinessOpen } from '@/lib/utils';
 import { BusinessCard } from '@/components/business/BusinessCard';
+import { LocationPickerModal } from '@/components/LocationPickerModal';
 import { CATEGORIES, ALL_CITIES } from '@/types';
 
 const { width: W } = Dimensions.get('window');
@@ -48,11 +50,13 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { profile } = useAuthStore();
   const { address } = useLocation();
+  const { city: savedCity } = useLocationStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [bannerIdx, setBannerIdx] = useState(0);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
 
-  const cityName = address ?? 'Lomé';
+  const cityName = savedCity ?? address ?? 'Lomé';
   const cityEntry = ALL_CITIES.find((c) => c.name.toLowerCase() === cityName.toLowerCase()) ?? ALL_CITIES[6];
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
@@ -104,7 +108,7 @@ export default function HomeScreen() {
             <Feather name="menu" size={22} color="#fff" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.addressPill} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.addressPill} activeOpacity={0.8} onPress={() => setLocationPickerVisible(true)}>
             <Feather name="map-pin" size={13} color="rgba(255,255,255,0.75)" />
             <View style={{ flex: 1 }}>
               <Text style={styles.addressLabel}>Livraison à</Text>
@@ -228,6 +232,9 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
+      {/* Location picker */}
+      <LocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} />
+
       {/* Side menu modal */}
       <Modal visible={menuVisible} transparent animationType="slide" onRequestClose={() => setMenuVisible(false)}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setMenuVisible(false)} />
@@ -248,8 +255,8 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           {[
+            { icon: 'user', label: 'Mon profil', route: '/(client)/profile' as const },
             { icon: 'briefcase', label: 'Espace professionnel', route: '/(pro)/dashboard' as const },
-            { icon: 'settings', label: 'Paramètres', route: '/(client)/profile' as const },
           ].map((item) => (
             <TouchableOpacity
               key={item.label}
