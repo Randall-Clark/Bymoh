@@ -3,14 +3,13 @@ import type { Profile } from '@/types';
 
 const TOKEN_KEY = '@bymoh_token';
 
+// URL de base correcte pour l'API REST Supabase
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+// Base URL pour les appels REST Supabase
 function getBaseUrl(): string {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.replace(/\/$/, '');
-  }
-  if (process.env.EXPO_PUBLIC_DOMAIN) {
-    return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
-  }
-  return 'http://localhost:5000/api';
+  return `${SUPABASE_URL}/rest/v1`;
 }
 
 export async function getApiToken(): Promise<string | null> {
@@ -42,20 +41,33 @@ export function normalizeProfile(data: Record<string, unknown>): Profile {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getApiToken();
-  const res = await fetch(`${getBaseUrl()}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...((options.headers as Record<string, string>) ?? {}),
-    },
-  });
+
+  // Supabase REST API requiert TOUJOURS ces deux headers
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY,           // ← obligatoire pour Supabase
+    'Authorization': token                  // token utilisateur si connecté
+      ? `Bearer ${token}`
+      : `Bearer ${SUPABASE_ANON_KEY}`,     // sinon anon key par défaut
+    ...((options.headers as Record<string, string>) ?? {}),
+  };
+
+  const url = `${getBaseUrl()}${path}`;
+  console.log('[API] Requête:', options.method ?? 'GET', url);
+
+  const res = await fetch(url, { ...options, headers });
+
   let data: unknown;
   try { data = await res.json(); } catch { data = {}; }
+
   if (!res.ok) {
-    const err = (data as Record<string, unknown>)?.error;
+    console.error('[API] Erreur', res.status, data);
+    const err = (data as Record<string, unknown>)?.message
+      ?? (data as Record<string, unknown>)?.error
+      ?? `Erreur ${res.status}`;
     throw new Error(typeof err === 'string' ? err : `Erreur ${res.status}`);
   }
+
   return data as T;
 }
 
@@ -65,4 +77,6 @@ export const api = {
     request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  delete: <T>(path: string) =>
+    request<T>(path, { method: 'DELETE' }),
 };

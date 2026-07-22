@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { OTPInput } from '@/components/forms/OTPInput';
 import { supabase } from '@/lib/supabase';
-import { api, saveApiToken, normalizeProfile } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 
 const PIN_LENGTH = 6;
@@ -21,40 +20,57 @@ export default function PINLoginScreen() {
   const { phone } = useLocalSearchParams<{ phone: string }>();
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
-  const { setToken, setProfile } = useAuthStore();
+  const { setSession, setProfile } = useAuthStore();
 
   const handleComplete = async (value: string) => {
     if (value.length < PIN_LENGTH) return;
     setLoading(true);
-    try {
-      // Essayer d'abord l'API Express (comptes créés via inscription)
-      try {
-        const result = await api.post<{ token: string; user: Record<string, unknown> }>(
-          '/auth/login',
-          { phone: phone ?? '', pin: value },
-        );
-        await saveApiToken(result.token);
-        setToken(result.token);
-        setProfile(normalizeProfile(result.user));
-        // AuthGuard prend le relais pour naviguer
-        return;
-      } catch {
-        // Pas de compte Express → essayer Supabase (comptes test existants)
-      }
 
-      // Connexion Supabase pour les comptes créés via l'ancien flux
-      const { error } = await supabase.auth.signInWithPassword({
+    try {
+      console.log('[PINLogin] Tentative de connexion pour:', phone);
+
+      // ✅ Connexion directe via Supabase — PIN = mot de passe Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
         phone: phone ?? '',
         password: value,
       });
+
       if (error) {
+        console.error('[PINLogin] Erreur Supabase:', error.message);
         throw new Error(
           error.message === 'Invalid login credentials'
             ? 'NIP incorrect. Réessayez.'
             : error.message,
         );
       }
-      // onAuthStateChange dans useAuth gère le profil et la navigation
+
+      console.log('[PINLogin] Connexion réussie, user:', data.user?.id);
+
+      // Mettre à jour le store avec la session
+      if (data.session) {
+        setSession(data.session);
+      }
+
+      // Récupérer le profil depuis la table users
+      if (data.user) {
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          console.warn('[PINLogin] Profil non trouvé:', profileError.message);
+        } else if (profile) {
+          console.log('[PINLogin] Profil chargé:', profile.role);
+          setProfile(profile);
+        }
+      }
+
+      // Navigation selon le rôle — AuthGuard gère la redirection automatique
+      // mais on force ici pour être sûr
+      router.replace('/(client)');
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'NIP incorrect';
       Alert.alert('NIP incorrect', msg);
@@ -99,7 +115,10 @@ export default function PINLoginScreen() {
           Vous avez oublié votre NIP ?{' '}
           <Text
             style={styles.link}
-            onPress={() => router.push({ pathname: '/(auth)/phone', params: { mode: 'signup' } })}
+            onPress={() => router.push({
+              pathname: '/(auth)/phone',
+              params: { mode: 'signup' },
+            })}
           >
             Recréez votre compte
           </Text>

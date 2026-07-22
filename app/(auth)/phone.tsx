@@ -17,7 +17,9 @@ import { z } from 'zod';
 import { Feather } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { api } from '@/lib/api';
+
+// ✅ Import direct Supabase — plus d'appel vers api.ts / serveur Express
+import { supabase } from '@/lib/supabase';
 
 const schema = z.object({
   phone: z
@@ -35,6 +37,19 @@ function buildE164(input: string, dialCode: string): string {
   return `${dialCode}${clean}`;
 }
 
+// ✅ Vérifie directement dans la table users Supabase
+async function checkPhoneExists(phone: string): Promise<boolean> {
+  console.log('[checkPhoneExists] Vérification:', phone);
+  const { data, error } = await supabase
+    .from('users')
+    .select('id')
+    .eq('phone', phone)
+    .maybeSingle();
+  console.log('[checkPhoneExists] data:', data, '| error:', error);
+  if (error) throw new Error(error.message);
+  return data !== null;
+}
+
 const COUNTRY_CODES = [
   { code: '+225', flag: '🇨🇮', name: 'CI' },
   { code: '+233', flag: '🇬🇭', name: 'GH' },
@@ -50,7 +65,7 @@ export default function PhoneScreen() {
   const { mode } = useLocalSearchParams<{ mode?: 'login' | 'signup' }>();
   const isLogin = mode === 'login';
 
-  const [countryCode, setCountryCode] = useState(COUNTRY_CODES[3]);
+  const [countryCode, setCountryCode] = useState(COUNTRY_CODES[4]); // BJ +229 par défaut
   const [loading, setLoading] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
 
@@ -63,28 +78,39 @@ export default function PhoneScreen() {
     setLoading(true);
     try {
       const fullPhone = buildE164(data.phone, countryCode.code);
+      console.log('[PhoneScreen] Mode:', isLogin ? 'login' : 'signup');
+      console.log('[PhoneScreen] Numéro formaté:', fullPhone);
 
       if (isLogin) {
-        // Vérifier si le numéro est enregistré via l'API Express
-        const result = await api.post<{ exists: boolean }>('/auth/check-phone', { phone: fullPhone });
-        if (!result.exists) {
+        const exists = await checkPhoneExists(fullPhone);
+        console.log('[PhoneScreen] Numéro existe:', exists);
+
+        if (!exists) {
           Alert.alert(
             'Numéro non trouvé',
             "Ce numéro n'est pas encore enregistré. Créez un compte.",
             [
-              { text: 'Créer un compte', onPress: () => router.replace({ pathname: '/(auth)/phone', params: { mode: 'signup' } }) },
+              {
+                text: 'Créer un compte',
+                onPress: () => router.replace({
+                  pathname: '/(auth)/phone',
+                  params: { mode: 'signup' },
+                }),
+              },
               { text: 'Annuler', style: 'cancel' },
             ],
           );
           return;
         }
         router.push({ pathname: '/(auth)/pin-login', params: { phone: fullPhone } });
+
       } else {
-        // Inscription : aller vers le formulaire nom + NIP
         router.push({ pathname: '/(auth)/signup', params: { phone: fullPhone } });
       }
+
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur de connexion au serveur';
+      console.error('[PhoneScreen] ERREUR:', err);
+      const msg = err instanceof Error ? err.message : 'Erreur de connexion';
       Alert.alert('Erreur', msg);
     } finally {
       setLoading(false);
@@ -92,10 +118,16 @@ export default function PhoneScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
@@ -153,14 +185,22 @@ export default function PhoneScreen() {
             {COUNTRY_CODES.map((cc) => (
               <TouchableOpacity
                 key={cc.code}
-                style={[styles.pickerItem, cc.code === countryCode.code && styles.pickerItemActive]}
+                style={[
+                  styles.pickerItem,
+                  cc.code === countryCode.code && styles.pickerItemActive,
+                ]}
                 onPress={() => { setCountryCode(cc); setPickerVisible(false); }}
               >
                 <Text style={styles.pickerFlag}>{cc.flag}</Text>
-                <Text style={[styles.pickerName, cc.code === countryCode.code && { color: '#FF6835' }]}>
+                <Text style={[
+                  styles.pickerName,
+                  cc.code === countryCode.code && { color: '#FF6835' },
+                ]}>
                   {cc.name} ({cc.code})
                 </Text>
-                {cc.code === countryCode.code && <Feather name="check" size={16} color="#FF6835" />}
+                {cc.code === countryCode.code && (
+                  <Feather name="check" size={16} color="#FF6835" />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -176,14 +216,24 @@ export default function PhoneScreen() {
         />
 
         {isLogin ? (
-          <TouchableOpacity onPress={() => router.replace({ pathname: '/(auth)/phone', params: { mode: 'signup' } })}>
+          <TouchableOpacity
+            onPress={() => router.replace({
+              pathname: '/(auth)/phone',
+              params: { mode: 'signup' },
+            })}
+          >
             <Text style={styles.switchMode}>
               Pas encore de compte ?{' '}
               <Text style={styles.switchModeLink}>Créer un compte</Text>
             </Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => router.replace({ pathname: '/(auth)/phone', params: { mode: 'login' } })}>
+          <TouchableOpacity
+            onPress={() => router.replace({
+              pathname: '/(auth)/phone',
+              params: { mode: 'login' },
+            })}
+          >
             <Text style={styles.switchMode}>
               Déjà un compte ?{' '}
               <Text style={styles.switchModeLink}>Se connecter</Text>
