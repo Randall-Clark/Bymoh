@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { z } from 'zod';
 import { Feather } from '@expo/vector-icons';
@@ -19,7 +19,9 @@ type FormData = z.infer<typeof schema>;
 
 export default function RegisterStep4() {
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
   const [deliveryAvailable, setDeliveryAvailable] = useState(false);
+
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { description: '', email: '' },
@@ -31,22 +33,49 @@ export default function RegisterStep4() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+    // ── Pas de KeyboardAvoidingView — le footer NE bouge PAS
+    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
+
+      {/* Header fixe */}
+      <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.back}>
           <Feather name="arrow-left" size={22} color="#111827" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.flex} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}>
+      {/* StepIndicator fixe */}
+      <View style={styles.stepWrap}>
         <StepIndicator current={4} total={5} title="Description & services" />
+      </View>
 
+      {/* Scroll seul */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.flex}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Controller control={control} name="description" render={({ field: { onChange, value, onBlur } }) => (
-          <Input label="Description du commerce *" placeholder="Décrivez votre activité, vos spécialités, ce qui vous rend unique..." value={value} onChangeText={onChange} onBlur={onBlur} error={errors.description?.message} multiline style={{ minHeight: 120 }} />
+          <Input
+            label="Description du commerce *"
+            placeholder="Décrivez votre activité, vos spécialités, ce qui vous rend unique..."
+            value={value} onChangeText={onChange} onBlur={onBlur}
+            error={errors.description?.message}
+            multiline style={{ minHeight: 120 }}
+            onFocus={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          />
         )} />
 
         <Controller control={control} name="email" render={({ field: { onChange, value, onBlur } }) => (
-          <Input label="Email professionnel" placeholder="contact@moncommerce.com" value={value} onChangeText={onChange} onBlur={onBlur} error={errors.email?.message} leftIcon="mail" keyboardType="email-address" />
+          <Input
+            label="Email professionnel"
+            placeholder="contact@moncommerce.com"
+            value={value} onChangeText={onChange} onBlur={onBlur}
+            error={errors.email?.message} leftIcon="mail"
+            keyboardType="email-address"
+            onFocus={() => scrollRef.current?.scrollTo({ y: 140, animated: true })}
+          />
         )} />
 
         <View style={styles.toggleCard}>
@@ -58,20 +87,23 @@ export default function RegisterStep4() {
         </View>
       </ScrollView>
 
+      {/* Footer toujours en bas — ne bouge jamais */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <Button title="Suivant →" onPress={handleSubmit(onSubmit)} fullWidth size="lg" />
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#F8F7F4' },
-  header: { paddingHorizontal: 20, paddingBottom: 8 },
+  root: { flex: 1, backgroundColor: '#F8F7F4' },
+  flex: { flex: 1 },
+  header: { paddingHorizontal: 20, paddingBottom: 4 },
   back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  stepWrap: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#F8F7F4' },
   content: { paddingHorizontal: 20, paddingTop: 8, gap: 20 },
   toggleCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#fff', borderRadius: 16, padding: 16 },
   toggleTitle: { fontSize: 15, fontWeight: '700', color: '#111827' },
   toggleSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  footer: { backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 10 },
+  footer: { backgroundColor: '#F8F7F4', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
 });

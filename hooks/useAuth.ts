@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { api, getApiToken, removeApiToken, normalizeProfile } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useLocationStore } from '@/stores/locationStore'; // ← ajout
 import type { Profile } from '@/types';
 
 export function useAuth() {
@@ -16,7 +17,7 @@ export function useAuth() {
     async function init() {
       setLoading(true);
 
-      // 1. Try Express API token (accounts created via new signup flow)
+      // 1. Try Express API token
       const savedToken = await getApiToken();
       if (savedToken) {
         try {
@@ -33,14 +34,18 @@ export function useAuth() {
         }
       }
 
-      // 2. Fall back to Supabase session (existing test accounts)
+      // 2. Fall back to Supabase session
       const { data: { session: s } } = await supabase.auth.getSession();
       if (!cancelled) {
         setSession(s);
         if (s?.user) {
           setLoading(true);
           const p = await fetchSupabaseProfile(s.user.id);
-          if (!cancelled) setProfile(p);
+          if (!cancelled) {
+            setProfile(p);
+            // ← Charge l'adresse de livraison sauvegardée
+            loadDeliveryAddress(p);
+          }
         }
         setLoading(false);
       }
@@ -54,7 +59,11 @@ export function useAuth() {
       if (s?.user) {
         setLoading(true);
         const p = await fetchSupabaseProfile(s.user.id);
-        if (!cancelled) setProfile(p);
+        if (!cancelled) {
+          setProfile(p);
+          // ← Charge l'adresse de livraison sauvegardée
+          loadDeliveryAddress(p);
+        }
       } else {
         const t = await getApiToken();
         if (!t) setProfile(null);
@@ -72,6 +81,8 @@ export function useAuth() {
     await removeApiToken();
     await supabase.auth.signOut();
     clearAuth();
+    // Efface aussi l'adresse au logout
+    useLocationStore.getState().clearCity();
   };
 
   return {
@@ -93,4 +104,15 @@ async function fetchSupabaseProfile(userId: string): Promise<Profile | null> {
     .single();
   if (error) return null;
   return data as unknown as Profile;
+}
+
+// ── Charge l'adresse de livraison dans le locationStore ──────────────────────
+function loadDeliveryAddress(profile: Profile | null) {
+  if (!profile) return;
+  const p = profile as any;
+  if (p.delivery_city)   useLocationStore.getState().setCity(p.delivery_city);
+  if (p.delivery_address) useLocationStore.getState().setAddress(p.delivery_address);
+  if (p.delivery_lat && p.delivery_lon) {
+    useLocationStore.getState().setCoords(p.delivery_lat, p.delivery_lon);
+  }
 }

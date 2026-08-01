@@ -14,7 +14,7 @@
       "backgroundColor": "#E84B1A"
     },
     "plugins": [
-      ["expo-router", { "origin": "https://replit.com/" }],
+      "expo-router",
       "expo-font",
       [
         "expo-image-picker",
@@ -22,7 +22,10 @@
       ],
       [
         "expo-location",
-        { "locationAlwaysAndWhenInUsePermission": "Bymoh utilise votre position pour trouver les commerces proches." }
+        {
+          "locationAlwaysAndWhenInUsePermission": "Bymoh utilise votre position pour trouver les commerces proches.",
+          "locationWhenInUsePermission": "Bymoh utilise votre position pour trouver les commerces proches."
+        }
       ]
     ],
     "ios": {
@@ -34,6 +37,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#FF6835"
+      },
+      "config" : {
+        "googleMaps" : {
+          "apiKey": "AIzaSyAl97FibnqQAdcYoYDwA0ef8OKXFF4RPLg"
+        }
       }
     },
     "web": {

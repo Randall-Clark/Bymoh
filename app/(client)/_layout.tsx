@@ -38,6 +38,7 @@ export default function ClientLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
       }}
     >
+      {/* ── Onglets visibles ── */}
       <Tabs.Screen
         name="index"
         options={{ title: 'Accueil', tabBarIcon: ({ color }) => <TabIcon name="home" color={color} /> }}
@@ -58,14 +59,17 @@ export default function ClientLayout() {
         name="profile"
         options={{ title: 'Profil', tabBarIcon: ({ color }) => <TabIcon name="user" color={color} /> }}
       />
-      {/* Non-tab screens */}
-      <Tabs.Screen name="business/[id]" options={{ href: null }} />
-      <Tabs.Screen name="booking/[businessId]" options={{ href: null }} />
-      <Tabs.Screen name="booking/confirmation" options={{ href: null }} />
-      <Tabs.Screen name="order/cart" options={{ href: null }} />
-      <Tabs.Screen name="order/delivery" options={{ href: null }} />
-      <Tabs.Screen name="order/tracking" options={{ href: null }} />
-      <Tabs.Screen name="order/confirmation" options={{ href: null }} />
+
+      {/* ── Sous-pages profil — cachées de la tab bar ── */}
+
+      {/* ── Autres écrans cachés ── */}
+      <Tabs.Screen name="business/[id]"          options={{ href: null }} />
+      <Tabs.Screen name="booking/[businessId]"   options={{ href: null }} />
+      <Tabs.Screen name="booking/confirmation"   options={{ href: null }} />
+      <Tabs.Screen name="order/cart"             options={{ href: null }} />
+      <Tabs.Screen name="order/delivery"         options={{ href: null }} />
+      <Tabs.Screen name="order/tracking"         options={{ href: null }} />
+      <Tabs.Screen name="order/confirmation"     options={{ href: null }} />
     </Tabs>
   );
 }
