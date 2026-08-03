@@ -435,7 +435,7 @@ function BusinessAddressPicker({
                 <Text style={pickerStyles.fieldLabel}>Complément <Text style={{ fontWeight: '400', color: '#9CA3AF' }}>(optionnel)</Text></Text>
                 <TextInput style={pickerStyles.field} placeholder="ex : Face à la pharmacie" placeholderTextColor="#9CA3AF" value={complement} onChangeText={setComplement} />
               </View>
-              <View style={{ height: 120 }} />
+              <View style={{ height: 160 }} />
             </ScrollView>
 
             <View style={[pickerStyles.confirmFooter, { paddingBottom: insets.bottom + 16 }]}>

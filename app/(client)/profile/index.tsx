@@ -67,7 +67,7 @@ export default function ProfileScreen() {
     {
       title: 'Commerce',
       items: [
-        { icon: 'briefcase', label: 'Espace professionnel', sub: 'Gérer mon business',    route: '/(pro)/dashboard' },
+        { icon: 'briefcase', label: 'Espace marchand', sub: 'Gérer mon business',    route: '/(pro)/dashboard' },
         { icon: 'heart',     label: 'Mes favoris',          sub: 'Commerces enregistrés', route: '/(client)/favorites' },
       ],
     },
