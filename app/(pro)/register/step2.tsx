@@ -14,17 +14,12 @@ import { StepIndicator } from '@/components/forms/StepIndicator';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { registerDraft } from './step1';
+import { COUNTRIES, Country } from '@/lib/countries';
 
 const DIAL_CODES = [
   { code: '+229', flag: '🇧🇯', name: 'Bénin'         },
   { code: '+228', flag: '🇹🇬', name: 'Togo'          },
   { code: '+225', flag: '🇨🇮', name: "Côte d'Ivoire" },
-  { code: '+221', flag: '🇸🇳', name: 'Sénégal'       },
-  { code: '+233', flag: '🇬🇭', name: 'Ghana'         },
-  { code: '+237', flag: '🇨🇲', name: 'Cameroun'      },
-  { code: '+223', flag: '🇲🇱', name: 'Mali'          },
-  { code: '+226', flag: '🇧🇫', name: 'Burkina Faso'  },
-  { code: '+227', flag: '🇳🇪', name: 'Niger'         },
 ];
 
 const BUILDING_TYPES = ['Commerce', 'Boutique', 'Bureau', 'Marché', 'Domicile', 'Autre'];
@@ -462,6 +457,8 @@ export default function RegisterStep2() {
   const insets    = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
+  // Pays du commerce — initialisé selon le profil utilisateur
+  const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]);
   const [addressPickerVisible, setAddressPickerVisible] = useState(false);
   const [businessAddress, setBusinessAddress] = useState<{
     address: string; city: string; lat?: number; lon?: number;
@@ -488,12 +485,15 @@ export default function RegisterStep2() {
     if (!phone || phone.length < 6) { setPhoneError('Numéro trop court'); return; }
     setPhoneError('');
     Object.assign(registerDraft, {
-      phone:     `${dialCode.code}${phone}`,
-      address:   businessAddress.address,
-      city:      businessAddress.city,
-      latitude:  businessAddress.lat ?? null,
-      longitude: businessAddress.lon ?? null,
-      cover_uri: coverUri ?? null,
+      phone:        `${dialCode.code}${phone}`,
+      address:      businessAddress.address,
+      city:         businessAddress.city,
+      latitude:     businessAddress.lat ?? null,
+      longitude:    businessAddress.lon ?? null,
+      cover_uri:    coverUri ?? null,
+      country:      selectedCountry.name,
+      country_code: selectedCountry.code,
+      timezone:     selectedCountry.timezone,
     });
     router.push('/(pro)/register/step3' as any);
   };
@@ -517,6 +517,35 @@ export default function RegisterStep2() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Pays du commerce */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Pays du commerce *</Text>
+          <Text style={styles.hint}>Sélectionnez le pays où se situe votre commerce</Text>
+          <View style={{ gap: 8, marginTop: 4 }}>
+            {COUNTRIES.map((c) => {
+              const sel = c.code === selectedCountry.code;
+              return (
+                <TouchableOpacity
+                  key={c.code}
+                  style={[
+                    styles.countryBtn,
+                    sel && styles.countryBtnSelected,
+                  ]}
+                  onPress={() => setSelectedCountry(c)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 22 }}>{c.flag}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.countryBtnText, sel && { color: '#FF6835' }]}>{c.name}</Text>
+                    <Text style={styles.countryBtnSub}>{c.dialCode}</Text>
+                  </View>
+                  {sel && <Feather name="check-circle" size={20} color="#FF6835" />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
         {/* Adresse */}
         <View style={styles.section}>
           <Text style={styles.label}>Adresse du commerce *</Text>
@@ -661,6 +690,10 @@ const styles = StyleSheet.create({
   coverPlaceholderSub: { fontSize: 12, color: '#9CA3AF' },
   footer: { backgroundColor: '#F8F7F4', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', gap: 8 },
   footerHint: { fontSize: 12, color: '#F59E0B', textAlign: 'center', fontWeight: '600' },
+  countryBtn:         { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  countryBtnSelected: { borderColor: '#FF6835', backgroundColor: '#FEF2EC' },
+  countryBtnText:     { fontSize: 15, fontWeight: '700', color: '#111827' },
+  countryBtnSub:      { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalBox: { backgroundColor: '#fff', borderRadius: 20, padding: 8, width: '100%', maxWidth: 360 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 4 },

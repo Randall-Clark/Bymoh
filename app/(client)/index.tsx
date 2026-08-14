@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
+import { CountryMismatchWarning } from '@/components/WarningBanner';
 import { useLocationStore } from '@/stores/locationStore';
 import { useBusinesses } from '@/hooks/useBusinesses';
 import { useLocation } from '@/hooks/useLocation';
@@ -40,6 +41,7 @@ const PROMO_BANNERS = [
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const { profile } = useAuthStore();
   const { address } = useLocation();
   const { city: savedCity } = useLocationStore();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -72,10 +74,14 @@ export default function HomeScreen() {
     return () => clearInterval(t);
   }, [BANNER_W]);
 
-  const bizFilters = { 
-  ...(cityName ? { city: cityName } : {}),
-  ...(selectedCategory ? { category: selectedCategory } : {}),
-};
+  // Filtre par pays de résidence de l'utilisateur
+  const countryCode = (profile as any)?.country_code ?? null;
+
+  const bizFilters = {
+    ...(countryCode ? { country_code: countryCode } : {}),
+    ...(cityName ? { city: cityName } : {}),
+    ...(selectedCategory ? { category: selectedCategory } : {}),
+  };
   const { data: businesses = [], isLoading: bizLoading } = useBusinesses(bizFilters);
   const openBizs = businesses.filter((b) => isBusinessOpen(b.hours));
 
@@ -157,6 +163,9 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Warning adresse hors pays */}
+        <CountryMismatchWarning />
+
         {/* Catégories */}
         <View>
           <View style={styles.sectionRow}>

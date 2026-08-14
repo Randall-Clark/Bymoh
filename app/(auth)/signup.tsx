@@ -1,25 +1,23 @@
-import { zodResolver } from '@hookform/resolvers/zod';
+// app/(auth)/signup.tsx
+import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { z } from 'zod';
-import { Feather } from '@expo/vector-icons';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as Crypto from 'expo-crypto';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { OTPInput } from '@/components/forms/OTPInput';
-import { api, saveApiToken, normalizeProfile } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
+import { COUNTRIES } from '@/lib/countries';
+import { AddressSetupModal } from '@/components/AddressSetupModal';
 
 const schema = z.object({
   name: z.string().min(2, 'Nom complet requis (minimum 2 caractères)'),
@@ -27,23 +25,45 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const PIN_LENGTH = 6;
-type Step = 'name' | 'pin' | 'confirm';
+type Step = 'country' | 'name' | 'pin' | 'confirm';
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
-  const { setToken, setProfile } = useAuthStore();
+  const { phone, country_code, country_name, timezone } =
+    useLocalSearchParams<{
+      phone:        string;
+      country_code: string;
+      country_name: string;
+      timezone:     string;
+    }>();
 
-  const [step, setStep] = useState<Step>('name');
-  const [name, setName] = useState('');
-  const [firstPin, setFirstPin] = useState('');
+  const { setProfile } = useAuthStore();
+
+  const [step,       setStep]       = useState<Step>(country_code ? 'name' : 'country');
+  const [country,    setCountry]    = useState(() =>
+    COUNTRIES.find((c) => c.code === (country_code ?? 'BJ')) ?? COUNTRIES[0]
+  );
+  const [name,       setName]       = useState('');
+  const [firstPin,   setFirstPin]   = useState('');
   const [confirmPin, setConfirmPin] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading,    setLoading]    = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { name: '' },
   });
+
+  const STEPS: Step[] = ['country', 'name', 'pin', 'confirm'];
+  const currentIdx = STEPS.indexOf(step);
+
+  const goBack = () => {
+    const idx = STEPS.indexOf(step);
+    if (idx === 0) { router.back(); return; }
+    setStep(STEPS[idx - 1]);
+    if (step === 'confirm') setConfirmPin('');
+    if (step === 'pin')     setFirstPin('');
+  };
 
   const onNameSubmit = (data: FormData) => {
     setName(data.name.trim());
@@ -51,90 +71,147 @@ export default function SignupScreen() {
   };
 
   const handleFirstPin = (value: string) => {
-    if (value.length === PIN_LENGTH) {
-      setFirstPin(value);
-      setStep('confirm');
-    }
+    if (value.length === PIN_LENGTH) { setFirstPin(value); setStep('confirm'); }
   };
 
   const handleConfirmPin = async (value: string) => {
     if (value.length < PIN_LENGTH) return;
     if (value !== firstPin) {
       Alert.alert('NIP incorrect', 'Les deux NIP ne correspondent pas. Recommencez.');
-      setFirstPin('');
-      setConfirmPin('');
-      setStep('pin');
+      setFirstPin(''); setConfirmPin(''); setStep('pin');
       return;
     }
+
     setLoading(true);
     try {
-      const result = await api.post<{ token: string; user: Record<string, unknown> }>(
-        '/auth/register',
-        { phone: phone ?? '', name, pin: value },
+      // 1. Récupérer l'utilisateur Supabase Auth (authentifié via OTP)
+      const { data: { user: authUser }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authUser) throw new Error('Session expirée. Recommencez l\'inscription.');
+
+      // 2. Hasher le NIP avec l'ID utilisateur comme sel
+      const pinHash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        `${value}:${authUser.id}`
       );
-      await saveApiToken(result.token);
-      setToken(result.token);
-      setProfile(normalizeProfile(result.user));
-      router.replace('/(client)');
+
+      // 3. Insérer l'utilisateur dans la table users
+      const { data: newUser, error: insertErr } = await supabase
+        .from('users')
+        .upsert({
+          id:           authUser.id,
+          phone:        phone ?? authUser.phone ?? '',
+          name:         name,
+          role:         'client',
+          is_active:    true,
+          pin_hash:     pinHash,
+          country_code: country.code,
+          country:      country.name,
+          timezone:     country.timezone,
+        }, { onConflict: 'id' })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // 4. Mettre à jour le store
+      setProfile(newUser as any);
+
+      // 5. Afficher le modal d'adresse avant d'aller sur l'accueil
+      setShowAddressModal(true);
+
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur lors de la création du compte';
       Alert.alert('Erreur', msg);
-      setFirstPin('');
-      setConfirmPin('');
-      setStep('pin');
+      setFirstPin(''); setConfirmPin(''); setStep('pin');
     } finally {
       setLoading(false);
     }
   };
 
   const maskedPhone = phone
-    ? phone.replace(/(\+\d{3})(\d{2})(\d+)(\d{2})/, '$1 $2 **** $4')
+    ? phone.replace(/(\+\d{3})(\d{2})(\d+)(\d{2})$/, '$1 $2 **** $4')
     : '';
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         style={styles.flex}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[styles.content, {
+          paddingTop:    Platform.OS === 'web' ? 67 : insets.top + 16,
+          paddingBottom: Platform.OS === 'web' ? 34 : insets.bottom + 32,
+        }]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity
-          style={styles.back}
-          onPress={() => {
-            if (step === 'confirm') { setStep('pin'); setConfirmPin(''); }
-            else if (step === 'pin') { setStep('name'); setFirstPin(''); }
-            else router.back();
-          }}
-        >
+        <TouchableOpacity style={styles.back} onPress={goBack}>
           <Feather name="arrow-left" size={22} color="#111827" />
         </TouchableOpacity>
 
-        {/* Step indicator */}
+        {/* Indicateur d'étapes */}
         <View style={styles.steps}>
-          {(['name', 'pin', 'confirm'] as Step[]).map((s, i) => (
+          {STEPS.map((s, i) => (
             <React.Fragment key={s}>
-              <View style={[styles.stepDot, step === s && styles.stepDotActive,
-                (step === 'pin' && i === 0) || (step === 'confirm' && i <= 1) ? styles.stepDotDone : null,
+              <View style={[
+                styles.stepDot,
+                step === s   && styles.stepDotActive,
+                i < currentIdx && styles.stepDotDone,
               ]} />
-              {i < 2 && <View style={[styles.stepLine,
-                (step === 'pin' && i === 0) || (step === 'confirm' && i === 0) ? styles.stepLineDone : null,
-                step === 'confirm' && i === 1 ? styles.stepLineActive : null,
-              ]} />}
+              {i < STEPS.length - 1 && (
+                <View style={[styles.stepLine, i < currentIdx && styles.stepLineDone]} />
+              )}
             </React.Fragment>
           ))}
         </View>
 
-        {/* ── STEP 1: Name ── */}
+        {/* ── STEP 1 : Pays ── */}
+        {step === 'country' && (
+          <View style={styles.section}>
+            <View style={styles.header}>
+              <View style={styles.iconWrap}><Text style={{ fontSize: 32 }}>🌍</Text></View>
+              <Text style={styles.title}>Pays de résidence</Text>
+              <Text style={styles.subtitle}>
+                Choisissez votre pays pour voir les commerces disponibles et définir votre fuseau horaire.
+              </Text>
+            </View>
+            <View style={styles.countryList}>
+              {COUNTRIES.map((c) => {
+                const sel = c.code === country.code;
+                return (
+                  <TouchableOpacity
+                    key={c.code}
+                    style={[styles.countryRow, sel && styles.countryRowSelected]}
+                    onPress={() => setCountry(c)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.countryFlag}>{c.flag}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.countryName, sel && { color: '#FF6835' }]}>{c.name}</Text>
+                      <Text style={styles.countryMeta}>{c.dialCode} · {c.timezone}</Text>
+                    </View>
+                    {sel && <Feather name="check-circle" size={20} color="#FF6835" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Button title="Continuer" onPress={() => setStep('name')} fullWidth size="lg" />
+          </View>
+        )}
+
+        {/* ── STEP 2 : Nom ── */}
         {step === 'name' && (
           <View style={styles.section}>
+            {/* Bandeau pays */}
+            <View style={styles.countryBanner}>
+              <Text style={{ fontSize: 20 }}>{country.flag}</Text>
+              <Text style={styles.countryBannerText}>{country.name} · {country.timezone}</Text>
+            </View>
+
             <View style={styles.header}>
               <View style={styles.iconWrap}>
                 <Feather name="user" size={28} color="#FF6835" />
               </View>
               <Text style={styles.title}>Votre nom</Text>
-              <Text style={styles.subtitle}>
-                Comment souhaitez-vous être appelé(e) sur Bymoh ?
-              </Text>
+              <Text style={styles.subtitle}>Comment souhaitez-vous être appelé(e) sur Bymoh ?</Text>
             </View>
 
             <Controller
@@ -143,7 +220,7 @@ export default function SignupScreen() {
               render={({ field: { onChange, value, onBlur } }) => (
                 <Input
                   label="Nom complet"
-                  placeholder="Ex: Kofi Mensah"
+                  placeholder="Ex : Kofi Mensah"
                   value={value}
                   onChangeText={onChange}
                   onBlur={onBlur}
@@ -156,20 +233,17 @@ export default function SignupScreen() {
               )}
             />
 
-            <Text style={styles.phone}>
-              <Feather name="phone" size={13} color="#9CA3AF" /> {maskedPhone}
-            </Text>
+            {maskedPhone ? (
+              <Text style={styles.phone}>
+                <Feather name="phone" size={13} color="#9CA3AF" /> {maskedPhone}
+              </Text>
+            ) : null}
 
-            <Button
-              title="Continuer"
-              onPress={handleSubmit(onNameSubmit)}
-              fullWidth
-              size="lg"
-            />
+            <Button title="Continuer" onPress={handleSubmit(onNameSubmit)} fullWidth size="lg" />
           </View>
         )}
 
-        {/* ── STEP 2: Create PIN ── */}
+        {/* ── STEP 3 : Créer NIP ── */}
         {step === 'pin' && (
           <View style={styles.section}>
             <View style={styles.header}>
@@ -181,7 +255,6 @@ export default function SignupScreen() {
                 Choisissez un code à 6 chiffres.{'\n'}Vous l'utiliserez à chaque connexion.
               </Text>
             </View>
-
             <OTPInput
               key="create"
               length={PIN_LENGTH}
@@ -193,7 +266,7 @@ export default function SignupScreen() {
           </View>
         )}
 
-        {/* ── STEP 3: Confirm PIN ── */}
+        {/* ── STEP 4 : Confirmer NIP ── */}
         {step === 'confirm' && (
           <View style={styles.section}>
             <View style={styles.header}>
@@ -201,11 +274,8 @@ export default function SignupScreen() {
                 <Feather name="check-circle" size={28} color="#FF6835" />
               </View>
               <Text style={styles.title}>Confirmez votre NIP</Text>
-              <Text style={styles.subtitle}>
-                Saisissez à nouveau votre NIP pour le confirmer.
-              </Text>
+              <Text style={styles.subtitle}>Saisissez à nouveau votre NIP pour le confirmer.</Text>
             </View>
-
             <OTPInput
               key="confirm"
               length={PIN_LENGTH}
@@ -215,7 +285,6 @@ export default function SignupScreen() {
               secureTextEntry
               loading={loading}
             />
-
             <Button
               title={loading ? 'Création du compte…' : 'Créer mon compte'}
               onPress={() => handleConfirmPin(confirmPin)}
@@ -231,31 +300,41 @@ export default function SignupScreen() {
           Ne partagez jamais votre NIP. Bymoh ne vous le demandera jamais.
         </Text>
       </ScrollView>
+
+      <AddressSetupModal
+        visible={showAddressModal}
+        onDone={() => {
+          setShowAddressModal(false);
+          router.replace('/(client)');
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#F8F7F4' },
-  content: { paddingHorizontal: 24, gap: 24 },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  steps: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
-  stepDot: {
-    width: 10, height: 10, borderRadius: 5, backgroundColor: '#E5E7EB',
-  },
-  stepDotActive: { backgroundColor: '#FF6835', width: 14, height: 14, borderRadius: 7 },
-  stepDotDone: { backgroundColor: '#10B981' },
-  stepLine: { flex: 1, height: 2, backgroundColor: '#E5E7EB', marginHorizontal: 4 },
-  stepLineDone: { backgroundColor: '#10B981' },
-  stepLineActive: { backgroundColor: '#FF6835' },
-  section: { gap: 24 },
-  header: { gap: 10 },
-  iconWrap: {
-    width: 60, height: 60, borderRadius: 18, backgroundColor: '#FEF2EC',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  title: { fontSize: 28, fontWeight: '800', color: '#111827' },
-  subtitle: { fontSize: 15, color: '#6B7280', lineHeight: 22 },
-  phone: { fontSize: 13, color: '#9CA3AF', textAlign: 'center' },
-  notice: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', lineHeight: 18 },
+  flex:               { flex: 1, backgroundColor: '#F8F7F4' },
+  content:            { paddingHorizontal: 24, gap: 24 },
+  back:               { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  steps:              { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  stepDot:            { width: 10, height: 10, borderRadius: 5, backgroundColor: '#E5E7EB' },
+  stepDotActive:      { backgroundColor: '#FF6835', width: 14, height: 14, borderRadius: 7 },
+  stepDotDone:        { backgroundColor: '#10B981' },
+  stepLine:           { flex: 1, height: 2, backgroundColor: '#E5E7EB', marginHorizontal: 4 },
+  stepLineDone:       { backgroundColor: '#10B981' },
+  section:            { gap: 20 },
+  header:             { gap: 10 },
+  iconWrap:           { width: 60, height: 60, borderRadius: 18, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
+  title:              { fontSize: 28, fontWeight: '800', color: '#111827' },
+  subtitle:           { fontSize: 15, color: '#6B7280', lineHeight: 22 },
+  countryList:        { gap: 10 },
+  countryRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  countryRowSelected: { borderColor: '#FF6835', backgroundColor: '#FEF2EC' },
+  countryFlag:        { fontSize: 28 },
+  countryName:        { fontSize: 15, fontWeight: '700', color: '#111827' },
+  countryMeta:        { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  countryBanner:      { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FEF2EC', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: '#FDDCCA' },
+  countryBannerText:  { fontSize: 13, fontWeight: '600', color: '#FF6835' },
+  phone:              { fontSize: 13, color: '#9CA3AF', textAlign: 'center' },
+  notice:             { fontSize: 12, color: '#9CA3AF', textAlign: 'center', lineHeight: 18 },
 });

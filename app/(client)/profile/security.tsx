@@ -4,11 +4,15 @@ import React, { useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
+import { useLocationStore } from '@/stores/locationStore';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 export default function SecurityScreen() {
   const insets = useSafeAreaInsets();
   const { profile, clearAuth } = useAuthStore();
+  const { clearLocation } = useLocationStore();
+  const queryClient = useQueryClient();
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -38,10 +42,23 @@ export default function SecurityScreen() {
           text: 'Supprimer définitivement', style: 'destructive',
           onPress: async () => {
             try {
-              await supabase.from('users').delete().eq('id', profile?.id ?? '');
+              // 1. Désactiver le compte en DB (plus sûr que de supprimer)
+              await supabase
+                .from('users')
+                .update({ is_active: false })
+                .eq('id', profile?.id ?? '');
+
+              // 2. Déconnexion Supabase Auth
               await supabase.auth.signOut();
+
+              // 3. Nettoyer le store, la localisation et le cache React Query
               clearAuth();
-              router.replace('/');
+              clearLocation();
+              queryClient.clear();
+
+              // 4. Rediriger vers l'authentification
+              router.replace('/(auth)/phone' as any);
+
             } catch (err: any) {
               Alert.alert('Erreur', err.message ?? 'Impossible de supprimer le compte.');
             }

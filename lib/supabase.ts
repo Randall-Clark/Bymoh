@@ -2,25 +2,40 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
+const supabaseUrl     = process.env.EXPO_PUBLIC_SUPABASE_URL     ?? 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
+    storage:            AsyncStorage,
+    autoRefreshToken:   true,
+    persistSession:     true,
     detectSessionInUrl: false,
   },
+  // ✅ Pas de fetch custom — évite les problèmes AbortSignal sur React Native
 });
 
-/** Send OTP code to phone number (E.164 format: +22890000000) */
+/**
+ * Envoie un OTP via l'Edge Function send-otp (avec cooldown 60s côté serveur).
+ */
 export async function sendOTP(phone: string) {
-  const { error } = await supabase.auth.signInWithOtp({ phone });
-  if (error) throw error;
+  const { data, error } = await supabase.functions.invoke('send-otp', {
+    body: { phone },
+  });
+
+  if (error) throw new Error(error.message ?? 'Erreur Edge Function');
+  if (data?.error) {
+    const err = new Error(data.error) as any;
+    err.cooldown = data.cooldown;
+    throw err;
+  }
+
+  return data;
 }
 
-/** Verify OTP token received via SMS */
+/**
+ * Vérifie le code OTP reçu par SMS.
+ */
 export async function verifyOTP(phone: string, token: string) {
   const { data, error } = await supabase.auth.verifyOtp({
     phone,
@@ -32,20 +47,30 @@ export async function verifyOTP(phone: string, token: string) {
 }
 
 /**
- * Check whether a phone number already has an account in the users table.
- * Uses a security-definer RPC function so it works for unauthenticated callers
- * (plain SELECT is blocked by RLS before the user has a session).
+ * Vérifie si un numéro est déjà enregistré via RPC SECURITY DEFINER.
  */
-export async function checkPhoneExists(phone: string): Promise<string | null> {
-  const { data, error } = await supabase.rpc('check_phone_registered', { p_phone: phone });
+export async function checkPhoneExists(phone: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('check_phone_registered', {
+    p_phone: phone,
+  });
   if (error) throw error;
-  return data === true ? phone : null;
+  return data === true;
 }
 
 /**
- * Set the user's PIN by updating the Supabase Auth password AND
- * marking pin_hash in the users table so the AuthGuard knows PIN is configured.
- * Must be called while a valid session is active (right after OTP / complete-profile).
+ * Connexion avec téléphone + NIP.
+ */
+export async function signInWithPIN(phone: string, pin: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    phone,
+    password: pin,
+  });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Définit ou met à jour le NIP.
  */
 export async function setPIN(userId: string, pin: string) {
   const { error: authError } = await supabase.auth.updateUser({ password: pin });
@@ -59,28 +84,24 @@ export async function setPIN(userId: string, pin: string) {
 }
 
 /**
- * Sign in a returning user with their phone + PIN.
- * Uses Supabase's built-in signInWithPassword (phone provider).
+ * Retourne l'utilisateur Supabase Auth actuellement connecté.
  */
-export async function signInWithPIN(phone: string, pin: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ phone, password: pin });
-  if (error) throw error;
-  return data;
-}
-
-/** Get currently authenticated Supabase user */
 export async function getCurrentUser() {
   const { data: { user } } = await supabase.auth.getUser();
   return user;
 }
 
-/** Sign out from Supabase */
+/**
+ * Déconnecte l'utilisateur.
+ */
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
 
-/** Get public URL for a file stored in Supabase Storage */
+/**
+ * Retourne l'URL publique d'un fichier dans Supabase Storage.
+ */
 export function getStorageUrl(bucket: string, path: string): string {
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);
   return data.publicUrl;

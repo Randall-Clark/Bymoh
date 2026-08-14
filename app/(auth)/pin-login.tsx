@@ -111,18 +111,17 @@ export default function PINLoginScreen() {
           loading={loading}
         />
 
-        <Text style={styles.notice}>
-          Vous avez oublié votre NIP ?{' '}
-          <Text
-            style={styles.link}
-            onPress={() => router.push({
-              pathname: '/(auth)/phone',
-              params: { mode: 'signup' },
-            })}
-          >
-            Recréez votre compte
-          </Text>
-        </Text>
+        <TouchableOpacity
+          style={styles.forgotBtn}
+          onPress={() => router.push({
+            pathname: '/(auth)/forgot-pin' as any,
+            params: { phone },
+          })}
+          activeOpacity={0.8}
+        >
+          <Feather name="help-circle" size={14} color="#FF6835" />
+          <Text style={styles.forgotText}>NIP oublié ? Réinitialiser</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -141,5 +140,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 15, color: '#6B7280', lineHeight: 22 },
   phone: { fontWeight: '700', color: '#111827' },
   notice: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', lineHeight: 20 },
-  link: { color: '#FF6835', fontWeight: '600' },
+  link:       { color: '#FF6835', fontWeight: '600' },
+  forgotBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#FEF2EC', borderRadius: 100, borderWidth: 1, borderColor: '#FDDCCA' },
+  forgotText: { fontSize: 13, color: '#FF6835', fontWeight: '600' },
 });

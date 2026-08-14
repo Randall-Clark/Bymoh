@@ -271,6 +271,8 @@ export default function RegisterPaymentScreen() {
     { icon: 'clock',     label: 'Horaires',  value: draft.schedule ? 'Configurés' : 'Non définis' },
   ].filter((f) => f.value?.trim());
 
+  const DAY_ENUM = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
   const createBusiness = async () => {
     if (!profile?.id) { Alert.alert('Non connecté'); return; }
     setLoading(true);
@@ -330,7 +332,7 @@ export default function RegisterPaymentScreen() {
         const hours = draft.schedule.map((h: any, i: number) => ({
           id:          generateId(),
           business_id: newBiz.id,
-          day_of_week: i === 6 ? 0 : i + 1,
+          day_of_week: DAY_ENUM[i],
           open_time:   h.open_time,
           close_time:  h.close_time,
           is_closed:   !h.is_open,

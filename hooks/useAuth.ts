@@ -82,7 +82,7 @@ export function useAuth() {
     await supabase.auth.signOut();
     clearAuth();
     // Efface aussi l'adresse au logout
-    useLocationStore.getState().clearCity();
+    useLocationStore.getState().clearLocation();
   };
 
   return {

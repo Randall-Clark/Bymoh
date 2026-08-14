@@ -1,4 +1,6 @@
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { TouchableOpacity } from 'react-native';
 import React from 'react';
 
 export default function ProLayout() {
@@ -6,16 +8,22 @@ export default function ProLayout() {
     <Stack screenOptions={{ headerShown: false }}>
 
       {/* Dashboard — fade discret */}
-      <Stack.Screen
-        name="dashboard"
-        options={{ animation: 'fade' }}
-      />
+      <Stack.Screen name="dashboard" options={{
+        headerShown: true,
+        headerTitle: '',
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.push('/(client)' as any)}>
+            <Feather name="arrow-left" size={22} color="#111827" />
+          </TouchableOpacity>
+        ),
+      }} />
 
       {/* Pages standard du pro — fade ou simple pop */}
       <Stack.Screen name="orders"   options={{ animation: 'fade' }} />
       <Stack.Screen name="bookings" options={{ animation: 'fade' }} />
       <Stack.Screen name="hours"    options={{ animation: 'fade' }} />
       <Stack.Screen name="profile"  options={{ animation: 'fade' }} />
+      <Stack.Screen name="business/[id]" options={{ animation: 'slide_from_right' }} />
 
       {/* ── Flow création de commerce ──────────────────────────────────────── */}
 

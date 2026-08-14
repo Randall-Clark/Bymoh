@@ -1,177 +1,161 @@
+// app/(auth)/otp.tsx
+// Vérification OTP pour l'inscription
+import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, Alert, KeyboardAvoidingView,
+  Platform, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
-import { Button } from '@/components/ui/Button';
-import { OTPInput } from '@/components/forms/OTPInput';
-import { sendOTP, verifyOTP, supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
-const CODE_LENGTH = 6;
-const RESEND_COOLDOWN = 60;
-
-export default function OTPScreen() {
+export default function OtpScreen() {
   const insets = useSafeAreaInsets();
-  const { phone } = useLocalSearchParams<{ phone: string }>();
-  const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [resendLoading, setResendLoading] = useState(false);
-  const [countdown, setCountdown] = useState(RESEND_COOLDOWN);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { phone, country_code, country_name, timezone, mode } =
+    useLocalSearchParams<{
+      phone:        string;
+      country_code: string;
+      country_name: string;
+      timezone:     string;
+      mode:         string;
+    }>();
 
-  const startCountdown = () => {
-    setCountdown(RESEND_COOLDOWN);
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
+  const [otp,       setOtp]       = useState('');
+  const [loading,   setLoading]   = useState(false);
+  const [resending, setResending] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+  const inputRef = useRef<TextInput>(null);
+
+  // Compte à rebours pour renvoyer l'OTP
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const resendOtp = async () => {
+    if (countdown > 0 || !phone) return;
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({ phone });
+      if (error) throw error;
+      setCountdown(60);
+      Alert.alert('Code envoyé', 'Un nouveau code a été envoyé.');
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message ?? 'Impossible de renvoyer le code.');
+    } finally {
+      setResending(false);
+    }
   };
 
-  useEffect(() => {
-    startCountdown();
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, []);
-
-  const handleVerify = async (value = code) => {
-    if (value.length < CODE_LENGTH) return;
+  const verifyOtp = async () => {
+    if (otp.length < 4 || !phone) return;
     setLoading(true);
     try {
-      const { session } = await verifyOTP(phone ?? '', value);
+      const { error } = await supabase.auth.verifyOtp({
+        phone, token: otp, type: 'sms',
+      });
+      if (error) throw error;
 
-      // Smart routing: check whether this user already has a profile
-      if (session?.user?.id) {
-        const { data: existing } = await supabase
-          .from('users')
-          .select('id, pin_hash')
-          .eq('id', session.user.id)
-          .maybeSingle();
-
-        if (existing?.pin_hash) {
-          // Fully set-up returning user — go straight to app
-          router.replace('/(client)');
-        } else if (existing) {
-          // Has profile but PIN not set yet
-          router.replace('/(auth)/set-pin');
-        } else {
-          // Brand new user — complete profile
-          router.replace('/(auth)/complete-profile');
-        }
-      } else {
-        router.replace('/(auth)/complete-profile');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Code incorrect';
-      Alert.alert('Erreur', msg);
-      setCode('');
+      // OTP vérifié → aller à la création du profil
+      router.replace({
+        pathname: '/(auth)/signup' as any,
+        params: { phone, country_code, country_name, timezone },
+      });
+    } catch (e: any) {
+      Alert.alert('Code invalide', e.message ?? 'Le code entré est incorrect. Réessayez.');
+      setOtp('');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = async () => {
-    setResendLoading(true);
-    try {
-      await sendOTP(phone ?? '');
-      startCountdown();
-      setCode('');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erreur lors du renvoi';
-      Alert.alert('Erreur', msg);
-    } finally {
-      setResendLoading(false);
-    }
-  };
-
   const maskedPhone = phone
-    ? phone.replace(/(\+\d{3})(\d{2})(\d+)(\d{2})/, '$1 $2 **** $4')
+    ? phone.replace(/(\+\d{3})(\d{2})(\d+)(\d{2})$/, '$1 $2 **** $4')
     : '';
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32 }]}>
-      {/* Back */}
-      <TouchableOpacity style={styles.back} onPress={() => router.back()}>
+    <KeyboardAvoidingView
+      style={[styles.root, { paddingTop: Platform.OS === 'web' ? 67 : insets.top + 20 }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <TouchableOpacity onPress={() => router.back()} style={styles.back}>
         <Feather name="arrow-left" size={22} color="#111827" />
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.iconWrap}>
-            <Feather name="message-square" size={30} color="#FF6835" />
-          </View>
-          <Text style={styles.title}>Code envoyé</Text>
-          <Text style={styles.subtitle}>
-            Entrez le code à {CODE_LENGTH} chiffres envoyé au{'\n'}
-            <Text style={styles.phone}>{maskedPhone}</Text>
-          </Text>
+        <View style={styles.iconWrap}>
+          <Feather name="message-circle" size={32} color="#FF6835" />
         </View>
 
-        <OTPInput
-          length={CODE_LENGTH}
-          value={code}
-          onChange={setCode}
-          onComplete={handleVerify}
-          loading={loading}
-        />
-
-        <Button
-          title={loading ? 'Vérification…' : 'Confirmer'}
-          onPress={() => handleVerify()}
-          loading={loading}
-          disabled={code.length < CODE_LENGTH}
-          fullWidth
-          size="lg"
-        />
-
-        {/* Resend */}
-        <View style={styles.resendRow}>
-          {countdown > 0 ? (
-            <Text style={styles.resendCountdown}>
-              Renvoyer le code dans <Text style={styles.orange}>{countdown}s</Text>
-            </Text>
-          ) : (
-            <TouchableOpacity onPress={handleResend} disabled={resendLoading}>
-              <Text style={[styles.resendLink, resendLoading && { opacity: 0.5 }]}>
-                {resendLoading ? 'Envoi…' : 'Renvoyer le code'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <Text style={styles.notice}>
-          Vous n'avez pas reçu le code ? Vérifiez votre dossier spam ou assurez-vous que votre numéro est correct.
+        <Text style={styles.title}>Vérification SMS</Text>
+        <Text style={styles.subtitle}>
+          Entrez le code à 6 chiffres envoyé au{'\n'}
+          <Text style={styles.phone}>{maskedPhone}</Text>
         </Text>
+
+        {/* Champ OTP */}
+        <TextInput
+          ref={inputRef}
+          style={styles.otpInput}
+          value={otp}
+          onChangeText={(t) => {
+            setOtp(t.replace(/\D/g, '').slice(0, 6));
+          }}
+          keyboardType="number-pad"
+          maxLength={6}
+          autoFocus
+          placeholder="• • • • • •"
+          placeholderTextColor="#D1D5DB"
+          onSubmitEditing={verifyOtp}
+        />
+
+        {/* Bouton vérifier */}
+        <TouchableOpacity
+          style={[styles.btn, (otp.length < 4 || loading) && styles.btnDisabled]}
+          onPress={verifyOtp}
+          disabled={otp.length < 4 || loading}
+          activeOpacity={0.88}
+        >
+          {loading
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.btnText}>Vérifier</Text>}
+        </TouchableOpacity>
+
+        {/* Renvoyer le code */}
+        <TouchableOpacity
+          onPress={resendOtp}
+          disabled={countdown > 0 || resending}
+          style={styles.resendRow}
+        >
+          {resending
+            ? <ActivityIndicator size="small" color="#FF6835" />
+            : <Text style={[styles.resendText, countdown > 0 && styles.resendTextDisabled]}>
+                {countdown > 0
+                  ? `Renvoyer dans ${countdown}s`
+                  : 'Renvoyer le code'}
+              </Text>}
+        </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F8F7F4', paddingHorizontal: 24, gap: 8 },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  content: { flex: 1, gap: 28, paddingTop: 16 },
-  header: { gap: 10 },
-  iconWrap: {
-    width: 60, height: 60, borderRadius: 18, backgroundColor: '#FEF2EC',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  title: { fontSize: 28, fontWeight: '800', color: '#111827' },
-  subtitle: { fontSize: 15, color: '#6B7280', lineHeight: 22 },
-  phone: { fontWeight: '700', color: '#111827' },
-  resendRow: { alignItems: 'center' },
-  resendCountdown: { fontSize: 14, color: '#6B7280' },
-  orange: { color: '#FF6835', fontWeight: '700' },
-  resendLink: { fontSize: 14, color: '#FF6835', fontWeight: '700' },
-  notice: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', lineHeight: 18 },
+  root:         { flex: 1, backgroundColor: '#F8F7F4', paddingHorizontal: 24 },
+  back:         { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  content:      { flex: 1, gap: 20, paddingTop: 20 },
+  iconWrap:     { width: 64, height: 64, borderRadius: 20, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
+  title:        { fontSize: 28, fontWeight: '800', color: '#111827' },
+  subtitle:     { fontSize: 15, color: '#6B7280', lineHeight: 22 },
+  phone:        { fontWeight: '700', color: '#111827' },
+  otpInput:     { backgroundColor: '#F3F4F6', borderRadius: 16, paddingHorizontal: 20, paddingVertical: 18, fontSize: 28, fontWeight: '800', color: '#111827', letterSpacing: 10, textAlign: 'center', borderWidth: 1.5, borderColor: '#E5E7EB' },
+  btn:          { backgroundColor: '#FF6835', borderRadius: 16, paddingVertical: 16, alignItems: 'center', shadowColor: '#FF6835', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
+  btnDisabled:  { backgroundColor: '#D1D5DB', shadowOpacity: 0, elevation: 0 },
+  btnText:      { fontSize: 16, fontWeight: '700', color: '#fff' },
+  resendRow:    { alignItems: 'center', paddingVertical: 8 },
+  resendText:   { fontSize: 14, fontWeight: '600', color: '#FF6835' },
+  resendTextDisabled: { color: '#9CA3AF' },
 });

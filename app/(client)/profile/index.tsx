@@ -75,7 +75,7 @@ export default function ProfileScreen() {
       title: 'Aide',
       items: [
         { icon: 'help-circle', label: 'Aide & Support',           sub: 'FAQ, contact, signalement',         route: '/(client)/profile/help' },
-        { icon: 'file-text',   label: "Conditions d'utilisation", sub: 'CGU, politique de confidentialité', route: '/(client)/legal' },
+        { icon: 'file-text',   label: "Conditions d'utilisation", sub: 'CGU, politique de confidentialité', route: '/(client)/profile/legal' },
       ],
     },
   ];
@@ -110,11 +110,7 @@ export default function ProfileScreen() {
 
           <Text style={styles.name}>{profile?.name ?? 'Utilisateur'}</Text>
           <Text style={styles.phone}>{profile?.phone ?? ''}</Text>
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleText}>
-              {profile?.role === 'pro' ? '🏪 Professionnel' : '🛍️ Client'}
-            </Text>
-          </View>
+
         </View>
 
         {/* Portefeuille */}
@@ -216,12 +212,6 @@ const styles = StyleSheet.create({
 
   name: { fontSize: 22, fontWeight: '800', color: '#111827' },
   phone: { fontSize: 14, color: '#9CA3AF' },
-  roleBadge: {
-    backgroundColor: '#FEF2EC', paddingHorizontal: 14,
-    paddingVertical: 5, borderRadius: 100, marginTop: 4,
-  },
-  roleText: { fontSize: 13, fontWeight: '600', color: '#FF6835' },
-
   walletCard: {
     backgroundColor: '#1E3A5F', borderRadius: 20, padding: 18,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

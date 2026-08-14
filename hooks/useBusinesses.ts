@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { isBusinessOpen } from '@/lib/utils';
-import type { Business, Service } from '@/types';
+import type { Business, CatalogItem } from '@/types';
 
 export interface BusinessFilters {
-  city?: string;
-  category?: string;
-  searchQuery?: string;
-  openNow?: boolean;
+  city?:         string;
+  country_code?: string;   // ← filtre par pays
+  category?:     string;
+  searchQuery?:  string;
+  openNow?:      boolean;
 }
 
 async function fetchBusinesses(filters: BusinessFilters): Promise<Business[]> {
@@ -16,9 +17,11 @@ async function fetchBusinesses(filters: BusinessFilters): Promise<Business[]> {
     .select('*, hours:business_hours(*)')
     .eq('is_active', true);
 
-  if (filters.city)        q = q.ilike('city', `%${filters.city}%`);
-  if (filters.category)    q = q.eq('category', filters.category);
-  if (filters.searchQuery) q = q.or(
+  // ✅ Filtre par pays — prioritaire
+  if (filters.country_code) q = q.eq('country_code', filters.country_code);
+  if (filters.city)         q = q.ilike('city', `%${filters.city}%`);
+  if (filters.category)     q = q.eq('category', filters.category);
+  if (filters.searchQuery)  q = q.or(
     `name.ilike.%${filters.searchQuery}%,description.ilike.%${filters.searchQuery}%`
   );
 
@@ -30,17 +33,15 @@ async function fetchBusinesses(filters: BusinessFilters): Promise<Business[]> {
   return businesses;
 }
 
-// ── useBusinesses — passe null pour désactiver le fetch ──────────────────────
 export function useBusinesses(filters: BusinessFilters | null) {
   return useQuery<Business[]>({
     queryKey:  ['businesses', filters],
-    queryFn:   () => fetchBusinesses(filters as BusinessFilters),
+    queryFn:   () => fetchBusinesses(filters!),
     enabled:   filters !== null,
     staleTime: 60_000,
   });
 }
 
-// ── useBusiness — une seule boutique par ID ───────────────────────────────────
 export function useBusiness(id: string) {
   return useQuery<Business>({
     queryKey: ['business', id],
@@ -58,7 +59,6 @@ export function useBusiness(id: string) {
   });
 }
 
-// ── useMyBusinesses — boutiques d'un marchand ────────────────────────────────
 export function useMyBusinesses(ownerId: string | undefined) {
   return useQuery<Business[]>({
     queryKey: ['my-businesses', ownerId],
@@ -66,7 +66,7 @@ export function useMyBusinesses(ownerId: string | undefined) {
       const { data, error } = await supabase
         .from('businesses')
         .select('*, hours:business_hours(*)')
-        .eq('owner_id', ownerId as string)
+        .eq('owner_id', ownerId!)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []) as Business[];
@@ -76,9 +76,8 @@ export function useMyBusinesses(ownerId: string | undefined) {
   });
 }
 
-// ── useBusinessCatalog — catalogue d'une boutique ────────────────────────────
 export function useBusinessCatalog(businessId: string) {
-  return useQuery<Service[]>({
+  return useQuery<CatalogItem[]>({
     queryKey: ['catalog', businessId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -88,7 +87,7 @@ export function useBusinessCatalog(businessId: string) {
         .eq('is_available', true)
         .order('title');
       if (error) throw error;
-      return (data ?? []) as Service[];
+      return (data ?? []) as CatalogItem[];
     },
     enabled:   !!businessId,
     staleTime: 30_000,
