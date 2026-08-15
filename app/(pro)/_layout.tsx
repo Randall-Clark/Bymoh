@@ -8,7 +8,7 @@ export default function ProLayout() {
     <Stack screenOptions={{ headerShown: false }}>
 
       {/* Dashboard — fade discret */}
-      <Stack.Screen name="dashboard" options={{
+      {/* <Stack.Screen name="dashboard" options={{
         headerShown: true,
         headerTitle: '',
         headerLeft: () => (
@@ -16,7 +16,7 @@ export default function ProLayout() {
             <Feather name="arrow-left" size={22} color="#111827" />
           </TouchableOpacity>
         ),
-      }} />
+      }} /> */}
 
       {/* Pages standard du pro — fade ou simple pop */}
       <Stack.Screen name="orders"   options={{ animation: 'fade' }} />

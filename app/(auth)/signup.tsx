@@ -17,7 +17,6 @@ import { OTPInput } from '@/components/forms/OTPInput';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { COUNTRIES } from '@/lib/countries';
-import { AddressSetupModal } from '@/components/AddressSetupModal';
 
 const schema = z.object({
   name: z.string().min(2, 'Nom complet requis (minimum 2 caractères)'),
@@ -47,7 +46,6 @@ export default function SignupScreen() {
   const [firstPin,   setFirstPin]   = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [loading,    setLoading]    = useState(false);
-  const [showAddressModal, setShowAddressModal] = useState(false);
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -94,7 +92,11 @@ export default function SignupScreen() {
         `${value}:${authUser.id}`
       );
 
-      // 3. Insérer l'utilisateur dans la table users
+      // 3. Définir le NIP comme mot de passe Supabase Auth (requis pour signInWithPassword)
+      const { error: pinErr } = await supabase.auth.updateUser({ password: value });
+      if (pinErr) throw new Error('Impossible de définir le NIP : ' + pinErr.message);
+
+      // 4. Insérer l'utilisateur dans la table users
       const { data: newUser, error: insertErr } = await supabase
         .from('users')
         .upsert({
@@ -113,11 +115,11 @@ export default function SignupScreen() {
 
       if (insertErr) throw insertErr;
 
-      // 4. Mettre à jour le store
+      // 5. Mettre à jour le store
       setProfile(newUser as any);
 
-      // 5. Afficher le modal d'adresse avant d'aller sur l'accueil
-      setShowAddressModal(true);
+      // 6. Naviguer vers l'étape de définition d'adresse
+      router.replace('/(auth)/setup-address' as any);
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur lors de la création du compte';
@@ -301,13 +303,6 @@ export default function SignupScreen() {
         </Text>
       </ScrollView>
 
-      <AddressSetupModal
-        visible={showAddressModal}
-        onDone={() => {
-          setShowAddressModal(false);
-          router.replace('/(client)');
-        }}
-      />
     </KeyboardAvoidingView>
   );
 }

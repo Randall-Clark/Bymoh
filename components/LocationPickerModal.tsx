@@ -54,6 +54,9 @@ export function LocationPickerModal({ visible, onClose }: Props) {
   const [mapAddress, setMapAddress]             = useState('');
   const [geocoding, setGeocoding]               = useState(false);
   const [isDragging, setIsDragging]             = useState(false);
+  const [nominatimResults, setNominatimResults] = useState<AddressResult[]>([]);
+  const [searching, setSearching]               = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cachedPosition  = useRef<{ lat: number; lon: number } | null>(null);
   const currentCenter   = useRef({ lat: savedLat ?? DEFAULT_LAT, lon: savedLon ?? DEFAULT_LON });
@@ -77,6 +80,31 @@ export function LocationPickerModal({ visible, onClose }: Props) {
       Animated.timing(slideY, { toValue: SHEET_H, duration: 240, useNativeDriver: true }).start();
     }
   }, [visible]);
+
+  // ── Recherche Nominatim (même que step2) ────────────────────────────────────
+  useEffect(() => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (query.trim().length < 3) { setNominatimResults([]); return; }
+
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&addressdetails=1`,
+          { headers: { 'Accept-Language': 'fr', 'User-Agent': 'BymohApp/1.0' } }
+        );
+        const data = await res.json();
+        const results: AddressResult[] = data.map((item: any) => ({
+          label:    item.display_name,
+          sublabel: item.address?.city ?? item.address?.town ?? item.address?.village ?? item.address?.state,
+          lat:      parseFloat(item.lat),
+          lon:      parseFloat(item.lon),
+        }));
+        setNominatimResults(results);
+      } catch { setNominatimResults([]); }
+      finally { setSearching(false); }
+    }, 500);
+  }, [query]);
 
   const dismiss = () => {
     Keyboard.dismiss();
@@ -340,20 +368,30 @@ export function LocationPickerModal({ visible, onClose }: Props) {
                 {gpsError && <Text style={styles.gpsRowError}>{gpsError}</Text>}
               </View>
             </TouchableOpacity>
-            {query.trim().length > 2 && (
+
+            {/* ✅ Résultats Nominatim — vraies adresses */}
+            {searching && (
+              <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+                <ActivityIndicator size="small" color="#FF6835" />
+              </View>
+            )}
+            {!searching && nominatimResults.map((r, i) => (
+              <TouchableOpacity key={i} style={styles.resultRow} onPress={() => goToDetails(r)} activeOpacity={0.8}>
+                <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#FF6835" /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resultLabel} numberOfLines={1}>{r.sublabel ?? r.label}</Text>
+                  <Text style={styles.resultSub} numberOfLines={1}>{r.label}</Text>
+                </View>
+                <Feather name="chevron-right" size={14} color="#D1D5DB" />
+              </TouchableOpacity>
+            ))}
+            {!searching && nominatimResults.length === 0 && query.trim().length > 2 && (
               <TouchableOpacity style={styles.resultRow} onPress={() => goToDetails({ label: query.trim(), lat: DEFAULT_LAT, lon: DEFAULT_LON })}>
                 <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#6B7280" /></View>
                 <View style={{ flex: 1 }}><Text style={styles.resultLabel}>{query.trim()}</Text><Text style={styles.resultSub}>Affiner sur la carte</Text></View>
                 <Feather name="chevron-right" size={14} color="#D1D5DB" />
               </TouchableOpacity>
             )}
-            {cityResults.map((c) => (
-              <TouchableOpacity key={c.id} style={styles.resultRow} onPress={() => goToDetails({ label: c.name, sublabel: c.country })}>
-                <View style={styles.resultIcon}><Text style={{ fontSize: 18 }}>{c.flag}</Text></View>
-                <View style={{ flex: 1 }}><Text style={styles.resultLabel}>{c.name}</Text><Text style={styles.resultSub}>{c.country}</Text></View>
-                <Feather name="chevron-right" size={14} color="#D1D5DB" />
-              </TouchableOpacity>
-            ))}
           </>
         ) : (
           <>

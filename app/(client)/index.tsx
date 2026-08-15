@@ -83,7 +83,7 @@ export default function HomeScreen() {
     ...(selectedCategory ? { category: selectedCategory } : {}),
   };
   const { data: businesses = [], isLoading: bizLoading } = useBusinesses(bizFilters);
-  const openBizs = businesses.filter((b) => isBusinessOpen(b.hours));
+  const openBizs = businesses.filter((b) => isBusinessOpen(b.hours, (b as any).timezone));
 
   return (
     <View style={styles.root}>

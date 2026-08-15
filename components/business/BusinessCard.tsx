@@ -19,7 +19,7 @@ interface Props {
 export function BusinessCard({ business, style, horizontal }: Props) {
   // ✅ Tag depuis la DB en priorité, fallback calculé si absent
   const tag  = business.tag ?? buildTagFallback(business.name, business.id);
-  const open = isBusinessOpen(business.hours);
+  const open = isBusinessOpen(business.hours, (business as any).timezone);
 
   const onPress = () =>
     router.push({ pathname: '/(client)/business/[id]', params: { id: business.id } });

@@ -24,7 +24,8 @@ export function OverviewSection({ businessId }: Props) {
   const { data: business, isLoading: bizLoading } = useBusiness(businessId);
   const { data: stats, isLoading: statsLoading }  = useBusinessStats(businessId, period);
 
-  const currentlyOpen = isBusinessOpen(business?.hours);
+  // ✅ Utilise le fuseau horaire de la boutique, pas celui de l'appareil
+  const currentlyOpen = isBusinessOpen(business?.hours, (business as any)?.timezone);
 
   const fmtRevenue = (v: number) =>
     v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M F`
@@ -59,16 +60,6 @@ export function OverviewSection({ businessId }: Props) {
             <Text style={styles.verifiedText}>Vérifiée</Text>
           </View>
         )}
-      </View>
-
-      {/* 🔍 Debug — retire ce bloc une fois que ça marche */}
-      <View style={styles.debugBox}>
-        <Text style={styles.debugText}>
-          Horaires en mémoire : {business?.hours?.length ?? 0} jours{'\n'}
-          Jour JS aujourd'hui : {new Date().getDay()} ({['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][new Date().getDay()]}){'\n'}
-          Heure : {new Date().getHours()}:{String(new Date().getMinutes()).padStart(2,'0')}{'\n'}
-          {business?.hours?.map((h: any) => `${h.day_of_week}|${h.open_time}-${h.close_time}|closed:${h.is_closed}`).join('\n')}
-        </Text>
       </View>
 
       {/* Période */}
@@ -121,8 +112,6 @@ const styles = StyleSheet.create({
   statusText:       { flex: 1, fontSize: 13, fontWeight: '600' },
   verifiedBadge:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EEF2FF', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
   verifiedText:     { fontSize: 11, fontWeight: '700', color: '#1E3A5F' },
-  debugBox:         { backgroundColor: '#111', borderRadius: 10, padding: 12 },
-  debugText:        { fontSize: 10, color: '#00FF88', fontFamily: 'monospace', lineHeight: 16 },
   periodRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   periodLabel:      { fontSize: 16, fontWeight: '800', color: '#111827' },
   periodPills:      { flexDirection: 'row', gap: 4, backgroundColor: '#F3F4F6', borderRadius: 100, padding: 3 },
