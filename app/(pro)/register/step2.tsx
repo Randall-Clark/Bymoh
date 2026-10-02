@@ -3,11 +3,13 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Animated, Dimensions, Image,
+  ActivityIndicator, Alert, Animated, Dimensions, Image,
   Keyboard, Modal, Platform, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, TouchableWithoutFeedback, View,
 } from 'react-native';
-import MapView, { Region, PROVIDER_GOOGLE } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
+
+type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; };
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { StepIndicator } from '@/components/forms/StepIndicator';
@@ -16,10 +18,74 @@ import { Input } from '@/components/ui/Input';
 import { registerDraft } from './step1';
 import { COUNTRIES, Country } from '@/lib/countries';
 
+
+// ── Composant MapLibre GL JS via WebView ──────────────────────────────────────
+const MAP_HTML = (lat: number, lon: number) => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; }
+    .marker { width: 36px; height: 36px; cursor: grab; }
+    .marker-outer { width: 36px; height: 36px; border-radius: 50%; background: #FF6835;
+      border: 3px solid #fff; box-shadow: 0 4px 12px rgba(255,104,53,0.5);
+      display: flex; align-items: center; justify-content: center; }
+    .marker-inner { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    center: [${lon}, ${lat}],
+    zoom: 15,
+    attributionControl: false
+  });
+
+  const el = document.createElement('div');
+  el.className = 'marker';
+  el.innerHTML = '<div class="marker-outer"><div class="marker-inner"></div></div>';
+
+  const marker = new maplibregl.Marker({ element: el, draggable: true })
+    .setLngLat([${lon}, ${lat}])
+    .addTo(map);
+
+  function sendCoords(lng, lat) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ lng, lat }));
+  }
+
+  marker.on('dragend', () => {
+    const { lng, lat } = marker.getLngLat();
+    sendCoords(lng, lat);
+  });
+
+  map.on('click', (e) => {
+    marker.setLngLat(e.lngLat);
+    sendCoords(e.lngLat.lng, e.lngLat.lat);
+  });
+
+  // Envoyer position initiale
+  setTimeout(() => sendCoords(${lon}, ${lat}), 500);
+</script>
+</body>
+</html>`;
+
 const DIAL_CODES = [
   { code: '+229', flag: '🇧🇯', name: 'Bénin'         },
   { code: '+228', flag: '🇹🇬', name: 'Togo'          },
   { code: '+225', flag: '🇨🇮', name: "Côte d'Ivoire" },
+  { code: '+221', flag: '🇸🇳', name: 'Sénégal'       },
+  { code: '+233', flag: '🇬🇭', name: 'Ghana'         },
+  { code: '+237', flag: '🇨🇲', name: 'Cameroun'      },
+  { code: '+223', flag: '🇲🇱', name: 'Mali'          },
+  { code: '+226', flag: '🇧🇫', name: 'Burkina Faso'  },
+  { code: '+227', flag: '🇳🇪', name: 'Niger'         },
 ];
 
 const BUILDING_TYPES = ['Commerce', 'Boutique', 'Bureau', 'Marché', 'Domicile', 'Autre'];
@@ -97,7 +163,6 @@ function BusinessAddressPicker({
   onConfirm: (r: { address: string; city: string; lat?: number; lon?: number }) => void;
 }) {
   const insets  = useSafeAreaInsets();
-  const mapRef  = useRef<MapView>(null);
   const slideY  = useRef(new Animated.Value(SCREEN_H)).current;
 
   const [step, setStep]               = useState<'search' | 'details'>('search');
@@ -109,7 +174,6 @@ function BusinessAddressPicker({
   const [nearby, setNearby]           = useState<AddressResult | null>(null);
   const [selected, setSelected]       = useState<AddressResult | null>(null);
   const [mapLabel, setMapLabel]       = useState('');
-  const [isDragging, setIsDragging]   = useState(false);
   const [geocoding, setGeocoding]     = useState(false);
 
   const [streetNumber, setStreetNumber] = useState('');
@@ -191,24 +255,17 @@ function BusinessAddressPicker({
     setStep('details');
     // Anime la carte vers la position recherchée
     setTimeout(() => {
-      mapRef.current?.animateToRegion({
-        latitude:      addr.lat,
-        longitude:     addr.lon,
-        latitudeDelta:  0.005,
-        longitudeDelta: 0.005,
-      }, 700);
+      // carte mise à jour via re-render WebView
     }, 400);
   };
 
   // ── Mise à jour automatique de l'adresse pendant le déplacement du pin ────
   const onRegionChange = () => {
-    setIsDragging(true);
-    setMapLabel('Déplacement…');
+        setMapLabel('Déplacement…');
   };
 
   const onRegionChangeComplete = (region: Region) => {
-    setIsDragging(false);
-    currentCenter.current = { lat: region.latitude, lon: region.longitude };
+        currentCenter.current = { lat: region.latitude, lon: region.longitude };
 
     // Auto-geocoding avec debounce — met à jour le texte en temps réel
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -237,10 +294,7 @@ function BusinessAddressPicker({
       const pos = cachedPos.current
         ? { coords: { latitude: cachedPos.current.lat, longitude: cachedPos.current.lon } }
         : await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      mapRef.current?.animateToRegion({
-        latitude: pos.coords.latitude, longitude: pos.coords.longitude,
-        latitudeDelta: 0.004, longitudeDelta: 0.004,
-      }, 500);
+      // carte mise à jour via re-render WebView
     } catch {}
   };
 
@@ -257,6 +311,20 @@ function BusinessAddressPicker({
   };
 
   if (!visible) return null;
+
+
+  const locateMe = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission refusee'); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setSelected(prev => ({
+        ...prev!,
+        lat: loc.coords.latitude,
+        lon: loc.coords.longitude,
+      }));
+    } catch (e) { Alert.alert('Localisation impossible'); }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
@@ -364,26 +432,32 @@ function BusinessAddressPicker({
 
             {/* Carte */}
             <View style={pickerStyles.mapWrapper}>
-              <MapView
-                ref={mapRef}
+              <WebView
                 style={pickerStyles.map}
-                provider={PROVIDER_GOOGLE}
-                initialRegion={{
-                  latitude:       selected?.lat ?? DEFAULT_LAT,
-                  longitude:      selected?.lon ?? DEFAULT_LON,
-                  latitudeDelta:  0.005,
-                  longitudeDelta: 0.005,
+                source={{ html: MAP_HTML(
+                  selected?.lat ?? DEFAULT_LAT,
+                  selected?.lon ?? DEFAULT_LON
+                )}}
+                onMessage={(e) => {
+                  try {
+                    const { lng, lat } = JSON.parse(e.nativeEvent.data);
+                    onRegionChangeComplete({
+                      latitude: lat, longitude: lng,
+                      latitudeDelta: 0.005, longitudeDelta: 0.005,
+                    });
+                  } catch {}
                 }}
-                onRegionChange={onRegionChange}
-                onRegionChangeComplete={onRegionChangeComplete}
-                showsUserLocation showsMyLocationButton={false}
-                showsCompass={false} toolbarEnabled={false} mapType="standard"
+                javaScriptEnabled
+                domStorageEnabled
+                originWhitelist={['*']}
+                scrollEnabled={false}
+                overScrollMode="never"
               />
 
               {/* Pin fixe au centre */}
               <View style={pickerStyles.pinWrap} pointerEvents="none">
-                <View style={[pickerStyles.pinShadow, isDragging && pickerStyles.pinShadowUp]} />
-                <View style={[pickerStyles.pinBody, isDragging && pickerStyles.pinBodyUp]}>
+                <View style={[pickerStyles.pinShadow, false]} />
+                <View style={[pickerStyles.pinBody, false]}>
                   <View style={pickerStyles.pinHead}><View style={pickerStyles.pinDot} /></View>
                   <View style={pickerStyles.pinTip} />
                 </View>
@@ -706,7 +780,7 @@ const styles = StyleSheet.create({
 });
 
 const pickerStyles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, height: SHEET_H, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 4 },
   pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -726,7 +800,7 @@ const pickerStyles = StyleSheet.create({
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 8, backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10 },
   errorText: { fontSize: 13, color: '#EF4444' },
   mapWrapper: { height: MAP_H, position: 'relative', overflow: 'hidden' },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: { ...StyleSheet.absoluteFill },
   pinWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   pinBody: { alignItems: 'center', transform: [{ translateY: -22 }] },
   pinBodyUp: { transform: [{ translateY: -32 }] },

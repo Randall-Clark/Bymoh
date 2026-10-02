@@ -8,6 +8,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { StepIndicator } from '@/components/forms/StepIndicator';
@@ -19,9 +20,12 @@ import {
 } from '@/lib/payment';
 import { registerDraft } from './step1';
 
+// ── Prix — modifier via interface admin plus tard ─────────────────────────────
 const BUSINESS_REGISTRATION_FEE = 0;
+
 const { height: SCREEN_H } = Dimensions.get('window');
 
+// ── Générateur d'ID texte (même pattern que les autres tables) ────────────────
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10) +
          Math.random().toString(36).slice(2, 10);
@@ -44,13 +48,13 @@ function PaymentSheet({
   const insets = useSafeAreaInsets();
   const slideY = useRef(new Animated.Value(SCREEN_H)).current;
 
-  const [step, setStep]               = useState<SheetStep>('invoice');
-  const [method, setMethod]           = useState<PaymentMethod>('mtn_momo');
-  const [phone, setPhone]             = useState('');
-  const [phoneErr, setPhoneErr]       = useState('');
-  const [txId, setTxId]               = useState<string | null>(null);
+  const [step, setStep]             = useState<SheetStep>('invoice');
+  const [method, setMethod]         = useState<PaymentMethod>('mtn_momo');
+  const [phone, setPhone]           = useState('');
+  const [phoneErr, setPhoneErr]     = useState('');
+  const [txId, setTxId]             = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg]       = useState('');
+  const [errorMsg, setErrorMsg]     = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const available = PAYMENT_METHODS.filter((m) => m.available);
@@ -134,6 +138,7 @@ function PaymentSheet({
       ]}>
         <View style={ss.handle} />
 
+        {/* ── Facture + méthode ── */}
         {step === 'invoice' && (
           <>
             <View style={ss.sheetHeader}>
@@ -142,7 +147,9 @@ function PaymentSheet({
               </TouchableOpacity>
               <Text style={ss.sheetTitle}>Détail de la commande</Text>
             </View>
+
             <ScrollView contentContainerStyle={[ss.sheetContent, { paddingBottom: insets.bottom + 24 }]}>
+              {/* Facture */}
               <View style={ss.invoiceBox}>
                 <View style={ss.invoiceRow}>
                   <Text style={ss.invoiceLabel}>{description}</Text>
@@ -154,10 +161,16 @@ function PaymentSheet({
                   <Text style={[ss.invoiceValue, { fontSize: 20, color: '#FF6835' }]}>{formatAmount(amount)}</Text>
                 </View>
               </View>
+
+              {/* Méthode */}
               <Text style={ss.sectionLabel}>Mode de paiement</Text>
               {available.map((m) => (
-                <TouchableOpacity key={m.id} style={[ss.methodCard, method === m.id && ss.methodCardActive]}
-                  onPress={() => setMethod(m.id as PaymentMethod)} activeOpacity={0.85}>
+                <TouchableOpacity
+                  key={m.id}
+                  style={[ss.methodCard, method === m.id && ss.methodCardActive]}
+                  onPress={() => setMethod(m.id as PaymentMethod)}
+                  activeOpacity={0.85}
+                >
                   <Text style={ss.methodEmoji}>{m.emoji}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={[ss.methodLabel, method === m.id && { color: '#FF6835' }]}>{m.label}</Text>
@@ -168,9 +181,15 @@ function PaymentSheet({
                   </View>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity style={ss.payBtn} onPress={() => isMoMo ? setStep('phone') : startPayment()} activeOpacity={0.88}>
+
+              <TouchableOpacity
+                style={ss.payBtn}
+                onPress={() => isMoMo ? setStep('phone') : startPayment()}
+                activeOpacity={0.88}
+              >
                 <Text style={ss.payBtnText}>Confirmer le paiement</Text>
               </TouchableOpacity>
+
               <View style={ss.secureRow}>
                 <Feather name="lock" size={12} color="#9CA3AF" />
                 <Text style={ss.secureText}>Paiement sécurisé par FedaPay</Text>
@@ -179,52 +198,92 @@ function PaymentSheet({
           </>
         )}
 
+        {/* ── Numéro MoMo ── */}
         {step === 'phone' && (
           <>
             <View style={ss.sheetHeader}>
               <TouchableOpacity onPress={() => setStep('invoice')} style={ss.iconBtn}>
                 <Feather name="arrow-left" size={20} color="#111827" />
               </TouchableOpacity>
-              <Text style={ss.sheetTitle}>{PAYMENT_METHODS.find((m) => m.id === method)?.label}</Text>
+              <Text style={ss.sheetTitle}>
+                {PAYMENT_METHODS.find((m) => m.id === method)?.label}
+              </Text>
             </View>
-            <ScrollView contentContainerStyle={[ss.sheetContent, { paddingBottom: insets.bottom + 24 }]} keyboardShouldPersistTaps="handled">
-              <Text style={ss.phoneInstr}>Entrez le numéro associé à votre compte mobile money. Vous recevrez une notification USSD pour confirmer.</Text>
-              <TextInput style={ss.phoneInput} placeholder="Ex : 97123456" placeholderTextColor="#9CA3AF"
-                keyboardType="phone-pad" value={phone}
+
+            <ScrollView
+              contentContainerStyle={[ss.sheetContent, { paddingBottom: insets.bottom + 24 }]}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={ss.phoneInstr}>
+                Entrez le numéro associé à votre compte mobile money.
+                Vous recevrez une notification USSD pour confirmer.
+              </Text>
+
+              <TextInput
+                style={ss.phoneInput}
+                placeholder="Ex : 97123456"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                value={phone}
                 onChangeText={(t) => { setPhone(t.replace(/\D/g, '').slice(0, 10)); setPhoneErr(''); }}
-                maxLength={10} autoFocus />
+                maxLength={10}
+                autoFocus
+              />
+
               {!!phoneErr && (
                 <View style={ss.errBox}>
                   <Feather name="alert-circle" size={13} color="#EF4444" />
                   <Text style={ss.errText}>{phoneErr}</Text>
                 </View>
               )}
+
               <View style={ss.amountRecap}>
                 <Text style={ss.amountRecapLabel}>Montant à débiter</Text>
                 <Text style={ss.amountRecapValue}>{formatAmount(amount)}</Text>
               </View>
-              <TouchableOpacity style={ss.payBtn} onPress={() => {
-                if (phone.replace(/\D/g, '').length < 8) { setPhoneErr('Numéro trop court (min 8 chiffres)'); return; }
-                startPayment(phone.replace(/\D/g, ''));
-              }} activeOpacity={0.88}>
+
+              <TouchableOpacity
+                style={ss.payBtn}
+                onPress={() => {
+                  if (phone.replace(/\D/g, '').length < 8) {
+                    setPhoneErr('Numéro trop court (min 8 chiffres)');
+                    return;
+                  }
+                  startPayment(phone.replace(/\D/g, ''));
+                }}
+                activeOpacity={0.88}
+              >
                 <Text style={ss.payBtnText}>Envoyer la demande</Text>
               </TouchableOpacity>
             </ScrollView>
           </>
         )}
 
+        {/* ── Processing ── */}
         {step === 'processing' && (
           <View style={ss.centerView}>
-            <View style={ss.processingCircle}><ActivityIndicator size="large" color="#FF6835" /></View>
+            <View style={ss.processingCircle}>
+              <ActivityIndicator size="large" color="#FF6835" />
+            </View>
             <Text style={ss.centerTitle}>Traitement en cours…</Text>
-            {isMoMo && <Text style={ss.centerSub}>Acceptez la notification USSD sur votre téléphone.</Text>}
+            {isMoMo && (
+              <Text style={ss.centerSub}>Acceptez la notification USSD sur votre téléphone.</Text>
+            )}
           </View>
         )}
 
+        {/* ── WebView carte ── */}
         {step === 'webview' && checkoutUrl && (
-          <WebView source={{ uri: checkoutUrl }} style={{ flex: 1 }} onNavigationStateChange={onWebViewNav} javaScriptEnabled domStorageEnabled />
+          <WebView
+            source={{ uri: checkoutUrl }}
+            style={{ flex: 1 }}
+            onNavigationStateChange={onWebViewNav}
+            javaScriptEnabled
+            domStorageEnabled
+          />
         )}
 
+        {/* ── Succès ── */}
         {step === 'success' && (
           <View style={ss.centerView}>
             <View style={[ss.resultCircle, { backgroundColor: '#F0FDF4' }]}>
@@ -235,6 +294,7 @@ function PaymentSheet({
           </View>
         )}
 
+        {/* ── Échec ── */}
         {step === 'failure' && (
           <View style={[ss.centerView, { paddingBottom: insets.bottom + 24 }]}>
             <View style={[ss.resultCircle, { backgroundColor: '#FEF2F2' }]}>
@@ -257,6 +317,7 @@ function PaymentSheet({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RegisterPaymentScreen() {
   const insets  = useSafeAreaInsets();
+  const qc      = useQueryClient();                       // ✅ FIX BUG 2
   const { profile, setProfile } = useAuthStore();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [loading, setLoading]           = useState(false);
@@ -264,28 +325,21 @@ export default function RegisterPaymentScreen() {
   const draft = registerDraft as any;
 
   const summaryFields = [
-    { icon: 'briefcase', label: 'Nom',      value: draft.name      },
-    { icon: 'grid',      label: 'Catégorie', value: `${draft.category_icon ?? ''} ${draft.category ?? ''}`.trim() },
-    { icon: 'map-pin',   label: 'Ville',     value: draft.city      },
-    { icon: 'phone',     label: 'Téléphone', value: draft.phone     },
-    { icon: 'clock',     label: 'Horaires',  value: draft.schedule ? 'Configurés' : 'Non définis' },
+    { icon: 'briefcase', label: 'Nom',       value: draft.name      },
+    { icon: 'grid',      label: 'Catégorie',  value: `${draft.category_icon ?? ''} ${draft.category ?? ''}`.trim() },
+    { icon: 'map-pin',   label: 'Ville',      value: draft.city      },
+    { icon: 'phone',     label: 'Téléphone',  value: draft.phone     },
+    { icon: 'clock',     label: 'Horaires',   value: draft.schedule ? 'Configurés' : 'Non définis' },
   ].filter((f) => f.value?.trim());
-
-  const DAY_ENUM = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   const createBusiness = async () => {
     if (!profile?.id) { Alert.alert('Non connecté'); return; }
     setLoading(true);
     try {
-      // ── Génère l'ID et le tag ensemble ──────────────────────────────────
-      const newId = generateId();
-      const tag   = buildBusinessTag(draft.name, newId); // ✅ tag généré ici
-
       const { data: newBiz, error } = await supabase
         .from('businesses')
         .insert({
-          id:            newId,
-          tag:           tag,            // ✅ tag enregistré en DB
+          id:            generateId(),
           owner_id:      profile.id,
           name:          draft.name,
           category:      draft.category,
@@ -332,7 +386,7 @@ export default function RegisterPaymentScreen() {
         const hours = draft.schedule.map((h: any, i: number) => ({
           id:          generateId(),
           business_id: newBiz.id,
-          day_of_week: DAY_ENUM[i],
+          day_of_week: i === 6 ? 0 : i + 1,
           open_time:   h.open_time,
           close_time:  h.close_time,
           is_closed:   !h.is_open,
@@ -344,6 +398,11 @@ export default function RegisterPaymentScreen() {
       await supabase.from('users').update({ role: 'pro' }).eq('id', profile.id);
       const { data: up } = await supabase.from('users').select('*').eq('id', profile.id).single();
       if (up) setProfile(up as any);
+
+      // ✅ FIX BUG 2 — Invalider le cache React Query pour forcer le refetch
+      // sur le dashboard (qui affiche la liste des boutiques du pro)
+      await qc.invalidateQueries({ queryKey: ['my-businesses', profile.id] });
+      await qc.invalidateQueries({ queryKey: ['pro-businesses', profile.id] });
 
       router.replace('/(pro)/dashboard' as any);
 
@@ -379,6 +438,7 @@ export default function RegisterPaymentScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Résumé */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Votre commerce</Text>
           {summaryFields.map((f) => (
@@ -392,6 +452,7 @@ export default function RegisterPaymentScreen() {
           ))}
         </View>
 
+        {/* CGU */}
         <View style={styles.cgvBox}>
           <Feather name="file-text" size={14} color="#1E3A5F" />
           <Text style={styles.cgvText}>
@@ -432,6 +493,7 @@ export default function RegisterPaymentScreen() {
   );
 }
 
+// ── Styles principaux ─────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F8F7F4' },
   flex: { flex: 1 },
@@ -439,23 +501,43 @@ const styles = StyleSheet.create({
   back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   stepWrap: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#F8F7F4' },
   content: { paddingHorizontal: 20, paddingTop: 8, gap: 16 },
-  summaryCard: { backgroundColor: '#fff', borderRadius: 18, padding: 18, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  summaryCard: {
+    backgroundColor: '#fff', borderRadius: 18, padding: 18, gap: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+  },
   summaryTitle: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   summaryIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
   summaryLabel: { fontSize: 13, color: '#9CA3AF', width: 80 },
   summaryValue: { flex: 1, fontSize: 13, fontWeight: '600', color: '#111827' },
-  cgvBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#EEF2FF', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#C7D2FE' },
+  cgvBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#EEF2FF', borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: '#C7D2FE',
+  },
   cgvText: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
   cgvLink: { color: '#FF6835', fontWeight: '600' },
-  footer: { backgroundColor: '#F8F7F4', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  footer: {
+    backgroundColor: '#F8F7F4', paddingHorizontal: 20,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6',
+  },
 });
 
+// ── Styles du sheet de paiement ───────────────────────────────────────────────
 const ss = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, height: SCREEN_H * 0.88, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: SCREEN_H * 0.88, backgroundColor: '#fff',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden',
+  },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 4 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  sheetHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
   iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   sheetTitle: { fontSize: 17, fontWeight: '800', color: '#111827' },
   sheetContent: { padding: 20, gap: 14 },
@@ -465,7 +547,11 @@ const ss = StyleSheet.create({
   invoiceLabel: { fontSize: 14, color: '#6B7280' },
   invoiceValue: { fontSize: 15, fontWeight: '700', color: '#111827' },
   invoiceDivider: { height: 1, backgroundColor: '#E5E7EB' },
-  methodCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#F9FAFB', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  methodCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: '#F9FAFB', borderRadius: 14, padding: 14,
+    borderWidth: 1.5, borderColor: '#E5E7EB',
+  },
   methodCardActive: { borderColor: '#FF6835', backgroundColor: '#FEF2EC' },
   methodEmoji: { fontSize: 24 },
   methodLabel: { fontSize: 15, fontWeight: '700', color: '#111827' },
@@ -478,7 +564,12 @@ const ss = StyleSheet.create({
   secureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   secureText: { fontSize: 12, color: '#9CA3AF' },
   phoneInstr: { fontSize: 13, color: '#6B7280', lineHeight: 20 },
-  phoneInput: { backgroundColor: '#F3F4F6', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 20, fontWeight: '700', color: '#111827', letterSpacing: 2, borderWidth: 1.5, borderColor: '#E5E7EB' },
+  phoneInput: {
+    backgroundColor: '#F3F4F6', borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 20, fontWeight: '700', color: '#111827',
+    letterSpacing: 2, borderWidth: 1.5, borderColor: '#E5E7EB',
+  },
   errBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10 },
   errText: { fontSize: 13, color: '#EF4444' },
   amountRecap: { backgroundColor: '#F8F7F4', borderRadius: 14, padding: 14, alignItems: 'center', gap: 4 },

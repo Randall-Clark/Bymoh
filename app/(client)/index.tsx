@@ -2,13 +2,14 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  Animated, Dimensions, Easing, Platform,
+  Animated, Dimensions, Easing, Modal, Platform,
   ScrollView, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
-import { CountryMismatchWarning } from '@/components/WarningBanner';
+import { useCartStore } from '@/stores/cartStore';
 import { useLocationStore } from '@/stores/locationStore';
+import { CountryMismatchWarning } from '@/components/WarningBanner';
 import { useBusinesses } from '@/hooks/useBusinesses';
 import { useLocation } from '@/hooks/useLocation';
 import { isBusinessOpen } from '@/lib/utils';
@@ -17,7 +18,7 @@ import { LocationPickerModal } from '@/components/LocationPickerModal';
 import { SECTEURS, ALL_CITIES } from '@/types';
 
 const { width: W } = Dimensions.get('window');
-const BG = '#E84B1A';
+const BG   = '#E84B1A';
 const TILE = 72;
 const COLS = Math.ceil(W / TILE) + 4;
 const ROWS = 5;
@@ -34,26 +35,36 @@ const DOODLE_CELLS = Array.from({ length: ROWS }, (_, r) =>
 const USE_NATIVE = Platform.OS !== 'web';
 
 const PROMO_BANNERS = [
-  { id: 'p1', title: '1ère livraison offerte', sub: 'Sur votre 1ère commande Bymoh', cta: 'Commander', bg: '#FF6835', icon: 'gift', deco: '#E84B1A' },
-  { id: 'p2', title: 'Promos Week-end', sub: '-20% chez nos restaurants partenaires', cta: 'Découvrir', bg: '#1E3A5F', icon: 'percent', deco: '#162D4A' },
-  { id: 'p3', title: 'Artisans locaux', sub: 'Meublez votre intérieur avec des pros', cta: 'Explorer', bg: '#059669', icon: 'tool', deco: '#047857' },
+  { id: 'p1', title: '1ère livraison offerte',  sub: 'Sur votre 1ère commande Bymoh',         cta: 'Commander', bg: '#FF6835', icon: 'gift',    deco: '#E84B1A' },
+  { id: 'p2', title: 'Promos Week-end',          sub: '-20% chez nos restaurants partenaires',  cta: 'Découvrir', bg: '#1E3A5F', icon: 'percent', deco: '#162D4A' },
+  { id: 'p3', title: 'Artisans locaux',          sub: 'Meublez votre intérieur avec des pros',  cta: 'Explorer',  bg: '#059669', icon: 'tool',    deco: '#047857' },
 ];
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { profile } = useAuthStore();
-  const { address } = useLocation();
-  const { city: savedCity } = useLocationStore();
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [bannerIdx, setBannerIdx] = useState(0);
-  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const { profile }     = useAuthStore();
+  const cartStore     = useCartStore() as any;
+  const cartTotal     = (cartStore.items ?? []).reduce((a: number, i: any) => a + (i.quantity ?? 0), 0);
+  const { address }     = useLocation();
+  const locationStore   = useLocationStore();
+  const savedCity       = (locationStore as any).city    ?? null;
+  const savedAddress    = (locationStore as any).address ?? null;
+  const userLat         = (locationStore as any).lat     ?? null;
+  const userLon         = (locationStore as any).lon     ?? null;
 
-  const cityName = savedCity ?? null;
+  const [selectedCategory,    setSelectedCategory]    = useState<string | null>(null);
+  const [addressPopupVisible, setAddressPopupVisible] = useState(false);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [bannerIdx, setBannerIdx] = useState(0);
+
+  const cityName  = savedCity ?? null;
   const cityEntry = ALL_CITIES.find((c) => c.name.toLowerCase() === (cityName ?? '').toLowerCase()) ?? null;
+  const hasAddress = !!(savedAddress || savedCity);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  // ── Animation doodle ─────────────────────────────────────────────────────
   const shift = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -61,8 +72,9 @@ export default function HomeScreen() {
     ).start();
   }, []);
 
+  // ── Auto-scroll banners ───────────────────────────────────────────────────
   const bannerRef = useRef<ScrollView>(null);
-  const BANNER_W = W - 40;
+  const BANNER_W  = W - 40;
   useEffect(() => {
     const t = setInterval(() => {
       setBannerIdx((prev) => {
@@ -74,43 +86,42 @@ export default function HomeScreen() {
     return () => clearInterval(t);
   }, [BANNER_W]);
 
-  // Filtre par pays de résidence de l'utilisateur
-  const countryCode = (profile as any)?.country_code ?? null;
+  // ── Popup adresse obligatoire pour les nouveaux utilisateurs ─────────────
+  useEffect(() => {
+    if (profile && !hasAddress) {
+      const t = setTimeout(() => setAddressPopupVisible(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, [profile?.id]);
 
-  const bizFilters = {
-    ...(countryCode ? { country_code: countryCode } : {}),
-    ...(cityName ? { city: cityName } : {}),
-    ...(selectedCategory ? { category: selectedCategory } : {}),
+  // ── Filtre boutiques par pays ─────────────────────────────────────────────
+  const countryCode = (profile as any)?.country_code ?? null;
+  // ✅ Filtre par pays uniquement — la ville ne filtre pas
+  // Les boutiques du même pays apparaissent toutes, avec la distance affichée
+  const bizFilters  = {
+    ...(countryCode      ? { country_code: countryCode }       : {}),
+    ...(selectedCategory ? { category:     selectedCategory  } : {}),
   };
   const { data: businesses = [], isLoading: bizLoading } = useBusinesses(bizFilters);
   const openBizs = businesses.filter((b) => isBusinessOpen(b.hours, (b as any).timezone));
 
   return (
     <View style={styles.root}>
-      {/* ── Header ── */}
+
+      {/* ── Header orange ── */}
       <View style={[styles.header, { paddingTop: topPad }]}>
         <View style={styles.blobTopRight} />
         <Animated.View
-          style={[
-            styles.doodleContainer,
-            { transform: [{ translateX: shift }, { translateY: shift }] },
-          ]}
+          style={[styles.doodleContainer, { transform: [{ translateX: shift }, { translateY: shift }] }]}
           pointerEvents="none"
         >
           {DOODLE_CELLS.map(({ key, symbol, r, c }) => (
-            <Text
-              key={key}
-              style={[
-                styles.doodle,
-                { left: c * TILE - TILE, top: r * TILE - TILE },
-              ]}
-            >
+            <Text key={key} style={[styles.doodle, { left: c * TILE - TILE, top: r * TILE - TILE }]}>
               {symbol}
             </Text>
           ))}
         </Animated.View>
 
-        {/* ── Barre du haut : adresse + notif (sans bouton menu) ── */}
         <View style={styles.greet}>
           <TouchableOpacity
             style={styles.addressPill}
@@ -122,15 +133,11 @@ export default function HomeScreen() {
               <Text style={styles.addressLabel}>Livraison à</Text>
               <Text style={styles.addressValue} numberOfLines={1}>
                 {cityName
-                  ? `${cityEntry ? `${cityEntry.flag} ` : "📍 "}${cityName}`
-                  : "📍 Définir une adresse"}
+                  ? `${cityEntry ? `${cityEntry.flag} ` : '📍 '}${cityName}`
+                  : '📍 Définir une adresse'}
               </Text>
             </View>
-            <Feather
-              name="chevron-down"
-              size={13}
-              color="rgba(255,255,255,0.7)"
-            />
+            <Feather name="chevron-down" size={13} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.notifBtn} onPress={() => {}}>
@@ -141,13 +148,11 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={styles.searchBox}
-          onPress={() => router.push("/(client)/search")}
+          onPress={() => router.push('/(client)/search')}
           activeOpacity={0.85}
         >
           <Feather name="search" size={18} color="rgba(255,255,255,0.75)" />
-          <Text style={styles.searchPlaceholder}>
-            Rechercher un service, commerce...
-          </Text>
+          <Text style={styles.searchPlaceholder}>Rechercher un service, commerce...</Text>
           <View style={styles.filterBtn}>
             <Feather name="sliders" size={14} color={BG} />
           </View>
@@ -157,13 +162,9 @@ export default function HomeScreen() {
       {/* ── Contenu défilant ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: botPad + 72 },
-        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: botPad + 72 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Warning adresse hors pays */}
         <CountryMismatchWarning />
 
         {/* Catégories */}
@@ -171,31 +172,13 @@ export default function HomeScreen() {
           <View style={styles.sectionRow}>
             <Text style={styles.sectionTitle}>Catégories</Text>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.catRow}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
             <TouchableOpacity
-              style={[
-                styles.catPill,
-                !selectedCategory && styles.catPillActive,
-              ]}
+              style={[styles.catPill, !selectedCategory && styles.catPillActive]}
               onPress={() => setSelectedCategory(null)}
             >
-              <Feather
-                name="grid"
-                size={14}
-                color={!selectedCategory ? "#fff" : "#6B7280"}
-              />
-              <Text
-                style={[
-                  styles.catLabel,
-                  !selectedCategory && styles.catLabelActive,
-                ]}
-              >
-                Tout
-              </Text>
+              <Feather name="grid" size={14} color={!selectedCategory ? '#fff' : '#6B7280'} />
+              <Text style={[styles.catLabel, !selectedCategory && styles.catLabelActive]}>Tout</Text>
             </TouchableOpacity>
             {SECTEURS.map((s) => {
               const active = selectedCategory === s.id;
@@ -206,11 +189,7 @@ export default function HomeScreen() {
                   onPress={() => setSelectedCategory(active ? null : s.id)}
                 >
                   <Text style={{ fontSize: 14 }}>{s.emoji}</Text>
-                  <Text
-                    style={[styles.catLabel, active && styles.catLabelActive]}
-                  >
-                    {s.label}
-                  </Text>
+                  <Text style={[styles.catLabel, active && styles.catLabelActive]}>{s.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -222,39 +201,24 @@ export default function HomeScreen() {
           <ScrollView
             ref={bannerRef}
             horizontal
-            pagingEnabled={false}
             showsHorizontalScrollIndicator={false}
             decelerationRate="fast"
             snapToInterval={BANNER_W + 14}
             snapToAlignment="start"
             contentContainerStyle={styles.bannerRow}
             onMomentumScrollEnd={(e) =>
-              setBannerIdx(
-                Math.round(e.nativeEvent.contentOffset.x / (BANNER_W + 14)),
-              )
+              setBannerIdx(Math.round(e.nativeEvent.contentOffset.x / (BANNER_W + 14)))
             }
           >
             {PROMO_BANNERS.map((p) => (
               <TouchableOpacity
                 key={p.id}
-                style={[
-                  styles.bannerCard,
-                  { width: BANNER_W, backgroundColor: p.bg },
-                ]}
+                style={[styles.bannerCard, { width: BANNER_W, backgroundColor: p.bg }]}
                 activeOpacity={0.9}
               >
-                <View
-                  style={[styles.bannerDeco1, { backgroundColor: p.deco }]}
-                />
-                <View
-                  style={[styles.bannerDeco2, { backgroundColor: p.deco }]}
-                />
-                <View
-                  style={[
-                    styles.bannerIcon,
-                    { backgroundColor: "rgba(255,255,255,0.2)" },
-                  ]}
-                >
+                <View style={[styles.bannerDeco1, { backgroundColor: p.deco }]} />
+                <View style={[styles.bannerDeco2, { backgroundColor: p.deco }]} />
+                <View style={[styles.bannerIcon, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
                   <Feather name={p.icon as any} size={26} color="#fff" />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -262,22 +226,14 @@ export default function HomeScreen() {
                   <Text style={styles.bannerSub}>{p.sub}</Text>
                 </View>
                 <View style={styles.bannerCta}>
-                  <Text style={[styles.bannerCtaText, { color: p.bg }]}>
-                    {p.cta}
-                  </Text>
+                  <Text style={[styles.bannerCtaText, { color: p.bg }]}>{p.cta}</Text>
                 </View>
               </TouchableOpacity>
             ))}
           </ScrollView>
           <View style={styles.bannerDots}>
             {PROMO_BANNERS.map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.dot,
-                  { backgroundColor: i === bannerIdx ? "#FF6835" : "#E5E7EB" },
-                ]}
-              />
+              <View key={i} style={[styles.dot, { backgroundColor: i === bannerIdx ? '#FF6835' : '#E5E7EB' }]} />
             ))}
           </View>
         </View>
@@ -289,18 +245,9 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>Ouverts maintenant</Text>
               <View style={styles.openDot} />
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.hRow}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hRow}>
               {openBizs.map((b) => (
-                <BusinessCard
-                  key={b.id}
-                  business={b}
-                  horizontal
-                  style={styles.hCard}
-                />
+                <BusinessCard key={b.id} business={b} horizontal style={styles.hCard} userLat={userLat} userLon={userLon} />
               ))}
             </ScrollView>
           </View>
@@ -311,12 +258,12 @@ export default function HomeScreen() {
           <View>
             <View style={styles.sectionRow}>
               <Text style={styles.sectionTitle}>Tous les commerces</Text>
-              <TouchableOpacity onPress={() => router.push("/(client)/search")}>
+              <TouchableOpacity onPress={() => router.push('/(client)/search')}>
                 <Text style={styles.seeAll}>Voir tout</Text>
               </TouchableOpacity>
             </View>
             {businesses.map((b) => (
-              <BusinessCard key={b.id} business={b} style={styles.vCard} />
+              <BusinessCard key={b.id} business={b} style={styles.vCard} userLat={userLat} userLon={userLon} />
             ))}
           </View>
         )}
@@ -324,61 +271,120 @@ export default function HomeScreen() {
         {!bizLoading && businesses.length === 0 && (
           <View style={styles.empty}>
             <Feather name="search" size={44} color="#D1D5DB" />
-            <Text style={styles.emptyText}>
-              Aucun commerce dans cette ville
-            </Text>
+            <Text style={styles.emptyText}>Aucun commerce dans cette ville</Text>
           </View>
         )}
       </ScrollView>
 
+      {/* ── LocationPickerModal (barre adresse) ── */}
       <LocationPickerModal
         visible={locationPickerVisible}
         onClose={() => setLocationPickerVisible(false)}
       />
+
+      {/* FAB panier */}
+      {cartTotal > 0 && (
+        <TouchableOpacity
+          style={[fabS.fab, { bottom: (Platform.OS === 'ios' ? 83 : 60) + 12 }]}
+          onPress={() => router.push('/(client)/order/cart' as any)}
+          activeOpacity={0.88}
+        >
+          <Feather name="shopping-cart" size={22} color="#fff" />
+          <View style={fabS.badge}>
+            <Text style={fabS.badgeTxt}>{cartTotal}</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Popup obligatoire si pas d'adresse ── */}
+      <Modal
+        visible={addressPopupVisible && !hasAddress}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {}}
+      >
+        <View style={styles.popupBackdrop}>
+          <View style={styles.popupCard}>
+            <View style={styles.popupIconWrap}>
+              <Text style={{ fontSize: 44 }}>📍</Text>
+            </View>
+            <Text style={styles.popupTitle}>Définissez votre adresse</Text>
+            <Text style={styles.popupSubtitle}>
+              Pour voir les commerces disponibles près de chez vous et recevoir vos commandes, nous avons besoin de votre adresse de livraison.
+            </Text>
+            <TouchableOpacity
+              style={styles.popupBtn}
+              onPress={() => {
+                setAddressPopupVisible(false);
+                setLocationPickerVisible(true);
+              }}
+              activeOpacity={0.88}
+            >
+              <Feather name="map-pin" size={18} color="#fff" />
+              <Text style={styles.popupBtnText}>Définir mon adresse de livraison</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+const fabS = StyleSheet.create({
+  fab:      { position: 'absolute', right: 20, zIndex: 50, width: 56, height: 56, borderRadius: 28, backgroundColor: '#1E3A5F', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 8 },
+  badge:    { position: 'absolute', top: -4, right: -4, width: 20, height: 20, borderRadius: 10, backgroundColor: '#FF6835', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
+  badgeTxt: { fontSize: 10, fontWeight: '800', color: '#fff' },
+});
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F8F7F4' },
-  header: { paddingHorizontal: 20, paddingBottom: 20, gap: 14, overflow: 'hidden', zIndex: 10, backgroundColor: BG, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 8 },
-  blobTopRight: { position: 'absolute', width: W * 0.65, height: W * 0.65, borderRadius: W * 0.325, backgroundColor: '#C93E12', top: -W * 0.22, right: -W * 0.18, opacity: 0.5 },
-  doodleContainer: { position: 'absolute', width: W + TILE * 3, height: ROWS * TILE + TILE * 2, top: -TILE, left: -TILE },
-  doodle: { position: 'absolute', fontSize: 16, color: 'rgba(255,255,255,0.13)', fontWeight: '300', lineHeight: TILE, width: TILE, textAlign: 'center' },
-  greet: { flexDirection: 'row', alignItems: 'center', gap: 10, zIndex: 2 },
-  addressPill: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  addressLabel: { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
-  addressValue: { fontSize: 14, color: '#fff', fontWeight: '700' },
-  notifBtn: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.2)' },
-  notifDot: { position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', borderWidth: 1.5, borderColor: BG },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', zIndex: 2 },
+  root:              { flex: 1, backgroundColor: '#F8F7F4' },
+  header:            { paddingHorizontal: 20, paddingBottom: 20, gap: 14, overflow: 'hidden', zIndex: 10, backgroundColor: BG, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 8 },
+  blobTopRight:      { position: 'absolute', width: W * 0.65, height: W * 0.65, borderRadius: W * 0.325, backgroundColor: '#C93E12', top: -W * 0.22, right: -W * 0.18, opacity: 0.5 },
+  doodleContainer:   { position: 'absolute', width: W + TILE * 3, height: ROWS * TILE + TILE * 2, top: -TILE, left: -TILE },
+  doodle:            { position: 'absolute', fontSize: 16, color: 'rgba(255,255,255,0.13)', fontWeight: '300', lineHeight: TILE, width: TILE, textAlign: 'center' },
+  greet:             { flexDirection: 'row', alignItems: 'center', gap: 10, zIndex: 2 },
+  addressPill:       { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  addressLabel:      { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
+  addressValue:      { fontSize: 14, color: '#fff', fontWeight: '700' },
+  notifBtn:          { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.2)' },
+  notifDot:          { position: 'absolute', top: 9, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff', borderWidth: 1.5, borderColor: BG },
+  searchBox:         { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', zIndex: 2 },
   searchPlaceholder: { flex: 1, fontSize: 14, color: 'rgba(255,255,255,0.8)' },
-  filterBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 24, gap: 24 },
-  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  seeAll: { fontSize: 13, fontWeight: '600', color: '#FF6835' },
-  openDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
-  catRow: { gap: 8, paddingVertical: 4 },
-  catPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  catPillActive: { backgroundColor: '#FF6835', borderColor: '#FF6835' },
-  catLabel: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
-  catLabelActive: { color: '#fff' },
-  bannerRow: { gap: 14, paddingVertical: 4 },
-  bannerCard: { borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, overflow: 'hidden', minHeight: 100 },
-  bannerDeco1: { position: 'absolute', width: 160, height: 160, borderRadius: 80, top: -60, right: -40, opacity: 0.5 },
-  bannerDeco2: { position: 'absolute', width: 100, height: 100, borderRadius: 50, bottom: -40, left: -20, opacity: 0.35 },
-  bannerIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 4 },
-  bannerSub: { fontSize: 12, color: 'rgba(255,255,255,0.78)', lineHeight: 17 },
-  bannerCta: { backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100 },
-  bannerCtaText: { fontSize: 12, fontWeight: '800' },
-  bannerDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
-  dot: { width: 7, height: 7, borderRadius: 3.5 },
-  hRow: { gap: 14, paddingVertical: 4 },
-  hCard: {},
-  vCard: { marginBottom: 12 },
-  empty: { alignItems: 'center', gap: 12, paddingVertical: 60 },
-  emptyText: { fontSize: 16, color: '#9CA3AF' },
+  filterBtn:         { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  scroll:            { flex: 1 },
+  scrollContent:     { paddingHorizontal: 20, paddingTop: 24, gap: 24 },
+  sectionRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitle:      { fontSize: 18, fontWeight: '700', color: '#111827' },
+  seeAll:            { fontSize: 13, fontWeight: '600', color: '#FF6835' },
+  openDot:           { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
+  catRow:            { gap: 8, paddingVertical: 4 },
+  catPill:           { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  catPillActive:     { backgroundColor: '#FF6835', borderColor: '#FF6835' },
+  catLabel:          { fontSize: 13, fontWeight: '600', color: '#6B7280' },
+  catLabelActive:    { color: '#fff' },
+  bannerRow:         { gap: 14, paddingVertical: 4 },
+  bannerCard:        { borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, overflow: 'hidden', minHeight: 100 },
+  bannerDeco1:       { position: 'absolute', width: 160, height: 160, borderRadius: 80, top: -60, right: -40, opacity: 0.5 },
+  bannerDeco2:       { position: 'absolute', width: 100, height: 100, borderRadius: 50, bottom: -40, left: -20, opacity: 0.35 },
+  bannerIcon:        { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  bannerTitle:       { fontSize: 16, fontWeight: '800', color: '#fff', marginBottom: 4 },
+  bannerSub:         { fontSize: 12, color: 'rgba(255,255,255,0.78)', lineHeight: 17 },
+  bannerCta:         { backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100 },
+  bannerCtaText:     { fontSize: 12, fontWeight: '800' },
+  bannerDots:        { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
+  dot:               { width: 7, height: 7, borderRadius: 3.5 },
+  hRow:              { gap: 14, paddingVertical: 4 },
+  hCard:             {},
+  vCard:             { marginBottom: 12 },
+  empty:             { alignItems: 'center', gap: 12, paddingVertical: 60 },
+  emptyText:         { fontSize: 16, color: '#9CA3AF' },
+  // ── Popup adresse ──────────────────────────────────────────────────────────
+  popupBackdrop:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 28 },
+  popupCard:         { backgroundColor: '#fff', borderRadius: 24, padding: 28, gap: 16, width: '100%', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 20 },
+  popupIconWrap:     { width: 80, height: 80, borderRadius: 24, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
+  popupTitle:        { fontSize: 22, fontWeight: '800', color: '#111827', textAlign: 'center' },
+  popupSubtitle:     { fontSize: 14, color: '#6B7280', lineHeight: 21, textAlign: 'center' },
+  popupBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FF6835', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 20, width: '100%', shadowColor: '#FF6835', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
+  popupBtnText:      { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

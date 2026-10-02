@@ -12,86 +12,100 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Récupérer le token de l'utilisateur connecté
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const token      = authHeader.replace('Bearer ', '').trim();
+
+    if (!token) {
       return Response.json({ error: 'Non authentifié' }, { status: 401, headers: cors });
     }
 
-    // Client avec le token de l'utilisateur (pour vérifier l'identité)
-    const userClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    // Vérifier que l'utilisateur est bien connecté
-    const { data: { user }, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !user) {
-      return Response.json({ error: 'Utilisateur non trouvé' }, { status: 401, headers: cors });
+    // ✅ Décoder le JWT pour extraire l'user_id sans appeler /auth/v1/user
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return Response.json({ error: 'Token invalide' }, { status: 401, headers: cors });
     }
 
-    const userId = user.id;
+    let payload: any;
+    try {
+      payload = JSON.parse(atob(parts[1]));
+    } catch {
+      return Response.json({ error: 'Token malformé' }, { status: 401, headers: cors });
+    }
 
-    // Client admin pour les suppressions (service_role)
+    // Vérifier l'expiration
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+      return Response.json({ error: 'Session expirée' }, { status: 401, headers: cors });
+    }
+
+    const userId = payload.sub as string;
+    if (!userId) {
+      return Response.json({ error: 'User ID manquant dans le token' }, { status: 401, headers: cors });
+    }
+
+    // Client admin avec service_role (auto-injecté par Supabase)
     const admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // ── Supprimer toutes les données utilisateur ──────────────────────────────
-    // Dans l'ordre pour respecter les FK
+    // Vérifier que l'utilisateur existe bien en DB
+    const { data: { user }, error: userErr } = await admin.auth.admin.getUserById(userId);
+    if (userErr || !user) {
+      return Response.json({ error: 'Utilisateur non trouvé' }, { status: 404, headers: cors });
+    }
 
-    await admin.from('wallet_transactions')
-      .delete()
-      .in('wallet_id',
-        (await admin.from('wallets').select('id').eq('user_id', userId)).data?.map((w: any) => w.id) ?? []
-      );
+    console.log('Suppression du compte:', userId);
 
+    // ── Supprimer les données dans l'ordre ───────────────────────────────────
+
+    // Wallets
+    const { data: wallets } = await admin.from('wallets').select('id').eq('user_id', userId);
+    if (wallets?.length) {
+      await admin.from('wallet_transactions').delete().in('wallet_id', wallets.map((w: any) => w.id));
+    }
     await admin.from('wallets').delete().eq('user_id', userId);
-    await admin.from('order_items')
-      .delete()
-      .in('order_id',
-        (await admin.from('orders').select('id').eq('user_id', userId)).data?.map((o: any) => o.id) ?? []
-      );
+
+    // Commandes
+    const { data: orders } = await admin.from('orders').select('id').eq('user_id', userId);
+    if (orders?.length) {
+      await admin.from('order_items').delete().in('order_id', orders.map((o: any) => o.id));
+    }
     await admin.from('orders').delete().eq('user_id', userId);
+
+    // Autres
     await admin.from('bookings').delete().eq('user_id', userId);
     await admin.from('reviews').delete().eq('user_id', userId);
     await admin.from('favorites').delete().eq('user_id', userId);
     await admin.from('notifications').delete().eq('user_id', userId);
 
-    // Supprimer les boutiques et leurs données
-    const { data: businesses } = await admin
-      .from('businesses')
-      .select('id')
-      .eq('owner_id', userId);
-
-    if (businesses && businesses.length > 0) {
-      const bizIds = businesses.map((b: any) => b.id);
-      await admin.from('business_hours').delete().in('business_id', bizIds);
-      await admin.from('services').delete().in('business_id', bizIds);
-      await admin.from('businesses').delete().in('id', bizIds);
+    // Boutiques
+    const { data: businesses } = await admin.from('businesses').select('id').eq('owner_id', userId);
+    if (businesses?.length) {
+      const ids = businesses.map((b: any) => b.id);
+      await admin.from('business_hours').delete().in('business_id', ids);
+      await admin.from('services').delete().in('business_id', ids);
+      await admin.from('businesses').delete().in('id', ids);
     }
 
-    // Supprimer le profil utilisateur
+    // Profil
     await admin.from('users').delete().eq('id', userId);
 
-    // Supprimer l'avatar du storage
-    await admin.storage.from('avatars').remove([`${userId}.jpg`, `${userId}.png`, `${userId}.jpeg`]);
+    // Avatar Storage
+    await admin.storage.from('avatars').remove(
+      ['jpg', 'jpeg', 'png', 'webp'].map((e) => `${userId}.${e}`)
+    );
 
-    // ✅ Supprimer le compte Supabase Auth (irréversible)
+    // ✅ Supprimer le compte Auth
     const { error: deleteErr } = await admin.auth.admin.deleteUser(userId);
-    if (deleteErr) {
-      console.error('Erreur suppression Auth:', deleteErr.message);
-      // Ne pas bloquer — les données sont déjà supprimées
-    }
+    if (deleteErr) console.error('Erreur Auth delete:', deleteErr.message);
 
+    console.log('Compte supprimé:', userId);
     return Response.json({ success: true }, { headers: cors });
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('Erreur delete-account:', msg);
+    console.error('Erreur:', msg);
     return Response.json({ error: msg }, { status: 500, headers: cors });
   }
 });

@@ -1,37 +1,60 @@
 // components/WarningBanner.tsx
-// Affiché sur l'accueil si l'adresse de l'utilisateur ≠ son pays de résidence
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuthStore } from '@/stores/authStore';
 import { useLocationStore } from '@/stores/locationStore';
 import { COUNTRIES } from '@/lib/countries';
 
+async function getCountryCode(lat: number, lon: number): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=3`;
+    const res  = await fetch(url, {
+      headers: { 'User-Agent': 'BymohApp/1.0', 'Accept-Language': 'en' },
+    });
+    const data = await res.json();
+    return (data?.address?.country_code ?? '').toUpperCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function CountryMismatchWarning() {
-  const { profile } = useAuthStore();
-  const { city } = useLocationStore();
+  const { profile }       = useAuthStore();
+  const locationStore     = useLocationStore();
+  const [mismatch, setMismatch] = useState(false);
+  const lastCheck = useRef<string>('');
 
-  if (!profile?.country_code || !city) return null;
+  // Récupère lat/lon depuis le store (différentes clés possibles selon la version)
+  const lat = (locationStore as any).lat ?? (locationStore as any).latitude  ?? null;
+  const lon = (locationStore as any).lon ?? (locationStore as any).longitude ?? null;
 
-  // Vérifie si la ville de l'adresse correspond au pays de résidence
-  const country = COUNTRIES.find((c) => c.code === profile.country_code);
-  if (!country) return null;
+  useEffect(() => {
+    const residenceCode = (profile as any)?.country_code;
+    if (!residenceCode || !lat || !lon) { setMismatch(false); return; }
 
-  // Heuristique simple : si la ville contient le nom du pays ou une ville connue du pays
-  // En production, utiliser la géolocalisation réelle
-  const knownCities: Record<string, string[]> = {
-    BJ: ['cotonou', 'porto-novo', 'parakou', 'bénin', 'benin'],
-    CI: ['abidjan', 'yamoussoukro', 'bouaké', 'bouake', 'ivoire'],
-    SN: ['dakar', 'thiès', 'thies', 'saint-louis', 'sénégal', 'senegal'],
-    TG: ['lomé', 'lome', 'kara', 'sokodé', 'sokode', 'togo'],
-  };
+    // Évite de re-vérifier si les coordonnées n'ont pas changé
+    const key = `${lat},${lon}`;
+    if (key === lastCheck.current) return;
+    lastCheck.current = key;
 
-  const cityLower   = city.toLowerCase();
-  const citiesForCountry = knownCities[profile.country_code] ?? [];
-  const addressMatchesCountry = citiesForCountry.some((c) => cityLower.includes(c));
+    let cancelled = false;
+    getCountryCode(lat, lon).then((detected) => {
+      if (cancelled) return;
+      if (!detected) {
+        // Si la détection échoue → pas de warning (bénéfice du doute)
+        setMismatch(false);
+        return;
+      }
+      setMismatch(detected !== residenceCode);
+    });
+    return () => { cancelled = true; };
+  }, [lat, lon, profile]);
 
-  if (addressMatchesCountry) return null;
+  if (!mismatch) return null;
+
+  const country = COUNTRIES.find((c) => c.code === (profile as any)?.country_code);
 
   return (
     <TouchableOpacity
@@ -45,11 +68,12 @@ export function CountryMismatchWarning() {
       <View style={{ flex: 1 }}>
         <Text style={styles.title}>Adresse hors de votre pays</Text>
         <Text style={styles.subtitle}>
-          Votre adresse ne se trouve pas au {country.name}. Des frais supplémentaires peuvent s'appliquer pour la livraison.
+          Votre adresse ne correspond pas à votre pays de résidence ({country?.name}).
+          Des frais supplémentaires peuvent s'appliquer.
         </Text>
       </View>
       <View style={styles.moreBtn}>
-        <Text style={styles.moreText}>En savoir plus</Text>
+        <Text style={styles.moreText}>En savoir +</Text>
       </View>
     </TouchableOpacity>
   );

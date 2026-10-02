@@ -5,21 +5,26 @@ import {
   Dimensions, Image, StyleSheet, Text,
   TouchableOpacity, View, ViewStyle,
 } from 'react-native';
-import { isBusinessOpen } from '@/lib/utils';
+import { isBusinessOpen, getDistanceKm, formatDistance } from '@/lib/utils';
 import type { Business } from '@/types';
 
 const { width: W } = Dimensions.get('window');
 
 interface Props {
-  business: Business & { tag?: string };
-  style?: ViewStyle;
+  business:    Business & { tag?: string };
+  style?:      ViewStyle;
   horizontal?: boolean;
+  userLat?:    number | null;
+  userLon?:    number | null;
 }
 
-export function BusinessCard({ business, style, horizontal }: Props) {
+export function BusinessCard({ business, style, horizontal, userLat, userLon }: Props) {
   // ✅ Tag depuis la DB en priorité, fallback calculé si absent
   const tag  = business.tag ?? buildTagFallback(business.name, business.id);
-  const open = isBusinessOpen(business.hours, (business as any).timezone);
+  const open     = isBusinessOpen(business.hours, (business as any).timezone);
+  const distance = (userLat && userLon && (business as any).latitude && (business as any).longitude)
+    ? getDistanceKm(userLat, userLon, (business as any).latitude, (business as any).longitude)
+    : null;
 
   const onPress = () =>
     router.push({ pathname: '/(client)/business/[id]', params: { id: business.id } });
@@ -53,6 +58,12 @@ export function BusinessCard({ business, style, horizontal }: Props) {
           <Text style={styles.hCategory} numberOfLines={1}>
             {business.category_icon} {business.category}
           </Text>
+          {distance !== null && (
+            <View style={styles.distanceBadge}>
+              <Feather name="navigation" size={10} color="#9CA3AF" />
+              <Text style={styles.distanceText}>{formatDistance(distance)}</Text>
+            </View>
+          )}
           {(business.rating ?? 0) > 0 && (
             <View style={styles.ratingRow}>
               <Feather name="star" size={11} color="#F59E0B" />
@@ -139,6 +150,14 @@ export function BusinessCard({ business, style, horizontal }: Props) {
               <Text style={styles.metaText}>{business.review_count} avis</Text>
             </View>
           )}
+          {distance !== null && (
+            <View style={styles.distanceBadge}>
+              <Feather name="navigation" size={11} color="#FF6835" />
+              <Text style={[styles.distanceText, { color: '#FF6835', fontWeight: '600' }]}>
+                {formatDistance(distance)}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -156,76 +175,31 @@ function buildTagFallback(name: string, id: string): string {
 }
 
 const styles = StyleSheet.create({
-  // ── Carte verticale ───────────────────────────────────────────────────────
-  card: {
-    backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
-  },
+  card: { backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
   coverWrap: { position: 'relative' },
   cover: { width: '100%', height: 160, resizeMode: 'cover' },
-  coverPlaceholder: {
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  coverPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
   coverEmoji: { fontSize: 42 },
-
   body: { padding: 14, gap: 8 },
   bodyTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-
-  // Nom + tag
-  nameRow: {
-    flexDirection: 'row', alignItems: 'baseline',
-    gap: 6, flexWrap: 'wrap',
-  },
+  nameRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' },
   name: { fontSize: 16, fontWeight: '700', color: '#111827', flexShrink: 1 },
-  tag: {
-    fontSize: 12,
-    fontWeight: '300',   // light — contraste avec le nom bold
-    color: '#9CA3AF',
-    letterSpacing: 0.3,
-  },
-
+  tag: { fontSize: 12, fontWeight: '300', color: '#9CA3AF', letterSpacing: 0.3 },
   category: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-
-  ratingPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#FFFBEB', paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 100, borderWidth: 1, borderColor: '#FDE68A',
-  },
+  ratingPill: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFFBEB', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, borderWidth: 1, borderColor: '#FDE68A' },
   ratingPillText: { fontSize: 12, fontWeight: '700', color: '#D97706' },
-
   meta: { flexDirection: 'row', gap: 14 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 12, color: '#9CA3AF' },
-
-  // Badges sur la cover
-  openBadge: {
-    position: 'absolute', top: 10, left: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100,
-    paddingHorizontal: 8, paddingVertical: 4,
-  },
+  openBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
   closedBadge: { backgroundColor: 'rgba(0,0,0,0.5)' },
   openDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
   closedDot: { backgroundColor: '#9CA3AF' },
   openText: { fontSize: 11, fontWeight: '700', color: '#15803D' },
   closedText: { color: '#fff' },
-
-  deliveryOverlay: {
-    position: 'absolute', bottom: 10, right: 10,
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(34,197,94,0.85)', borderRadius: 100,
-    paddingHorizontal: 8, paddingVertical: 4,
-  },
+  deliveryOverlay: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(34,197,94,0.85)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
   deliveryOverlayText: { fontSize: 11, fontWeight: '600', color: '#fff' },
-
-  // ── Carte horizontale ─────────────────────────────────────────────────────
-  hCard: {
-    width: 200, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07, shadowRadius: 6, elevation: 3,
-  },
+  hCard: { width: 200, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 },
   hCoverWrap: { position: 'relative' },
   hCover: { width: '100%', height: 110, resizeMode: 'cover' },
   hInfo: { padding: 10, gap: 4 },
@@ -233,10 +207,8 @@ const styles = StyleSheet.create({
   hCategory: { fontSize: 12, color: '#6B7280' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   ratingText: { fontSize: 11, color: '#6B7280' },
-  deliveryBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    alignSelf: 'flex-start', backgroundColor: '#F0FDF4',
-    borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2,
-  },
-  deliveryText: { fontSize: 11, fontWeight: '600', color: '#22C55E' },
+  deliveryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: '#F0FDF4', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
+  deliveryText:   { fontSize: 11, fontWeight: '600', color: '#22C55E' },
+  distanceBadge:  { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'flex-start' },
+  distanceText:   { fontSize: 11, color: '#6B7280', fontWeight: '500' },
 });

@@ -13,11 +13,14 @@ import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
-
+import { queryClient } from '@/lib/queryClient';
 SplashScreen.preventAutoHideAsync();
-const queryClient = new QueryClient();
+// const queryClient = new QueryClient();
 
 const PROTECTED = ['(client)', '(pro)'];
+
+// Routes auth qui ne doivent PAS être redirigées même si l'utilisateur est connecté
+const AUTH_EXCEPTIONS = ['setup-address'];
 
 function AuthGuard() {
   const { isAuthenticated, profile, isLoading } = useAuth();
@@ -29,9 +32,14 @@ function AuthGuard() {
     const inProtected = first ? PROTECTED.includes(first) : false;
     const inAuth = first === '(auth)';
 
+    // Vérifie si on est sur une route auth exclue de la redirection
+    const currentRoute = segments[segments.length - 1] as string | undefined;
+    const isException  = AUTH_EXCEPTIONS.some((ex) => currentRoute?.includes(ex));
+
     if (!isAuthenticated && inProtected) {
       router.replace('/');
-    } else if (isAuthenticated && profile && (first === undefined || inAuth)) {
+    } else if (isAuthenticated && profile && (first === undefined || inAuth) && !isException) {
+      // ✅ Ne redirige PAS si on est sur setup-address ou autre route exceptée
       router.replace('/(client)');
     } else if (isAuthenticated && !profile && !inAuth) {
       router.replace('/(auth)/complete-profile');

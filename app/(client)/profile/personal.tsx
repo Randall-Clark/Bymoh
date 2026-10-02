@@ -1,3 +1,4 @@
+import { uploadImageToSupabase } from '@/lib/uploadImage';
 // app/(client)/profile/personal.tsx
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -230,7 +231,7 @@ function ChangePhoneModal({
 }
 
 const pm = StyleSheet.create({
-  backdrop:    { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop:    { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet:       { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   handle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 4 },
   header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
@@ -298,7 +299,7 @@ export default function PersonalInfoScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'] as any,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -309,18 +310,10 @@ export default function PersonalInfoScreen() {
     try {
       const asset = result.assets[0];
       const ext   = asset.uri.split('.').pop()?.split('?')[0] ?? 'jpg';
-      const path  = `avatars/${profile?.id}.${ext}`;
+      const path = `${profile?.id}.${ext}`;
 
-      const response = await fetch(asset.uri);
-      const blob     = await response.blob();
-
-      const { error: upErr } = await supabase.storage
-        .from('users')
-        .upload(path, blob, { upsert: true, contentType: `image/${ext}` });
-      if (upErr) throw upErr;
-
-      const { data } = supabase.storage.from('users').getPublicUrl(path);
-      const avatarUrl = data.publicUrl;
+      const avatarUrl = await uploadImageToSupabase(asset.uri, 'avatars', path);
+      if (!avatarUrl) throw new Error('Upload echoue');
 
       await supabase.from('users').update({ avatar_url: avatarUrl }).eq('id', profile?.id ?? '');
       setProfile({ ...profile!, avatar_url: avatarUrl });

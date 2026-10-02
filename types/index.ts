@@ -233,3 +233,23 @@ export interface WalletTransaction {
   reference?:  string;
   created_at:  string;
 }
+
+// ── Types livraison ────────────────────────────────────────────────────────
+export type DeliveryMethod =
+  | 'pickup'
+  | 'merchant'
+  | 'delivery'
+  | 'gozem'
+  | 'yango';
+
+// ── Type panier ────────────────────────────────────────────────────────────
+export interface CartItem {
+  id?:           string;
+  service_id?:   string;
+  title:         string;
+  price:         number;
+  quantity:      number;
+  business_id:   string;
+  business_name: string;
+  image_url?:    string;
+}

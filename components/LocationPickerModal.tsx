@@ -523,7 +523,7 @@ export function LocationPickerModal({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, height: SHEET_H, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
   handleZone: { alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB' },
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
 
   // ── Vue adresse ──
   previewMapWrapper: { height: PREVIEW_H, position: 'relative', overflow: 'hidden' },
-  previewMap: { ...StyleSheet.absoluteFillObject },
+  previewMap: { ...StyleSheet.absoluteFill },
   openMapsBtn: {
     position: 'absolute', bottom: 12, right: 12,
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
 
   // ── Carte interactive ──
   mapWrapper: { height: MAP_H, position: 'relative', overflow: 'hidden' },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: { ...StyleSheet.absoluteFill },
   pinWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
   pinBody: { alignItems: 'center', transform: [{ translateY: -22 }] },
   pinBodyUp: { transform: [{ translateY: -32 }] },

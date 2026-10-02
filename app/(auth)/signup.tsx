@@ -92,9 +92,12 @@ export default function SignupScreen() {
         `${value}:${authUser.id}`
       );
 
-      // 3. Définir le NIP comme mot de passe Supabase Auth (requis pour signInWithPassword)
-      const { error: pinErr } = await supabase.auth.updateUser({ password: value });
+      // 3. Définir le NIP via Edge Function (bypass "same password" restriction)
+      const { data: pinData, error: pinErr } = await supabase.functions.invoke('set-pin', {
+        body: { pin: value },
+      });
       if (pinErr) throw new Error('Impossible de définir le NIP : ' + pinErr.message);
+      if (pinData?.error) throw new Error(pinData.error);
 
       // 4. Insérer l'utilisateur dans la table users
       const { data: newUser, error: insertErr } = await supabase
@@ -118,8 +121,10 @@ export default function SignupScreen() {
       // 5. Mettre à jour le store
       setProfile(newUser as any);
 
-      // 6. Naviguer vers l'étape de définition d'adresse
-      router.replace('/(auth)/setup-address' as any);
+      // 6. Mettre à jour le store et aller à l'accueil
+      // Le setup d'adresse s'affichera automatiquement sur l'accueil si aucune adresse définie
+      setProfile(newUser as any);
+      router.replace('/(client)' as any);
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur lors de la création du compte';
