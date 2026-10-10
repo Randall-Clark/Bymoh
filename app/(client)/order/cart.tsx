@@ -1,22 +1,25 @@
 // app/(client)/order/cart.tsx
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, FlatList, Platform, StyleSheet,
+  Alert, Image, LayoutAnimation, Modal, Platform, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CartItem } from '@/components/order/CartItem';
 import { useCart } from '@/hooks/useCart';
-import { useLocalSearchParams } from 'expo-router';
 import { formatPrice } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 
-const DELIVERY_FEE = 500;
 
 export default function CartScreen() {
-  const insets       = useSafeAreaInsets();
-  const topPad       = Platform.OS === 'web' ? 67 : insets.top + 8;
+  const insets    = useSafeAreaInsets();
+  const topPad    = Platform.OS === 'web' ? 67 : insets.top + 8;
+  // Tab bar height fixe (cart est dans un stack, pas directement dans les tabs)
+  // 60 = hauteur standard de la tab bar, insets.bottom = zone safe area du bas
+  const TAB_BAR   = 60;
+  const footerBot = TAB_BAR + insets.bottom + 8;
 
   const { businessId } = useLocalSearchParams<{ businessId?: string }>();
 
@@ -25,25 +28,101 @@ export default function CartScreen() {
     addToCart, removeFromCart, updateQuantity, clearCart,
   } = useCart();
 
+  const cartBusinessId = (items[0] as any)?.business_id ?? businessId ?? null;
+
+  // ── État modal de suppression ────────────────────────────────────────────
+  const [pendingDelete, setPendingDelete] = useState<any | null>(null);
+
+  // ── Vérifie si la boutique est encore active ─────────────────────────────
+  const { data: bizActive } = useQuery<boolean>({
+    queryKey: ['cart-biz-active', cartBusinessId],
+    queryFn: async () => {
+      if (!cartBusinessId) return true;
+      const { data, error } = await supabase
+        .from('businesses')
+        .select('is_active')
+        .eq('id', cartBusinessId)
+        .maybeSingle();
+      if (error) throw error;
+      return data === null ? false : (data.is_active ?? false);
+    },
+    enabled: !!cartBusinessId,
+    staleTime: 30_000,
+  });
+
+  // ── Auto-clear si boutique supprimée ────────────────────────────────────
+  const clearedRef = useRef(false);
+  useEffect(() => {
+    if (bizActive === false && items.length > 0 && !clearedRef.current) {
+      clearedRef.current = true;
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      clearCart();
+      Alert.alert(
+        'Articles retirés',
+        "La boutique n'est plus disponible. Les articles ont été retirés.",
+        [{ text: 'OK' }],
+      );
+    }
+  }, [bizActive, items.length]);
+
+  const handleBack = useCallback(() => router.back(), []);
+
+  const handleAddMore = useCallback(() => {
+    const id = cartBusinessId;
+    if (id) router.push({ pathname: '/(client)/business/[id]' as any, params: { id } });
+  }, [cartBusinessId]);
+
+  const handleAdd = useCallback((item: any) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    addToCart(
+      {
+        id:             item.service_id ?? item.id,
+        title:          item.title,
+        price:          item.price,
+        image_url:      item.image_url,
+        allows_booking: false,
+        is_available:   true,
+        business_id:    item.business_id,
+        show_stock:     false,
+        currency:       'XOF',
+      } as any,
+      item.business_id ?? '',
+      item.business_name ?? '',
+    );
+  }, [addToCart]);
+
+  // Décrémente ; à 0 → ouvre le modal de confirmation
+  const handleDecrement = useCallback((item: any) => {
+    if (item.quantity <= 1) {
+      setPendingDelete(item);
+    } else {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      updateQuantity((item.service_id ?? item.id) as string, item.quantity - 1);
+    }
+  }, [updateQuantity]);
+
+  const confirmDelete = useCallback(() => {
+    if (!pendingDelete) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    removeFromCart((pendingDelete.service_id ?? pendingDelete.id) as string);
+    setPendingDelete(null);
+  }, [pendingDelete, removeFromCart]);
+
+  // ── Panier vide ──────────────────────────────────────────────────────────
   if (items.length === 0) {
     return (
-      <View style={[s.emptyRoot, { paddingTop: topPad }]}>
-        <TouchableOpacity
-          style={s.backBtn}
-          onPress={() => {
-            if (businessId) {
-              router.push({ pathname: '/(client)/business/[id]' as any, params: { id: businessId } });
-            } else {
-              router.back();
-            }
-          }}
-        >
-          <Feather name="arrow-left" size={22} color="#111827" />
-        </TouchableOpacity>
+      <View style={[s.root, { paddingTop: topPad }]}>
+        <View style={s.headerEmpty}>
+          <TouchableOpacity style={s.closeBtn} onPress={handleBack}>
+            <Feather name="x" size={22} color="#111827" />
+          </TouchableOpacity>
+        </View>
         <View style={s.emptyContent}>
           <Feather name="shopping-cart" size={56} color="#D1D5DB" />
           <Text style={s.emptyTitle}>Panier vide</Text>
-          <Text style={s.emptyText}>Ajoutez des articles depuis un commerce pour commencer.</Text>
+          <Text style={s.emptyText}>
+            Ajoutez des articles depuis un commerce pour commencer.
+          </Text>
           <TouchableOpacity style={s.exploreCta} onPress={() => router.push('/(client)')}>
             <Text style={s.exploreCtaText}>Explorer les commerces</Text>
           </TouchableOpacity>
@@ -52,116 +131,227 @@ export default function CartScreen() {
     );
   }
 
-  const handleClear = () => {
-    Alert.alert('Vider le panier', 'Supprimer tous les articles ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Vider', style: 'destructive', onPress: clearCart },
-    ]);
-  };
-
+  // ── Panier non vide ──────────────────────────────────────────────────────
   return (
     <View style={[s.root, { paddingTop: topPad }]}>
 
-      {/* Header */}
+      {/* ── Header ── */}
       <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => {
-            if (businessId) {
-              router.push({ pathname: '/(client)/business/[id]' as any, params: { id: businessId } });
-            } else {
-              router.back();
-            }
-          }}
-          style={s.backBtn}
-        >
-          <Feather name="arrow-left" size={22} color="#111827" />
+        <TouchableOpacity style={s.closeBtn} onPress={handleBack}>
+          <Feather name="x" size={22} color="#111827" />
         </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={s.title}>Mon panier</Text>
-          {businessName && <Text style={s.bizName}>{businessName}</Text>}
-        </View>
-        <TouchableOpacity onPress={handleClear}>
-          <Text style={s.clearText}>Vider</Text>
+
+        <Text style={s.headerTitle} numberOfLines={1}>
+          {businessName ?? 'Panier'}
+        </Text>
+
+        <TouchableOpacity style={s.addBtn} onPress={handleAddMore} activeOpacity={0.8}>
+          <Feather name="plus" size={15} color="#111827" />
+          <Text style={s.addBtnText}>Article</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Liste */}
-      <FlatList
-        data={items}
-        keyExtractor={(i) => i.service_id ?? i.id ?? Math.random().toString()}
-        contentContainerStyle={s.list}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        renderItem={({ item }) => (
-          <CartItem
-            item={item}
-            onAdd={() => {
-              const catalogItem = {
-                id:           item.service_id ?? item.id,
-                title:        item.title,
-                price:        item.price,
-                image_url:    (item as any).image_url,
-                allows_booking: false,
-                is_available: true,
-                business_id:  item.business_id,
-                show_stock:   false,
-                currency:     'XOF',
-              };
-              addToCart(catalogItem as any, item.business_id ?? '', item.business_name ?? '');
-            }}
-            onRemove={() => updateQuantity((item.service_id ?? item.id) as string, item.quantity - 1)}
-            onDelete={() => removeFromCart((item.service_id ?? item.id) as string)}
-          />
-        )}
-      />
+      <ScrollView
+        contentContainerStyle={[s.scroll, { paddingBottom: footerBot + 80 }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Liste d'articles ── */}
+        <View style={s.itemsBlock}>
+          {items.map((item: any, index) => (
+            <View key={item.service_id ?? item.id ?? String(index)}>
+              {index > 0 && <View style={s.divider} />}
+              <View style={s.itemRow}>
 
-      {/* Résumé — au-dessus de la tab bar grâce à (Platform.OS === 'ios' ? 83 : 60) */}
-      <View style={[s.summary, { paddingBottom: (Platform.OS === 'ios' ? 83 : 60) + 8 }]}>
-        <View style={s.summaryRow}>
-          <Text style={s.summaryLabel}>Sous-total ({totalItems} article{totalItems > 1 ? 's' : ''})</Text>
-          <Text style={s.summaryValue}>{formatPrice(totalAmount)}</Text>
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={s.itemImg} resizeMode="cover" />
+                ) : (
+                  <View style={[s.itemImg, s.itemImgPlaceholder]}>
+                    <Feather name="image" size={20} color="#D1D5DB" />
+                  </View>
+                )}
+
+                <View style={s.itemInfo}>
+                  <Text style={s.itemTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={s.itemPrice}>{formatPrice(item.price)}</Text>
+                </View>
+
+                {/* Stepper : − N + */}
+                <View style={s.stepper}>
+                  <TouchableOpacity
+                    style={s.stepperBtn}
+                    onPress={() => handleDecrement(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                  >
+                    <Feather name="minus" size={15} color="#6B7280" />
+                  </TouchableOpacity>
+
+                  <Text style={s.stepperCount}>{item.quantity}</Text>
+
+                  <TouchableOpacity
+                    style={s.stepperBtn}
+                    onPress={() => handleAdd(item)}
+                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                  >
+                    <Feather name="plus" size={15} color="#111827" />
+                  </TouchableOpacity>
+                </View>
+
+              </View>
+            </View>
+          ))}
+
+          {/* ── Ajouter des articles ── */}
+          <View style={s.divider} />
+          <TouchableOpacity style={s.addMoreRow} onPress={handleAddMore} activeOpacity={0.7}>
+            <View style={s.addMoreIcon}>
+              <Feather name="plus" size={16} color="#FF6835" />
+            </View>
+            <Text style={s.addMoreText}>Ajouter des articles</Text>
+          </TouchableOpacity>
         </View>
-        <View style={s.summaryRow}>
-          <Text style={s.summaryLabel}>Frais de livraison</Text>
-          <Text style={s.summaryValue}>{formatPrice(DELIVERY_FEE)}</Text>
+
+        {/* ── Résumé commande ── */}
+        <View style={s.summary}>
+          <View style={s.summaryRow}>
+            <Text style={s.summaryLabel}>
+              Sous-total ({totalItems} article{totalItems > 1 ? 's' : ''})
+            </Text>
+            <Text style={s.summaryValue}>{formatPrice(totalAmount)}</Text>
+          </View>
         </View>
-        <View style={[s.summaryRow, s.totalRow]}>
-          <Text style={s.totalLabel}>Total</Text>
-          <Text style={s.totalValue}>{formatPrice(totalAmount + DELIVERY_FEE)}</Text>
-        </View>
+      </ScrollView>
+
+      {/* ── Footer sticky ── */}
+      <View style={[s.footer, { paddingBottom: footerBot }]}>
         <TouchableOpacity
           style={s.checkoutBtn}
-          onPress={() => router.push({ pathname: '/(client)/order/delivery' as any, params: { businessId: businessId ?? '' } })}
           activeOpacity={0.88}
+          onPress={() =>
+            router.push({
+              pathname: '/(client)/order/delivery' as any,
+              params: { businessId: businessId ?? cartBusinessId ?? '' },
+            })
+          }
         >
-          <Text style={s.checkoutText}>Choisir la livraison</Text>
-          <Feather name="arrow-right" size={18} color="#fff" />
+          <Text style={s.checkoutText}>Passer la commande</Text>
         </TouchableOpacity>
       </View>
+
+      {/* ── Modal confirmation suppression ── */}
+      <Modal
+        visible={!!pendingDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingDelete(null)}
+      >
+        <View style={s.overlay}>
+          <View style={s.modalCard}>
+            {/* Icône */}
+            <View style={s.modalIcon}>
+              <Feather name="trash-2" size={24} color="#FF6835" />
+            </View>
+
+            <Text style={s.modalTitle}>Retirer l'article ?</Text>
+            <Text style={s.modalBody} numberOfLines={2}>
+              {pendingDelete?.title ?? 'Cet article'} sera retiré de votre panier.
+            </Text>
+
+            <View style={s.modalActions}>
+              <TouchableOpacity
+                style={s.modalCancelBtn}
+                onPress={() => setPendingDelete(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={s.modalCancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.modalDeleteBtn}
+                onPress={confirmDelete}
+                activeOpacity={0.8}
+              >
+                <Text style={s.modalDeleteText}>Retirer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: '#F8F7F4' },
-  emptyRoot:     { flex: 1, backgroundColor: '#F8F7F4', paddingHorizontal: 24 },
-  emptyContent:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
-  emptyTitle:    { fontSize: 22, fontWeight: '700', color: '#111827' },
-  emptyText:     { fontSize: 14, color: '#9CA3AF', textAlign: 'center', lineHeight: 21 },
-  exploreCta:    { backgroundColor: '#FF6835', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 100 },
-  exploreCtaText:{ fontSize: 15, fontWeight: '700', color: '#fff' },
-  header:        { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', paddingHorizontal: 20, paddingBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 4 },
-  backBtn:       { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title:         { fontSize: 20, fontWeight: '800', color: '#111827' },
-  bizName:       { fontSize: 13, color: '#9CA3AF', marginTop: 1 },
-  clearText:     { fontSize: 14, fontWeight: '600', color: '#EF4444' },
-  list:          { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
-  summary:       { backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 16, gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10 },
-  summaryRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  summaryLabel:  { fontSize: 14, color: '#6B7280' },
-  summaryValue:  { fontSize: 14, fontWeight: '600', color: '#374151' },
-  totalRow:      { paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB', marginTop: 4 },
-  totalLabel:    { fontSize: 16, fontWeight: '700', color: '#111827' },
-  totalValue:    { fontSize: 18, fontWeight: '800', color: '#FF6835' },
-  checkoutBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FF6835', padding: 16, borderRadius: 14, marginTop: 4 },
-  checkoutText:  { fontSize: 16, fontWeight: '700', color: '#fff' },
+  root:        { flex: 1, backgroundColor: '#fff' },
+
+  // ── Header ──
+  header:      {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 14,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6',
+  },
+  headerEmpty: { paddingHorizontal: 16, paddingBottom: 8 },
+  closeBtn:    { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: '800', color: '#111827' },
+  addBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+  addBtnText:  { fontSize: 13, fontWeight: '700', color: '#111827' },
+
+  // ── Empty ──
+  emptyContent:   { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 24, paddingBottom: 80 },
+  emptyTitle:     { fontSize: 22, fontWeight: '700', color: '#111827' },
+  emptyText:      { fontSize: 14, color: '#9CA3AF', textAlign: 'center', lineHeight: 21 },
+  exploreCta:     { backgroundColor: '#FF6835', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 100 },
+  exploreCtaText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // ── Scroll ──
+  scroll: { paddingTop: 8 },
+
+  // ── Items block ──
+  itemsBlock: { marginHorizontal: 16, marginTop: 8 },
+  divider:    { height: StyleSheet.hairlineWidth, backgroundColor: '#F3F4F6', marginVertical: 4 },
+
+  // ── Item row ──
+  itemRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
+  itemImg:  { width: 68, height: 68, borderRadius: 12 },
+  itemImgPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  itemInfo: { flex: 1, gap: 6 },
+  itemTitle: { fontSize: 14, fontWeight: '700', color: '#111827', lineHeight: 20 },
+  itemPrice: { fontSize: 14, fontWeight: '700', color: '#111827' },
+
+  // ── Stepper ──
+  stepper:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 6, gap: 8 },
+  stepperBtn:   { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  stepperCount: { fontSize: 15, fontWeight: '700', color: '#111827', minWidth: 18, textAlign: 'center' },
+
+  // ── Add more ──
+  addMoreRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, gap: 12 },
+  addMoreIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFF0EA', alignItems: 'center', justifyContent: 'center' },
+  addMoreText: { fontSize: 15, fontWeight: '600', color: '#FF6835' },
+
+  // ── Summary ──
+  summary:      { marginHorizontal: 16, marginTop: 16, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F3F4F6', gap: 10 },
+  summaryRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 14, color: '#6B7280' },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  deliveryNote: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' },
+
+  // ── Footer sticky ──
+  footer:           { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F3F4F6' },
+  checkoutBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 20 },
+  checkoutText:     { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  checkoutPill:     { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 100, paddingHorizontal: 12, paddingVertical: 4 },
+  checkoutPillText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+
+  // ── Modal ──
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 32, paddingHorizontal: 16 },
+  modalCard:       { width: '100%', backgroundColor: '#fff', borderRadius: 24, padding: 24, alignItems: 'center', gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 24, elevation: 12 },
+  modalIcon:       { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFF0EA', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  modalTitle:      { fontSize: 18, fontWeight: '800', color: '#111827', textAlign: 'center' },
+  modalBody:       { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20, marginBottom: 8 },
+  modalActions:    { flexDirection: 'row', gap: 12, width: '100%', marginTop: 4 },
+  modalCancelBtn:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, backgroundColor: '#F3F4F6' },
+  modalCancelText: { fontSize: 15, fontWeight: '700', color: '#374151' },
+  modalDeleteBtn:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, backgroundColor: '#FF6835' },
+  modalDeleteText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

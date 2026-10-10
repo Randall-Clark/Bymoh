@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  Animated, Dimensions, Modal, Platform, ScrollView,
-  StyleSheet, Text, TouchableOpacity, View, Switch,
+  ScrollView, StyleSheet, Text,
+  TouchableOpacity, View, Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -11,58 +11,34 @@ import { TimePicker } from '@/components/TimePicker';
 import { Button } from '@/components/ui/Button';
 import { DAY_LABELS } from '@/types';
 import { registerDraft } from './step1';
+import { useAuthStore } from '@/stores/authStore';
 
-// ── Constantes ────────────────────────────────────────────────────────────────
-const ITEM_H      = 50;   // hauteur d'un item dans la roue
-const VISIBLE     = 5;    // nombre d'items visibles (impair — sélection au centre)
-const WHEEL_H     = ITEM_H * VISIBLE;
-const HOURS       = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-const MINUTES     = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+const ORANGE = '#FF6835';
+const DARK   = '#1A1025';
 
 interface DayHours { is_open: boolean; open_time: string; close_time: string; }
 
 const defaultSchedule = (): DayHours[] =>
   Array.from({ length: 7 }, (_, i) => ({
-    is_open:    i >= 0 && i <= 4, // Lun–Ven ouverts par défaut
+    is_open:    i >= 0 && i <= 4,
     open_time:  '08:00',
     close_time: '18:00',
   }));
 
-// ── Composant roue de défilement ──────────────────────────────────────────────
-
-
-const wheelStyles = StyleSheet.create({
-  wrap: {
-    flex: 1, position: 'relative',
-    overflow: 'hidden',
-  },
-  selector: {
-    position: 'absolute',
-    top: ITEM_H * Math.floor(VISIBLE / 2),
-    left: 0, right: 0, height: ITEM_H,
-    backgroundColor: 'rgba(255,104,53,0.08)',
-    borderTopWidth: 1.5, borderBottomWidth: 1.5,
-    borderColor: '#FF6835',
-    borderRadius: 8, zIndex: 10,
-  },
-  item: {
-    height: ITEM_H,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  itemText: {
-    fontSize: 18, fontWeight: '500', color: '#C4C9D4',
-  },
-  itemTextSelected: {
-    fontSize: 24, fontWeight: '800', color: '#111827',
-  },
-});
-
-// ── Step 3 principal ──────────────────────────────────────────────────────────
 export default function RegisterStep3() {
-  const insets = useSafeAreaInsets();
+  const insets      = useSafeAreaInsets();
+  const { profile } = useAuthStore();
   const [schedule, setSchedule] = useState<DayHours[]>(defaultSchedule());
 
-  // Gestion du modal sélecteur
+  const handleCancel = () => {
+    router.dismissAll();
+    if ((profile as any)?.role === 'pro') {
+      router.replace('/(pro)/dashboard' as any);
+    } else {
+      router.replace('/(client)/' as any);
+    }
+  };
+
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerTarget, setPickerTarget]   = useState<{ day: number; field: 'open_time' | 'close_time' } | null>(null);
 
@@ -85,101 +61,121 @@ export default function RegisterStep3() {
     router.push('/(pro)/register/step4' as any);
   };
 
-  const pickerValue = pickerTarget
-    ? schedule[pickerTarget.day][pickerTarget.field] as string
-    : '08:00';
-
+  const pickerValue = pickerTarget ? schedule[pickerTarget.day][pickerTarget.field] as string : '08:00';
   const pickerTitle = pickerTarget
     ? pickerTarget.field === 'open_time' ? "Heure d'ouverture" : "Heure de fermeture"
     : '';
 
-  return (
-    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
+  const openCount = schedule.filter((d) => d.is_open).length;
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Feather name="arrow-left" size={22} color="#111827" />
+  return (
+    <View style={s.root}>
+
+      {/* ── Navbar sombre ── */}
+      <View style={[s.navbar, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Feather name="arrow-left" size={20} color="#fff" />
+        </TouchableOpacity>
+        <Text style={s.navTitle}>Créer mon commerce</Text>
+        <TouchableOpacity onPress={handleCancel} style={s.cancelBtn}>
+          <Text style={s.cancelTxt}>Annuler</Text>
         </TouchableOpacity>
       </View>
 
-      {/* StepIndicator */}
-      <View style={styles.stepWrap}>
+      {/* ── Indicateur d'étape ── */}
+      <View style={s.stepWrap}>
         <StepIndicator current={3} total={5} title="Horaires d'ouverture" />
       </View>
 
-      {/* Liste des jours */}
       <ScrollView
-        style={styles.flex}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
+        style={s.flex}
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.hint}>
-          Ces horaires seront utilisés pour les filtres de recherche et l'affichage "Ouvert maintenant".
-        </Text>
+        {/* Bannière info */}
+        {/* <View style={s.infoBanner}>
+          <Feather name="info" size={14} color="#3B82F6" />
+          <Text style={s.infoBannerText}>
+            Ces horaires servent pour le filtre "Ouvert maintenant" et la recherche.
+          </Text>
+        </View> */}
 
-        {DAY_LABELS.map((label, i) => (
-          <View key={i} style={styles.dayCard}>
-            <View style={styles.dayTop}>
-              <View style={styles.dayLeft}>
-                <Text style={styles.dayName}>{label}</Text>
-                {schedule[i].is_open && (
-                  <Text style={styles.daySummary}>
-                    {schedule[i].open_time} – {schedule[i].close_time}
-                  </Text>
-                )}
-              </View>
-              <Switch
-                value={schedule[i].is_open}
-                onValueChange={(v) => update(i, 'is_open', v)}
-                trackColor={{ false: '#E5E7EB', true: '#FF6835' }}
-                thumbColor="#fff"
-              />
-            </View>
+        {/* Résumé ouvertures */}
+        <View style={s.summaryRow}>
+          <View style={s.summaryDot} />
+          <Text style={s.summaryText}>
+            <Text style={s.summaryCount}>{openCount}</Text>
+            {' '}jour{openCount > 1 ? 's' : ''} ouvert{openCount > 1 ? 's' : ''} configuré{openCount > 1 ? 's' : ''}
+          </Text>
+        </View>
 
-            {schedule[i].is_open && (
-              <View style={styles.timeRow}>
-                {/* Bouton Ouverture */}
-                <TouchableOpacity
-                  style={styles.timeBtn}
-                  onPress={() => openPicker(i, 'open_time')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.timeBtnLabel}>Ouverture</Text>
-                  <View style={styles.timeBtnValue}>
-                    <Feather name="clock" size={13} color="#FF6835" />
-                    <Text style={styles.timeBtnText}>{schedule[i].open_time}</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.timeSep}>
-                  <Feather name="arrow-right" size={14} color="#9CA3AF" />
+        {/* Jours */}
+        {DAY_LABELS.map((label, i) => {
+          const day = schedule[i];
+          return (
+            <View key={i} style={[s.dayCard, !day.is_open && s.dayCardClosed]}>
+              {/* Ligne principale */}
+              <View style={s.dayTop}>
+                <View style={[s.dayIndicator, day.is_open && s.dayIndicatorOpen]} />
+                <View style={s.dayLeft}>
+                  <Text style={[s.dayName, !day.is_open && s.dayNameClosed]}>{label}</Text>
+                  {day.is_open && (
+                    <Text style={s.daySummary}>{day.open_time} – {day.close_time}</Text>
+                  )}
+                  {!day.is_open && (
+                    <Text style={s.dayClosedLabel}>Fermé</Text>
+                  )}
                 </View>
-
-                {/* Bouton Fermeture */}
-                <TouchableOpacity
-                  style={styles.timeBtn}
-                  onPress={() => openPicker(i, 'close_time')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.timeBtnLabel}>Fermeture</Text>
-                  <View style={styles.timeBtnValue}>
-                    <Feather name="clock" size={13} color="#1E3A5F" />
-                    <Text style={[styles.timeBtnText, { color: '#1E3A5F' }]}>{schedule[i].close_time}</Text>
-                  </View>
-                </TouchableOpacity>
+                <Switch
+                  value={day.is_open}
+                  onValueChange={(v) => update(i, 'is_open', v)}
+                  trackColor={{ false: '#E5E7EB', true: ORANGE }}
+                  thumbColor="#fff"
+                />
               </View>
-            )}
-          </View>
-        ))}
+
+              {/* Horaires si ouvert */}
+              {day.is_open && (
+                <View style={s.timeRow}>
+                  <TouchableOpacity
+                    style={s.timeBtn}
+                    onPress={() => openPicker(i, 'open_time')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.timeBtnLabel}>Ouverture</Text>
+                    <View style={s.timeBtnValue}>
+                      <Feather name="sunrise" size={13} color={ORANGE} />
+                      <Text style={[s.timeBtnText, { color: ORANGE }]}>{day.open_time}</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={s.timeSep}>
+                    <Feather name="arrow-right" size={14} color="#D1D5DB" />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[s.timeBtn, s.timeBtnClose]}
+                    onPress={() => openPicker(i, 'close_time')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={s.timeBtnLabel}>Fermeture</Text>
+                    <View style={s.timeBtnValue}>
+                      <Feather name="sunset" size={13} color="#1E3A5F" />
+                      <Text style={[s.timeBtnText, { color: '#1E3A5F' }]}>{day.close_time}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          );
+        })}
       </ScrollView>
 
-      {/* Footer */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+      {/* ── Footer ── */}
+      <View style={[s.footer, { paddingBottom: insets.bottom + 16 }]}>
         <Button title="Suivant →" onPress={onNext} fullWidth size="lg" />
       </View>
 
-      {/* Modal sélecteur d'heure */}
       <TimePicker
         visible={pickerVisible}
         title={pickerTitle}
@@ -191,41 +187,55 @@ export default function RegisterStep3() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F8F7F4' },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#F7F6F3' },
   flex: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 4 },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stepWrap: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#F8F7F4' },
-  content: { paddingHorizontal: 20, paddingTop: 8, gap: 12 },
 
-  hint: { fontSize: 13, color: '#9CA3AF', lineHeight: 18, marginBottom: 4 },
+  navbar:    { backgroundColor: DARK, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 18 },
+  backBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  navTitle:  { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+  cancelBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  cancelTxt: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
+
+  stepWrap: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EFEFEF' },
+
+  content: { paddingHorizontal: 16, paddingTop: 16, gap: 10 },
+
+  infoBanner:     { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#EFF6FF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#BFDBFE' },
+  infoBannerText: { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 17 },
+
+  summaryRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
+  summaryDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E' },
+  summaryText: { fontSize: 13, color: '#6B7280' },
+  summaryCount: { fontWeight: '800', color: '#111827' },
 
   dayCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+    backgroundColor: '#fff', borderRadius: 18, padding: 16, gap: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
-  dayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dayLeft: { flex: 1, gap: 2 },
-  dayName: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  daySummary: { fontSize: 12, color: '#9CA3AF' },
+  dayCardClosed: { opacity: 0.65 },
+  dayTop:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dayIndicator:     { width: 4, height: 40, borderRadius: 2, backgroundColor: '#E5E7EB' },
+  dayIndicatorOpen: { backgroundColor: ORANGE },
+  dayLeft:  { flex: 1 },
+  dayName:       { fontSize: 15, fontWeight: '700', color: '#111827' },
+  dayNameClosed: { color: '#9CA3AF' },
+  daySummary:    { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  dayClosedLabel: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic', marginTop: 2 },
 
-  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  timeSep: { alignItems: 'center', paddingTop: 14 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14 },
+  timeSep: { alignItems: 'center' },
 
   timeBtn: {
-    flex: 1, gap: 4,
-    backgroundColor: '#F8F7F4', borderRadius: 12,
-    padding: 12, borderWidth: 1.5, borderColor: '#E5E7EB',
+    flex: 1, gap: 3, backgroundColor: '#FFF4EF',
+    borderRadius: 12, padding: 12,
+    borderWidth: 1.5, borderColor: '#FDDCCA',
   },
+  timeBtnClose: { backgroundColor: '#EEF2FF', borderColor: '#C7D2FE' },
   timeBtnLabel: { fontSize: 10, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.4 },
   timeBtnValue: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  timeBtnText: { fontSize: 18, fontWeight: '800', color: '#FF6835' },
+  timeBtnText:  { fontSize: 18, fontWeight: '800' },
 
-  footer: {
-    backgroundColor: '#F8F7F4',
-    paddingHorizontal: 20, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
-  },
+  footer: { backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#EFEFEF' },
 });

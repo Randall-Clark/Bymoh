@@ -15,16 +15,17 @@ export interface SearchFilters {
 }
 
 export interface SearchResult {
-  type:      'boutique' | 'prestation' | 'article' | 'lieu';
-  id:        string;
-  title:     string;
-  subtitle?: string;
-  meta?:     string;
-  emoji?:    string;
-  tag?:      string;
-  rating?:   number;
-  isOpen?:   boolean;
-  raw:       Record<string, any>;
+  type:        'boutique' | 'prestation' | 'article' | 'lieu';
+  id:          string;
+  title:       string;
+  subtitle?:   string;
+  meta?:       string;
+  emoji?:      string;
+  tag?:        string;
+  rating?:     number;
+  isOpen?:     boolean;
+  distanceKm?: number;
+  raw:         Record<string, any>;
 }
 
 export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
@@ -36,6 +37,16 @@ export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
   localisation: '',
   categoryId:   undefined,
 };
+
+// ── Distance haversine (km) ───────────────────────────────────────────────────
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R  = 6371;
+  const dL = ((lat2 - lat1) * Math.PI) / 180;
+  const dG = ((lon2 - lon1) * Math.PI) / 180;
+  const a  = Math.sin(dL / 2) ** 2
+    + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dG / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // ── Multi-mots : "pc gaming" → name ILIKE '%pc%' OR name ILIKE '%gaming%' ────
 function buildOrConditions(query: string, columns: string[]): string {
@@ -52,9 +63,11 @@ function buildOrConditions(query: string, columns: string[]): string {
 async function performSearch(
   query: string,
   filters: SearchFilters,
+  userLat: number | null,
+  userLon: number | null,
 ): Promise<SearchResult[]> {
-  const q             = query.trim();
-  const isTag         = q.startsWith('#');
+  const q              = query.trim();
+  const isTag          = q.startsWith('#');
   const isCategoryOnly = !q && !!filters.categoryId;
   const results: SearchResult[] = [];
 
@@ -62,18 +75,14 @@ async function performSearch(
   if (filters.type === 'all' || filters.type === 'boutique' || filters.type === 'lieu') {
     let dbq = supabase
       .from('businesses')
-      .select('id, name, tag, category, category_icon, city, address, rating, is_open, is_active, hours:business_hours(*)')
+      .select('*, hours:business_hours(*)')
       .eq('is_active', true);
 
-    // Filtre localisation
     if (filters.localisation) dbq = dbq.ilike('city', `%${filters.localisation}%`);
-
-    // Filtre catégorie (clic sur tuile catégorie)
-    if (filters.categoryId) dbq = dbq.eq('category', filters.categoryId);
+    if (filters.categoryId)   dbq = dbq.eq('category', filters.categoryId);
 
     if (!isCategoryOnly) {
       if (isTag) {
-        // ✅ Recherche SQL directe sur la colonne tag stockée en DB
         dbq = dbq.ilike('tag', `%${q}%`);
       } else if (filters.type === 'lieu') {
         dbq = dbq.or(buildOrConditions(q, ['city', 'address']));
@@ -90,21 +99,25 @@ async function performSearch(
 
     (bizData ?? []).forEach((b: any) => {
       const open = isBusinessOpen(b.hours);
-
-      // Filtre "Ouvert maintenant"
       if (filters.openNow && !open) return;
 
+      const distanceKm =
+        userLat != null && userLon != null && b.lat != null && b.lon != null
+          ? haversineKm(userLat, userLon, b.lat, b.lon)
+          : undefined;
+
       results.push({
-        type:     filters.type === 'lieu' ? 'lieu' : 'boutique',
-        id:       b.id,
-        title:    b.name,
-        subtitle: b.category,
-        meta:     b.city,
-        emoji:    b.category_icon,
-        tag:      b.tag ?? undefined,   // ✅ tag depuis la DB directement
-        rating:   b.rating,
-        isOpen:   open,
-        raw:      b,
+        type:       filters.type === 'lieu' ? 'lieu' : 'boutique',
+        id:         b.id,
+        title:      b.name,
+        subtitle:   b.category,
+        meta:       b.city,
+        emoji:      b.category_icon,
+        tag:        b.tag ?? undefined,
+        rating:     b.rating,
+        isOpen:     open,
+        distanceKm,
+        raw:        b,
       });
     });
   }
@@ -113,7 +126,7 @@ async function performSearch(
   if ((filters.type === 'all' || filters.type === 'prestation') && (q || isCategoryOnly)) {
     let dbq = supabase
       .from('services')
-      .select('id, title, description, price, currency, business_id, businesses(name, city, category_icon, category, is_active)')
+      .select('*, businesses(*)')
       .eq('is_available', true);
 
     if (filters.categoryId) {
@@ -130,23 +143,30 @@ async function performSearch(
     (svcData ?? []).forEach((s: any) => {
       const biz = s.businesses;
       if (!biz?.is_active) return;
+
+      const distanceKm =
+        userLat != null && userLon != null && biz.lat != null && biz.lon != null
+          ? haversineKm(userLat, userLon, biz.lat, biz.lon)
+          : undefined;
+
       results.push({
-        type:     'prestation',
-        id:       s.id,
-        title:    s.title,
-        subtitle: biz?.name,
-        meta:     s.price ? `${s.price.toLocaleString('fr-FR')} ${s.currency ?? 'FCFA'}` : undefined,
-        emoji:    biz?.category_icon ?? '🔧',
-        raw:      s,
+        type:       'prestation',
+        id:         s.id,
+        title:      s.title,
+        subtitle:   biz?.name,
+        meta:       s.price ? `${s.price.toLocaleString('fr-FR')} ${s.currency ?? 'FCFA'}` : undefined,
+        emoji:      biz?.category_icon ?? '🔧',
+        distanceKm,
+        raw:        s,
       });
     });
   }
 
   // ── Articles ──────────────────────────────────────────────────────────────
-  if (filters.type === 'article' && (q || isCategoryOnly)) {
+  if ((filters.type === 'all' || filters.type === 'article') && (q || isCategoryOnly)) {
     let dbq = supabase
       .from('services')
-      .select('id, title, description, price, currency, business_id, businesses(name, city, category_icon, is_active)')
+      .select('*, businesses(*)')
       .eq('is_available', true);
 
     if (q && !isTag) dbq = dbq.or(buildOrConditions(q, ['title', 'description']));
@@ -156,30 +176,47 @@ async function performSearch(
     (artData ?? []).forEach((a: any) => {
       const biz = a.businesses;
       if (!biz?.is_active) return;
+
+      const distanceKm =
+        userLat != null && userLon != null && biz.lat != null && biz.lon != null
+          ? haversineKm(userLat, userLon, biz.lat, biz.lon)
+          : undefined;
+
       results.push({
-        type:     'article',
-        id:       a.id,
-        title:    a.title,
-        subtitle: biz?.name,
-        meta:     a.price ? `${a.price.toLocaleString('fr-FR')} ${a.currency ?? 'FCFA'}` : undefined,
-        emoji:    biz?.category_icon ?? '📦',
-        raw:      a,
+        type:       'article',
+        id:         a.id,
+        title:      a.title,
+        subtitle:   biz?.name,
+        meta:       a.price ? `${a.price.toLocaleString('fr-FR')} ${a.currency ?? 'FCFA'}` : undefined,
+        emoji:      biz?.category_icon ?? '📦',
+        distanceKm,
+        raw:        a,
       });
     });
   }
 
-  return results;
+  // Dédoublonnage : un même id ne doit pas apparaître plusieurs fois
+  // (les blocs prestation et article peuvent retourner les mêmes services)
+  const seen = new Set<string>();
+  return results.filter(r => {
+    const key = `${r.type}:${r.id}`;
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
 }
 
 export function useSearch(
   query: string,
   filters: SearchFilters,
   enabled: boolean,
+  userLat?: number | null,
+  userLon?: number | null,
 ) {
   const isCategoryOnly = !query.trim() && !!filters.categoryId;
   return useQuery<SearchResult[]>({
-    queryKey:  ['search', query, filters],
-    queryFn:   () => performSearch(query, filters),
+    queryKey:  ['search', query, filters, userLat, userLon],
+    queryFn:   () => performSearch(query, filters, userLat ?? null, userLon ?? null),
     enabled:   enabled && (query.trim().length >= 1 || isCategoryOnly),
     staleTime: 30_000,
   });

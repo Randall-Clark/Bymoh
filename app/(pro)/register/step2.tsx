@@ -1,15 +1,11 @@
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator, Alert, Animated, Dimensions, Image,
-  Keyboard, Modal, Platform, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, TouchableWithoutFeedback, View,
-} from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useRef, useState } from 'react';
 
-type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number; };
+import {
+  Alert, Image, Modal, ScrollView, StyleSheet, Text,
+  TouchableOpacity, TouchableWithoutFeedback, View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { StepIndicator } from '@/components/forms/StepIndicator';
@@ -17,64 +13,11 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { registerDraft } from './step1';
 import { COUNTRIES, Country } from '@/lib/countries';
+import { BusinessLocationPickerModal, BusinessAddressResult } from '@/components/BusinessLocationPickerModal';
+import { useAuthStore } from '@/stores/authStore';
 
-
-// ── Composant MapLibre GL JS via WebView ──────────────────────────────────────
-const MAP_HTML = (lat: number, lon: number) => `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
-  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body, #map { width: 100%; height: 100%; }
-    .marker { width: 36px; height: 36px; cursor: grab; }
-    .marker-outer { width: 36px; height: 36px; border-radius: 50%; background: #FF6835;
-      border: 3px solid #fff; box-shadow: 0 4px 12px rgba(255,104,53,0.5);
-      display: flex; align-items: center; justify-content: center; }
-    .marker-inner { width: 10px; height: 10px; border-radius: 50%; background: #fff; }
-  </style>
-</head>
-<body>
-<div id="map"></div>
-<script>
-  const map = new maplibregl.Map({
-    container: 'map',
-    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-    center: [${lon}, ${lat}],
-    zoom: 15,
-    attributionControl: false
-  });
-
-  const el = document.createElement('div');
-  el.className = 'marker';
-  el.innerHTML = '<div class="marker-outer"><div class="marker-inner"></div></div>';
-
-  const marker = new maplibregl.Marker({ element: el, draggable: true })
-    .setLngLat([${lon}, ${lat}])
-    .addTo(map);
-
-  function sendCoords(lng, lat) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ lng, lat }));
-  }
-
-  marker.on('dragend', () => {
-    const { lng, lat } = marker.getLngLat();
-    sendCoords(lng, lat);
-  });
-
-  map.on('click', (e) => {
-    marker.setLngLat(e.lngLat);
-    sendCoords(e.lngLat.lng, e.lngLat.lat);
-  });
-
-  // Envoyer position initiale
-  setTimeout(() => sendCoords(${lon}, ${lat}), 500);
-</script>
-</body>
-</html>`;
+const ORANGE = '#FF6835';
+const DARK   = '#1A1025';
 
 const DIAL_CODES = [
   { code: '+229', flag: '🇧🇯', name: 'Bénin'         },
@@ -88,635 +31,425 @@ const DIAL_CODES = [
   { code: '+227', flag: '🇳🇪', name: 'Niger'         },
 ];
 
-const BUILDING_TYPES = ['Commerce', 'Boutique', 'Bureau', 'Marché', 'Domicile', 'Autre'];
-const { height: SCREEN_H } = Dimensions.get('window');
-const SHEET_H   = SCREEN_H * 0.92;
-const MAP_H     = 280;
-const DEFAULT_LAT = 6.3654;
-const DEFAULT_LON = 2.4183;
+type AddressMode = 'manual' | 'map';
 
-interface AddressResult {
-  label: string;
-  city?: string;
-  lat: number;
-  lon: number;
-}
-
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  address: {
-    road?: string;
-    suburb?: string;
-    neighbourhood?: string;
-    city?: string;
-    town?: string;
-    village?: string;
-    county?: string;
-    country?: string;
-  };
-}
-
-// ── Geocoding via Nominatim (gratuit, aucune clé) ─────────────────────────────
-async function searchAddress(query: string): Promise<AddressResult[]> {
+// ── Validation géographique via OpenStreetMap Nominatim ───────────────────────
+async function validateLocationInCountry(locationName: string, countryCode: string): Promise<boolean> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&accept-language=fr`,
-      { headers: { 'User-Agent': 'BymohApp/1.0' } }
-    );
-    const data: NominatimResult[] = await res.json();
-    return data.map((item) => ({
-      label: item.display_name.split(',').slice(0, 3).join(', '),
-      city:  item.address?.city ?? item.address?.town ?? item.address?.village ?? item.address?.county,
-      lat:   parseFloat(item.lat),
-      lon:   parseFloat(item.lon),
-    }));
-  } catch { return []; }
-}
-
-async function reverseGeocode(lat: number, lon: number): Promise<string> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=fr`,
-      { headers: { 'User-Agent': 'BymohApp/1.0' } }
-    );
+    const q   = encodeURIComponent(locationName.trim());
+    const cc  = countryCode.toLowerCase();
+    const url = `https://nominatim.openstreetmap.org/search?q=${q}&countrycodes=${cc}&format=json&limit=1&accept-language=fr`;
+    const res  = await fetch(url, { headers: { 'User-Agent': 'BymohApp/1.0 contact@bymoh.com' } });
     const data = await res.json();
-    if (data?.address) {
-      const a = data.address;
-      const label = [a.road, a.suburb ?? a.neighbourhood, a.city ?? a.town ?? a.village].filter(Boolean).join(', ');
-      return label || data.display_name?.split(',').slice(0, 2).join(',') || '';
-    }
-    return '';
-  } catch { return ''; }
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return true; // fail-open en cas d'erreur réseau
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BusinessAddressPicker
-// ─────────────────────────────────────────────────────────────────────────────
-function BusinessAddressPicker({
-  visible, onClose, onConfirm,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onConfirm: (r: { address: string; city: string; lat?: number; lon?: number }) => void;
-}) {
-  const insets  = useSafeAreaInsets();
-  const slideY  = useRef(new Animated.Value(SCREEN_H)).current;
-
-  const [step, setStep]               = useState<'search' | 'details'>('search');
-  const [query, setQuery]             = useState('');
-  const [searching, setSearching]     = useState(false);
-  const [searchResults, setSearchResults] = useState<AddressResult[]>([]);
-  const [gpsLoading, setGpsLoading]   = useState(false);
-  const [gpsError, setGpsError]       = useState<string | null>(null);
-  const [nearby, setNearby]           = useState<AddressResult | null>(null);
-  const [selected, setSelected]       = useState<AddressResult | null>(null);
-  const [mapLabel, setMapLabel]       = useState('');
-  const [geocoding, setGeocoding]     = useState(false);
-
-  const [streetNumber, setStreetNumber] = useState('');
-  const [buildingType, setBuildingType] = useState(BUILDING_TYPES[0]);
-  const [typeOpen, setTypeOpen]         = useState(false);
-  const [complement, setComplement]     = useState('');
-
-  const currentCenter  = useRef({ lat: DEFAULT_LAT, lon: DEFAULT_LON });
-  const cachedPos      = useRef<{ lat: number; lon: number } | null>(null);
-  const searchTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const geocodeTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      setStep('search'); setQuery(''); setGpsError(null);
-      setMapLabel(''); setSelected(null); setSearchResults([]);
-      detectNearby();
-      Animated.spring(slideY, { toValue: 0, tension: 68, friction: 12, useNativeDriver: true }).start();
-    } else {
-      Animated.timing(slideY, { toValue: SHEET_H, duration: 240, useNativeDriver: true }).start();
-    }
-  }, [visible]);
-
-  const dismiss = () => {
-    Keyboard.dismiss();
-    Animated.timing(slideY, { toValue: SHEET_H, duration: 240, useNativeDriver: true }).start(() => onClose());
-  };
-
-  // ── Recherche avec debounce ────────────────────────────────────────────────
-  const onQueryChange = (text: string) => {
-    setQuery(text);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (text.length < 2) { setSearchResults([]); return; }
-    searchTimer.current = setTimeout(async () => {
-      setSearching(true);
-      const results = await searchAddress(text);
-      setSearchResults(results);
-      setSearching(false);
-    }, 500);
-  };
-
-  const detectNearby = async () => {
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      cachedPos.current = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      if (geo) {
-        const label = [geo.street, geo.district ?? geo.subregion, geo.city].filter(Boolean).join(', ');
-        setNearby({ label: label || geo.city || 'Position actuelle', city: geo.city ?? undefined, lat: pos.coords.latitude, lon: pos.coords.longitude });
-      }
-    } catch {}
-  };
-
-  const useGPS = async () => {
-    if (cachedPos.current && nearby) { goToDetails(nearby); return; }
-    setGpsLoading(true); setGpsError(null);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { setGpsError('Permission refusée'); return; }
-      const pos = await Location.getLastKnownPositionAsync({ maxAge: 60000, requiredAccuracy: 500 })
-        ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      if (geo) {
-        const label = [geo.street, geo.district ?? geo.subregion, geo.city].filter(Boolean).join(', ');
-        goToDetails({ label: label || 'Position actuelle', city: geo.city ?? undefined, lat: pos.coords.latitude, lon: pos.coords.longitude });
-      } else { setGpsError('Position non reconnue.'); }
-    } catch { setGpsError('Impossible de récupérer votre position.'); }
-    finally { setGpsLoading(false); }
-  };
-
-  // ── Sélection d'un résultat → centre la carte dessus ──────────────────────
-  const goToDetails = (addr: AddressResult) => {
-    setSelected(addr);
-    setMapLabel(addr.label);
-    setStreetNumber(''); setComplement(''); setBuildingType(BUILDING_TYPES[0]);
-    currentCenter.current = { lat: addr.lat, lon: addr.lon };
-    setStep('details');
-    // Anime la carte vers la position recherchée
-    setTimeout(() => {
-      // carte mise à jour via re-render WebView
-    }, 400);
-  };
-
-  // ── Mise à jour automatique de l'adresse pendant le déplacement du pin ────
-  const onRegionChange = () => {
-        setMapLabel('Déplacement…');
-  };
-
-  const onRegionChangeComplete = (region: Region) => {
-        currentCenter.current = { lat: region.latitude, lon: region.longitude };
-
-    // Auto-geocoding avec debounce — met à jour le texte en temps réel
-    if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
-    setGeocoding(true);
-    geocodeTimer.current = setTimeout(async () => {
-      const label = await reverseGeocode(region.latitude, region.longitude);
-      if (label) {
-        setMapLabel(label);
-        setSelected((prev) => ({
-          ...(prev ?? { label, lat: region.latitude, lon: region.longitude }),
-          label,
-          lat: region.latitude,
-          lon: region.longitude,
-        }));
-      } else {
-        setMapLabel(`${region.latitude.toFixed(5)}, ${region.longitude.toFixed(5)}`);
-      }
-      setGeocoding(false);
-    }, 600);
-  };
-
-  const recenterGPS = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = cachedPos.current
-        ? { coords: { latitude: cachedPos.current.lat, longitude: cachedPos.current.lon } }
-        : await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      // carte mise à jour via re-render WebView
-    } catch {}
-  };
-
-  const confirm = () => {
-    if (!selected && !mapLabel) return;
-    const fullAddress = [streetNumber, buildingType !== BUILDING_TYPES[0] ? buildingType : '', mapLabel, complement].filter(Boolean).join(', ');
-    onConfirm({
-      address: fullAddress || mapLabel,
-      city:    selected?.city ?? selected?.label ?? '',
-      lat:     currentCenter.current.lat,
-      lon:     currentCenter.current.lon,
-    });
-    dismiss();
-  };
-
-  if (!visible) return null;
-
-
-  const locateMe = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { Alert.alert('Permission refusee'); return; }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setSelected(prev => ({
-        ...prev!,
-        lat: loc.coords.latitude,
-        lon: loc.coords.longitude,
-      }));
-    } catch (e) { Alert.alert('Localisation impossible'); }
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
-      <TouchableWithoutFeedback onPress={dismiss}>
-        <Animated.View style={[pickerStyles.backdrop, {
-          opacity: slideY.interpolate({ inputRange: [0, SHEET_H], outputRange: [1, 0], extrapolate: 'clamp' }),
-        }]} />
-      </TouchableWithoutFeedback>
-
-      <Animated.View style={[pickerStyles.sheet, { transform: [{ translateY: slideY }] }]}>
-        <View style={pickerStyles.handle} />
-
-        {/* ── ÉTAPE 1 : Recherche avec geocoding ── */}
-        {step === 'search' && (
-          <>
-            <View style={pickerStyles.pageHeader}>
-              <TouchableOpacity onPress={dismiss} style={pickerStyles.backBtn}>
-                <Feather name="x" size={20} color="#9CA3AF" />
-              </TouchableOpacity>
-              <Text style={pickerStyles.pageTitle}>Adresse du commerce</Text>
-            </View>
-
-            <View style={pickerStyles.searchWrap}>
-              <Feather name="search" size={16} color="#9CA3AF" />
-              <TextInput
-                style={pickerStyles.searchInput}
-                placeholder="Ex : Cotonou, Quartier Haie Vive..."
-                placeholderTextColor="#9CA3AF"
-                value={query}
-                onChangeText={onQueryChange}
-                autoCorrect={false}
-                autoFocus
-              />
-              {searching
-                ? <ActivityIndicator size="small" color="#FF6835" />
-                : query.length > 0 && <TouchableOpacity onPress={() => { setQuery(''); setSearchResults([]); }} hitSlop={8}><Feather name="x-circle" size={16} color="#C4C9D4" /></TouchableOpacity>
-              }
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {/* GPS */}
-              <TouchableOpacity style={pickerStyles.gpsMainBtn} onPress={useGPS} disabled={gpsLoading}>
-                <View style={pickerStyles.gpsMainIcon}>
-                  {gpsLoading ? <ActivityIndicator size="small" color="#FF6835" /> : <Feather name="navigation" size={18} color="#FF6835" />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={pickerStyles.gpsMainLabel}>Ma position actuelle</Text>
-                  <Text style={pickerStyles.gpsMainSub}>Utiliser le GPS de l'appareil</Text>
-                </View>
-                <Feather name="chevron-right" size={16} color="#FF6835" />
-              </TouchableOpacity>
-
-              {/* Résultats de recherche Nominatim */}
-              {searchResults.length > 0 && (
-                <>
-                  <Text style={pickerStyles.sectionTitle}>Résultats</Text>
-                  {searchResults.map((r, i) => (
-                    <TouchableOpacity key={i} style={pickerStyles.resultRow} onPress={() => goToDetails(r)}>
-                      <View style={pickerStyles.resultIcon}><Feather name="map-pin" size={16} color="#6B7280" /></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={pickerStyles.resultLabel} numberOfLines={1}>{r.label}</Text>
-                        {r.city && <Text style={pickerStyles.resultSub}>{r.city}</Text>}
-                      </View>
-                      <Feather name="chevron-right" size={14} color="#D1D5DB" />
-                    </TouchableOpacity>
-                  ))}
-                </>
-              )}
-
-              {/* Position détectée GPS */}
-              {nearby && searchResults.length === 0 && (
-                <>
-                  <Text style={pickerStyles.sectionTitle}>Position détectée</Text>
-                  <TouchableOpacity style={[pickerStyles.resultRow, { backgroundColor: '#F9FAFB' }]} onPress={() => goToDetails(nearby)}>
-                    <View style={pickerStyles.resultIcon}><Feather name="crosshair" size={16} color="#111827" /></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={pickerStyles.resultLabel}>{nearby.label}</Text>
-                      {nearby.city && <Text style={pickerStyles.resultSub}>{nearby.city}</Text>}
-                    </View>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {gpsError && (
-                <View style={pickerStyles.errorRow}>
-                  <Feather name="alert-circle" size={14} color="#EF4444" />
-                  <Text style={pickerStyles.errorText}>{gpsError}</Text>
-                </View>
-              )}
-
-              <View style={{ height: insets.bottom + 40 }} />
-            </ScrollView>
-          </>
-        )}
-
-        {/* ── ÉTAPE 2 : Carte + détails ── */}
-        {step === 'details' && (
-          <>
-            <View style={pickerStyles.pageHeader}>
-              <TouchableOpacity onPress={() => setStep('search')} style={pickerStyles.backBtn}>
-                <Feather name="arrow-left" size={22} color="#111827" />
-              </TouchableOpacity>
-              <Text style={pickerStyles.pageTitle}>Positionner le commerce</Text>
-            </View>
-
-            {/* Carte */}
-            <View style={pickerStyles.mapWrapper}>
-              <WebView
-                style={pickerStyles.map}
-                source={{ html: MAP_HTML(
-                  selected?.lat ?? DEFAULT_LAT,
-                  selected?.lon ?? DEFAULT_LON
-                )}}
-                onMessage={(e) => {
-                  try {
-                    const { lng, lat } = JSON.parse(e.nativeEvent.data);
-                    onRegionChangeComplete({
-                      latitude: lat, longitude: lng,
-                      latitudeDelta: 0.005, longitudeDelta: 0.005,
-                    });
-                  } catch {}
-                }}
-                javaScriptEnabled
-                domStorageEnabled
-                originWhitelist={['*']}
-                scrollEnabled={false}
-                overScrollMode="never"
-              />
-
-              {/* Pin fixe au centre */}
-              <View style={pickerStyles.pinWrap} pointerEvents="none">
-                <View style={[pickerStyles.pinShadow, false]} />
-                <View style={[pickerStyles.pinBody, false]}>
-                  <View style={pickerStyles.pinHead}><View style={pickerStyles.pinDot} /></View>
-                  <View style={pickerStyles.pinTip} />
-                </View>
-              </View>
-
-              {/* Bouton GPS */}
-              <TouchableOpacity style={pickerStyles.gpsMapBtn} onPress={recenterGPS}>
-                <Feather name="navigation" size={18} color="#FF6835" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Adresse mise à jour en temps réel */}
-            <View style={pickerStyles.resolvedRow}>
-              {geocoding
-                ? <ActivityIndicator size="small" color="#FF6835" />
-                : <Feather name="map-pin" size={14} color={mapLabel && mapLabel !== 'Déplacement…' ? '#FF6835' : '#9CA3AF'} />
-              }
-              <Text style={[pickerStyles.resolvedText, (!mapLabel || mapLabel === 'Déplacement…') && { color: '#9CA3AF', fontWeight: '400' }]} numberOfLines={2}>
-                {mapLabel || 'Déplacez la carte pour positionner votre commerce'}
-              </Text>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <View style={pickerStyles.detailsContent}>
-                <Text style={pickerStyles.fieldLabel}>Numéro de la rue</Text>
-                <TextInput style={pickerStyles.field} placeholder="ex : 42" placeholderTextColor="#9CA3AF" value={streetNumber} onChangeText={setStreetNumber} />
-
-                <Text style={pickerStyles.fieldLabel}>Type de local</Text>
-                <TouchableOpacity style={pickerStyles.dropdown} onPress={() => setTypeOpen((v) => !v)}>
-                  <Text style={pickerStyles.dropdownValue}>{buildingType}</Text>
-                  <Feather name={typeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
-                </TouchableOpacity>
-                {typeOpen && (
-                  <View style={pickerStyles.dropdownMenu}>
-                    {BUILDING_TYPES.map((t) => (
-                      <TouchableOpacity key={t} style={[pickerStyles.dropdownItem, t === buildingType && pickerStyles.dropdownItemActive]} onPress={() => { setBuildingType(t); setTypeOpen(false); }}>
-                        <Text style={[pickerStyles.dropdownItemText, t === buildingType && { color: '#FF6835' }]}>{t}</Text>
-                        {t === buildingType && <Feather name="check" size={14} color="#FF6835" />}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-
-                <Text style={pickerStyles.fieldLabel}>Complément <Text style={{ fontWeight: '400', color: '#9CA3AF' }}>(optionnel)</Text></Text>
-                <TextInput style={pickerStyles.field} placeholder="ex : Face à la pharmacie" placeholderTextColor="#9CA3AF" value={complement} onChangeText={setComplement} />
-              </View>
-              <View style={{ height: 160 }} />
-            </ScrollView>
-
-            <View style={[pickerStyles.confirmFooter, { paddingBottom: insets.bottom + 16 }]}>
-              <TouchableOpacity
-                style={[pickerStyles.confirmBtn, (!mapLabel || mapLabel === 'Déplacement…') && { backgroundColor: '#D1D5DB' }]}
-                onPress={confirm}
-                disabled={!mapLabel || mapLabel === 'Déplacement…'}
-                activeOpacity={0.88}
-              >
-                <Text style={pickerStyles.confirmBtnText}>Valider l'adresse du commerce</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </Animated.View>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Step 2 principal
-// ─────────────────────────────────────────────────────────────────────────────
 export default function RegisterStep2() {
-  const insets    = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const insets     = useSafeAreaInsets();
+  const scrollRef  = useRef<ScrollView>(null);
+  const { profile } = useAuthStore();
 
-  // Pays du commerce — initialisé selon le profil utilisateur
+  const handleCancel = () => {
+    router.dismissAll();
+    if ((profile as any)?.role === 'pro') {
+      router.replace('/(pro)/dashboard' as any);
+    } else {
+      router.replace('/(client)/' as any);
+    }
+  };
+
   const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]);
-  const [addressPickerVisible, setAddressPickerVisible] = useState(false);
-  const [businessAddress, setBusinessAddress] = useState<{
-    address: string; city: string; lat?: number; lon?: number;
-  } | null>(null);
+  const [addressMode, setAddressMode]         = useState<AddressMode>('manual');
 
-  const [dialCode, setDialCode]               = useState(DIAL_CODES[0]);
+  // Mode manuel
+  const [manualCity,     setManualCity]     = useState('');
+  const [manualQuartier, setManualQuartier] = useState('');
+  const [manualDetails,  setManualDetails]  = useState('');
+  const [cityError,      setCityError]      = useState('');
+  const [quartierError,  setQuartierError]  = useState('');
+
+  // Validation géographique
+  const [validatingAddress, setValidatingAddress] = useState(false);
+
+  // Mode carte
+  const [addressPickerVisible, setAddressPickerVisible] = useState(false);
+  const [businessAddress,      setBusinessAddress]      = useState<BusinessAddressResult | null>(null);
+
+  const [dialCode, setDialCode]                 = useState(DIAL_CODES[0]);
   const [dialModalVisible, setDialModalVisible] = useState(false);
-  const [phone, setPhone]                     = useState('');
-  const [phoneError, setPhoneError]           = useState('');
-  const [coverUri, setCoverUri]               = useState<string | null>(null);
+  const [phone, setPhone]                       = useState('');
+  const [phoneError, setPhoneError]             = useState('');
+  const [coverUri, setCoverUri]                 = useState<string | null>(null);
 
   const pickCover = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [16, 9], quality: 0.8,
+      mediaTypes: ['images'] as any,
+      allowsEditing: false,
+      quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) setCoverUri(result.assets[0].uri);
   };
 
-  const onNext = () => {
-    if (!businessAddress) return;
+  const addressReady = addressMode === 'manual'
+    ? manualCity.trim().length > 0 && manualQuartier.trim().length > 0
+    : businessAddress !== null;
+
+  const onNext = async () => {
+    // Validation adresse
+    if (addressMode === 'manual') {
+      let ok = true;
+      if (!manualCity.trim())     { setCityError('La ville est obligatoire');        ok = false; }
+      else setCityError('');
+      if (!manualQuartier.trim()) { setQuartierError('Le quartier est obligatoire'); ok = false; }
+      else setQuartierError('');
+      if (!ok) return;
+
+      // ── Validation géographique Nominatim ─────────────────────────────────
+      setValidatingAddress(true);
+
+      // Vérifier la ville
+      const cityExists = await validateLocationInCountry(manualCity.trim(), selectedCountry.code);
+      if (!cityExists) {
+        setValidatingAddress(false);
+        setCityError('Ville introuvable dans ce pays');
+        Alert.alert(
+          'Ville introuvable',
+          `"${manualCity.trim()}" n'a pas été trouvé en ${selectedCountry.name}.\n\nVérifiez l'orthographe ou essayez un nom plus général.`,
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
+      // Vérifier le quartier
+      const quartierExists = await validateLocationInCountry(manualQuartier.trim(), selectedCountry.code);
+      setValidatingAddress(false);
+      if (!quartierExists) {
+        setQuartierError('Quartier introuvable dans ce pays');
+        Alert.alert(
+          'Quartier introuvable',
+          `"${manualQuartier.trim()}" n'a pas été trouvé en ${selectedCountry.name}.\n\nVérifiez l'orthographe ou essayez un nom plus général (ex : "Cadjehoun" au lieu de "Cadjehoun-nord").`,
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+      // ──────────────────────────────────────────────────────────────────────
+    } else {
+      if (!businessAddress) return;
+    }
+
+    // Validation téléphone
     if (!phone || phone.length < 6) { setPhoneError('Numéro trop court'); return; }
     setPhoneError('');
+
+    const addressData = addressMode === 'manual'
+      ? {
+          address:  `${manualQuartier.trim()}, ${manualCity.trim()}${manualDetails.trim() ? ` — ${manualDetails.trim()}` : ''}`,
+          city:     manualCity.trim(),
+          latitude:  null,
+          longitude: null,
+          building_type:   null,
+          address_floor:   null,
+          address_details: manualDetails.trim() || null,
+        }
+      : {
+          address:         businessAddress!.address,
+          city:            businessAddress!.city,
+          latitude:        businessAddress!.lat,
+          longitude:       businessAddress!.lon,
+          building_type:   businessAddress!.buildingType,
+          address_floor:   businessAddress!.floor,
+          address_details: businessAddress!.details,
+        };
+
     Object.assign(registerDraft, {
       phone:        `${dialCode.code}${phone}`,
-      address:      businessAddress.address,
-      city:         businessAddress.city,
-      latitude:     businessAddress.lat ?? null,
-      longitude:    businessAddress.lon ?? null,
       cover_uri:    coverUri ?? null,
       country:      selectedCountry.name,
       country_code: selectedCountry.code,
       timezone:     selectedCountry.timezone,
+      ...addressData,
     });
     router.push('/(pro)/register/step3' as any);
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Feather name="arrow-left" size={22} color="#111827" />
+    <View style={s.root}>
+
+      {/* ── Navbar sombre ── */}
+      <View style={[s.navbar, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Feather name="arrow-left" size={20} color="#fff" />
+        </TouchableOpacity>
+        <Text style={s.navTitle}>Créer mon commerce</Text>
+        <TouchableOpacity onPress={handleCancel} style={s.cancelBtn}>
+          <Text style={s.cancelTxt}>Annuler</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.stepWrap}>
+      {/* ── Indicateur d'étape ── */}
+      <View style={s.stepWrap}>
         <StepIndicator current={2} total={5} title="Localisation & Contact" />
       </View>
 
       <ScrollView
         ref={scrollRef}
-        style={styles.flex}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
+        style={s.flex}
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Pays du commerce */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Pays du commerce *</Text>
-          <Text style={styles.hint}>Sélectionnez le pays où se situe votre commerce</Text>
-          <View style={{ gap: 8, marginTop: 4 }}>
+        {/* ── Pays ── */}
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}><Feather name="globe" size={15} color={ORANGE} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.cardTitle}>Pays du commerce</Text>
+              <Text style={s.cardSub}>Sélectionnez le pays où se situe votre commerce</Text>
+            </View>
+          </View>
+          <View style={{ gap: 8 }}>
             {COUNTRIES.map((c) => {
               const sel = c.code === selectedCountry.code;
               return (
                 <TouchableOpacity
                   key={c.code}
-                  style={[
-                    styles.countryBtn,
-                    sel && styles.countryBtnSelected,
-                  ]}
+                  style={[s.countryBtn, sel && s.countryBtnSelected]}
                   onPress={() => setSelectedCountry(c)}
                   activeOpacity={0.8}
                 >
                   <Text style={{ fontSize: 22 }}>{c.flag}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.countryBtnText, sel && { color: '#FF6835' }]}>{c.name}</Text>
-                    <Text style={styles.countryBtnSub}>{c.dialCode}</Text>
+                    <Text style={[s.countryBtnText, sel && { color: ORANGE }]}>{c.name}</Text>
+                    <Text style={s.countryBtnSub}>{c.dialCode}</Text>
                   </View>
-                  {sel && <Feather name="check-circle" size={20} color="#FF6835" />}
+                  {sel && <Feather name="check-circle" size={20} color={ORANGE} />}
                 </TouchableOpacity>
               );
             })}
           </View>
         </View>
 
-        {/* Adresse */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Adresse du commerce *</Text>
-          {businessAddress ? (
-            <TouchableOpacity style={styles.addressCard} onPress={() => setAddressPickerVisible(true)} activeOpacity={0.85}>
-              <View style={styles.addressCardLeft}>
-                <View style={styles.addressCardIcon}>
-                  <Feather name="map-pin" size={18} color="#FF6835" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.addressCardCity}>{businessAddress.city}</Text>
-                  <Text style={styles.addressCardFull} numberOfLines={2}>{businessAddress.address}</Text>
-                </View>
-              </View>
-              <View style={styles.editAddressBtn}>
-                <Feather name="edit-2" size={14} color="#FF6835" />
-                <Text style={styles.editAddressText}>Modifier</Text>
-              </View>
+        {/* ── Adresse ── */}
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}><Feather name="map-pin" size={15} color={ORANGE} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.cardTitle}>Adresse du commerce</Text>
+              <Text style={s.cardSub}>Choisissez comment renseigner votre adresse</Text>
+            </View>
+          </View>
+
+          {/* Toggle manuel / carte */}
+          <View style={s.modeToggle}>
+            <TouchableOpacity
+              style={[s.modeBtn, addressMode === 'manual' && s.modeBtnActive]}
+              onPress={() => setAddressMode('manual')}
+              activeOpacity={0.8}
+            >
+              <Feather name="edit-3" size={14} color={addressMode === 'manual' ? ORANGE : '#9CA3AF'} />
+              <Text style={[s.modeBtnText, addressMode === 'manual' && s.modeBtnTextActive]}>
+                Saisir manuellement
+              </Text>
             </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.addressPlaceholder} onPress={() => setAddressPickerVisible(true)} activeOpacity={0.85}>
-              <Feather name="map-pin" size={22} color="#9CA3AF" />
-              <Text style={styles.addressPlaceholderText}>Définir l'adresse sur la carte</Text>
-              <Text style={styles.addressPlaceholderSub}>Précisez l'emplacement exact de votre commerce</Text>
-              <View style={styles.addressPlaceholderBtn}>
-                <Feather name="navigation" size={14} color="#FF6835" />
-                <Text style={styles.addressPlaceholderBtnText}>Choisir sur la carte</Text>
-              </View>
+            <TouchableOpacity
+              style={[s.modeBtn, addressMode === 'map' && s.modeBtnActive]}
+              onPress={() => setAddressMode('map')}
+              activeOpacity={0.8}
+            >
+              <Feather name="map" size={14} color={addressMode === 'map' ? ORANGE : '#9CA3AF'} />
+              <Text style={[s.modeBtnText, addressMode === 'map' && s.modeBtnTextActive]}>
+                Utiliser la carte
+              </Text>
             </TouchableOpacity>
+          </View>
+
+          {/* ── Mode manuel ── */}
+          {addressMode === 'manual' && (
+            <View style={{ gap: 12 }}>
+              <Input
+                label="Ville *"
+                placeholder="Ex : Cotonou"
+                value={manualCity}
+                onChangeText={(t) => { setManualCity(t); setCityError(''); }}
+                error={cityError}
+                leftIcon="map-pin"
+              />
+              <Input
+                label="Quartier *"
+                placeholder="Ex : Cadjehoun, Akpakpa, Fidjrossè…"
+                value={manualQuartier}
+                onChangeText={(t) => { setManualQuartier(t); setQuartierError(''); }}
+                error={quartierError}
+                leftIcon="navigation"
+              />
+              <Input
+                label="Informations complémentaires"
+                placeholder="Ex : En face du marché, près de l'église…"
+                value={manualDetails}
+                onChangeText={setManualDetails}
+                leftIcon="info"
+              />
+              {manualCity.trim() && manualQuartier.trim() && (
+                <View style={s.addressPreview}>
+                  <Feather name="check-circle" size={13} color="#22C55E" />
+                  <Text style={s.addressPreviewText} numberOfLines={2}>
+                    {manualQuartier.trim()}, {manualCity.trim()}
+                    {manualDetails.trim() ? ` — ${manualDetails.trim()}` : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ── Mode carte ── */}
+          {addressMode === 'map' && (
+            businessAddress ? (
+              <TouchableOpacity style={s.addressCard} onPress={() => setAddressPickerVisible(true)} activeOpacity={0.85}>
+                <View style={s.addressCardLeft}>
+                  <View style={s.addressIconWrap}>
+                    <Feather name="map-pin" size={16} color={ORANGE} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.addressCity}>{businessAddress.city}</Text>
+                    <Text style={s.addressFull} numberOfLines={2}>{businessAddress.address}</Text>
+                    {businessAddress.buildingType ? (
+                      <Text style={s.addressMeta}>
+                        {businessAddress.buildingType}{businessAddress.floor ? ` · ${businessAddress.floor}` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={s.editBtn}>
+                  <Feather name="edit-2" size={13} color={ORANGE} />
+                  <Text style={s.editBtnText}>Modifier</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={s.addressPlaceholder} onPress={() => setAddressPickerVisible(true)} activeOpacity={0.85}>
+                <View style={s.addressPlaceholderIcon}>
+                  <Feather name="map-pin" size={24} color="#C4C9D4" />
+                </View>
+                <Text style={s.addressPlaceholderTitle}>Définir l'adresse sur la carte</Text>
+                <Text style={s.addressPlaceholderSub}>Précisez l'emplacement exact de votre commerce</Text>
+                <View style={s.addressCTA}>
+                  <Feather name="navigation" size={14} color={ORANGE} />
+                  <Text style={s.addressCTAText}>Choisir sur la carte</Text>
+                </View>
+              </TouchableOpacity>
+            )
           )}
         </View>
 
-        {/* Téléphone */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Téléphone du commerce *</Text>
-          <View style={styles.phoneRow}>
-            <TouchableOpacity style={styles.dialBtn} onPress={() => setDialModalVisible(true)} activeOpacity={0.8}>
-              <Text style={styles.dialFlag}>{dialCode.flag}</Text>
-              <Text style={styles.dialCode}>{dialCode.code}</Text>
+        {/* ── Téléphone ── */}
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}><Feather name="phone" size={15} color={ORANGE} /></View>
+            <Text style={s.cardTitle}>Téléphone du commerce</Text>
+          </View>
+          <View style={s.phoneRow}>
+            <TouchableOpacity style={s.dialBtn} onPress={() => setDialModalVisible(true)} activeOpacity={0.8}>
+              <Text style={s.dialFlag}>{dialCode.flag}</Text>
+              <Text style={s.dialCode}>{dialCode.code}</Text>
               <Feather name="chevron-down" size={13} color="#6B7280" />
             </TouchableOpacity>
-            <View style={styles.phoneInput}>
-              <Input placeholder="XX XX XX XX" value={phone} onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))} keyboardType="number-pad" maxLength={10} error={phoneError} />
+            <View style={{ flex: 1 }}>
+              <Input
+                placeholder="XX XX XX XX"
+                value={phone}
+                onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))}
+                keyboardType="number-pad"
+                maxLength={10}
+                error={phoneError}
+              />
             </View>
           </View>
         </View>
 
-        {/* Photo couverture */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Photo de couverture</Text>
-          <Text style={styles.hint}>Format 16/9 recommandé</Text>
-          <TouchableOpacity style={styles.coverPicker} onPress={pickCover} activeOpacity={0.85}>
+        {/* ── Photo de couverture ── */}
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}><Feather name="image" size={15} color={ORANGE} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.cardTitle}>Photo de couverture</Text>
+              <Text style={s.cardSub}>Format 16/9 recommandé — optionnel</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={s.coverPicker} onPress={pickCover} activeOpacity={0.85}>
             {coverUri ? (
               <>
-                <Image source={{ uri: coverUri }} style={styles.coverPreview} />
-                <View style={styles.coverOverlay}>
-                  <Feather name="edit-2" size={18} color="#fff" />
-                  <Text style={styles.coverOverlayText}>Changer la photo</Text>
+                <Image source={{ uri: coverUri }} style={s.coverPreview} />
+                <View style={s.coverOverlay}>
+                  <Feather name="edit-2" size={16} color="#fff" />
+                  <Text style={s.coverOverlayText}>Changer la photo</Text>
                 </View>
               </>
             ) : (
-              <View style={styles.coverPlaceholder}>
-                <Feather name="image" size={32} color="#9CA3AF" />
-                <Text style={styles.coverPlaceholderText}>Appuyez pour ajouter une photo</Text>
-                <Text style={styles.coverPlaceholderSub}>JPG ou PNG — max 5 Mo</Text>
+              <View style={s.coverEmpty}>
+                <View style={s.coverEmptyIcon}>
+                  <Feather name="camera" size={28} color="#C4C9D4" />
+                </View>
+                <Text style={s.coverEmptyTitle}>Ajouter une photo</Text>
+                <Text style={s.coverEmptySub}>JPG ou PNG — max 5 Mo</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        {!businessAddress && <Text style={styles.footerHint}>⚠️ Veuillez définir l'adresse du commerce</Text>}
-        <Button title="Suivant →" onPress={onNext} fullWidth size="lg" />
+      {/* ── Footer ── */}
+      <View style={[s.footer, { paddingBottom: insets.bottom + 16 }]}>
+        {!addressReady && (
+          <View style={s.footerWarning}>
+            <Feather name="alert-triangle" size={13} color="#D97706" />
+            <Text style={s.footerWarningText}>
+              {addressMode === 'manual'
+                ? 'Renseignez la ville et le quartier'
+                : 'Veuillez définir l\'adresse sur la carte'}
+            </Text>
+          </View>
+        )}
+        <Button
+          title={validatingAddress ? 'Vérification…' : 'Suivant →'}
+          onPress={onNext}
+          fullWidth
+          size="lg"
+          disabled={validatingAddress}
+        />
       </View>
 
-      <BusinessAddressPicker
+      <BusinessLocationPickerModal
         visible={addressPickerVisible}
         onClose={() => setAddressPickerVisible(false)}
         onConfirm={(result) => { setBusinessAddress(result); setAddressPickerVisible(false); }}
       />
 
+      {/* ── Modal indicatif ── */}
       <Modal visible={dialModalVisible} transparent animationType="fade" onRequestClose={() => setDialModalVisible(false)}>
         <TouchableWithoutFeedback onPress={() => setDialModalVisible(false)}>
-          <View style={styles.modalBackdrop}>
+          <View style={s.modalBackdrop}>
             <TouchableWithoutFeedback>
-              <View style={styles.modalBox}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Choisir l'indicatif</Text>
-                  <TouchableOpacity onPress={() => setDialModalVisible(false)}><Feather name="x" size={20} color="#6B7280" /></TouchableOpacity>
+              <View style={s.modalBox}>
+                <View style={s.modalHeader}>
+                  <Text style={s.modalTitle}>Choisir l'indicatif</Text>
+                  <TouchableOpacity onPress={() => setDialModalVisible(false)}>
+                    <Feather name="x" size={20} color="#6B7280" />
+                  </TouchableOpacity>
                 </View>
                 {DIAL_CODES.map((dc) => (
-                  <TouchableOpacity key={dc.code} style={[styles.dialItem, dc.code === dialCode.code && styles.dialItemActive]} onPress={() => { setDialCode(dc); setDialModalVisible(false); }}>
-                    <Text style={styles.dialItemFlag}>{dc.flag}</Text>
-                    <Text style={[styles.dialItemName, dc.code === dialCode.code && { color: '#FF6835' }]}>{dc.name}</Text>
-                    <Text style={styles.dialItemCode}>{dc.code}</Text>
-                    {dc.code === dialCode.code && <Feather name="check" size={16} color="#FF6835" />}
+                  <TouchableOpacity
+                    key={dc.code}
+                    style={[s.dialItem, dc.code === dialCode.code && s.dialItemActive]}
+                    onPress={() => { setDialCode(dc); setDialModalVisible(false); }}
+                  >
+                    <Text style={s.dialItemFlag}>{dc.flag}</Text>
+                    <Text style={[s.dialItemName, dc.code === dialCode.code && { color: ORANGE }]}>{dc.name}</Text>
+                    <Text style={s.dialItemCode}>{dc.code}</Text>
+                    {dc.code === dialCode.code && <Feather name="check" size={16} color={ORANGE} />}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -728,100 +461,84 @@ export default function RegisterStep2() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F8F7F4' },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#F7F6F3' },
   flex: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 4 },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stepWrap: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#F8F7F4' },
-  content: { paddingHorizontal: 20, paddingTop: 8, gap: 24 },
-  section: { gap: 8 },
-  label: { fontSize: 13, fontWeight: '700', color: '#374151' },
-  hint: { fontSize: 12, color: '#9CA3AF', marginTop: -4 },
-  addressCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1.5, borderColor: '#FF6835', shadowColor: '#FF6835', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 3 },
-  addressCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  addressCardIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
-  addressCardCity: { fontSize: 11, fontWeight: '700', color: '#FF6835', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  addressCardFull: { fontSize: 13, color: '#374151', lineHeight: 18 },
-  editAddressBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEF2EC', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 6 },
-  editAddressText: { fontSize: 12, fontWeight: '600', color: '#FF6835' },
-  addressPlaceholder: { backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed' },
-  addressPlaceholderText: { fontSize: 15, fontWeight: '700', color: '#374151' },
-  addressPlaceholderSub: { fontSize: 13, color: '#9CA3AF', textAlign: 'center' },
-  addressPlaceholderBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2EC', borderRadius: 100, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, borderWidth: 1, borderColor: '#FDDCCA' },
-  addressPlaceholderBtnText: { fontSize: 14, fontWeight: '700', color: '#FF6835' },
+
+  navbar:    { backgroundColor: DARK, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 18 },
+  backBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  navTitle:  { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+  cancelBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  cancelTxt: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
+
+  stepWrap: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EFEFEF' },
+
+  content: { paddingHorizontal: 16, paddingTop: 18, gap: 14 },
+
+  card:       { backgroundColor: '#fff', borderRadius: 20, padding: 18, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cardIcon:   { width: 32, height: 32, borderRadius: 10, backgroundColor: '#FFF0EA', alignItems: 'center', justifyContent: 'center' },
+  cardTitle:  { fontSize: 15, fontWeight: '800', color: '#111827' },
+  cardSub:    { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+
+  countryBtn:         { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 13, borderWidth: 1.5, borderColor: '#EFEFEF', backgroundColor: '#FAFAFA' },
+  countryBtnSelected: { borderColor: ORANGE, backgroundColor: '#FFF4EF' },
+  countryBtnText:     { fontSize: 14, fontWeight: '700', color: '#111827' },
+  countryBtnSub:      { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
+
+  // Toggle mode adresse
+  modeToggle:        { flexDirection: 'row', gap: 8 },
+  modeBtn:           { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, paddingVertical: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FAFAFA' },
+  modeBtnActive:     { borderColor: ORANGE, backgroundColor: '#FFF4EF' },
+  modeBtnText:       { fontSize: 12, fontWeight: '600', color: '#9CA3AF' },
+  modeBtnTextActive: { color: ORANGE },
+
+  // Aperçu adresse manuelle
+  addressPreview:     { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#F0FDF4', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#BBF7D0' },
+  addressPreviewText: { flex: 1, fontSize: 12, color: '#166534', fontWeight: '500', lineHeight: 17 },
+
+  // Carte adresse
+  addressCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF4EF', borderRadius: 14, padding: 13, borderWidth: 1.5, borderColor: ORANGE, gap: 10 },
+  addressCardLeft: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  addressIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  addressCity:     { fontSize: 10, fontWeight: '800', color: ORANGE, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
+  addressFull:     { fontSize: 13, color: '#374151', lineHeight: 18 },
+  addressMeta:     { fontSize: 11, color: ORANGE, fontWeight: '600', marginTop: 2 },
+  editBtn:         { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
+  editBtnText:     { fontSize: 12, fontWeight: '600', color: ORANGE },
+
+  addressPlaceholder:      { borderRadius: 16, padding: 24, alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed', backgroundColor: '#FAFAFA' },
+  addressPlaceholderIcon:  { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  addressPlaceholderTitle: { fontSize: 14, fontWeight: '700', color: '#374151' },
+  addressPlaceholderSub:   { fontSize: 12, color: '#9CA3AF', textAlign: 'center' },
+  addressCTA:              { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF0EA', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, marginTop: 4, borderWidth: 1, borderColor: '#FDDCCA' },
+  addressCTAText:          { fontSize: 13, fontWeight: '700', color: ORANGE },
+
   phoneRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  dialBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 15, backgroundColor: '#fff' },
+  dialBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: '#EFEFEF', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 15, backgroundColor: '#FAFAFA' },
   dialFlag: { fontSize: 18 },
   dialCode: { fontSize: 13, fontWeight: '600', color: '#111827' },
-  phoneInput: { flex: 1 },
-  coverPicker: { height: 180, borderRadius: 16, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed', overflow: 'hidden', backgroundColor: '#fff' },
-  coverPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
-  coverOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
-  coverOverlayText: { fontSize: 13, fontWeight: '600', color: '#fff' },
-  coverPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  coverPlaceholderText: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
-  coverPlaceholderSub: { fontSize: 12, color: '#9CA3AF' },
-  footer: { backgroundColor: '#F8F7F4', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', gap: 8 },
-  footerHint: { fontSize: 12, color: '#F59E0B', textAlign: 'center', fontWeight: '600' },
-  countryBtn:         { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB' },
-  countryBtnSelected: { borderColor: '#FF6835', backgroundColor: '#FEF2EC' },
-  countryBtnText:     { fontSize: 15, fontWeight: '700', color: '#111827' },
-  countryBtnSub:      { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  modalBox: { backgroundColor: '#fff', borderRadius: 20, padding: 8, width: '100%', maxWidth: 360 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 4 },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  dialItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12 },
-  dialItemActive: { backgroundColor: '#FEF2EC' },
-  dialItemFlag: { fontSize: 22 },
-  dialItemName: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
-  dialItemCode: { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
-});
 
-const pickerStyles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, height: SHEET_H, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginTop: 10, marginBottom: 4 },
-  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  backBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  pageTitle: { flex: 1, fontSize: 18, fontWeight: '800', color: '#111827' },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, margin: 16, marginBottom: 12, backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 13 : 11 },
-  searchInput: { flex: 1, fontSize: 15, color: '#111827', padding: 0 },
-  gpsMainBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginVertical: 8, backgroundColor: '#FEF2EC', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#FDDCCA' },
-  gpsMainIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  gpsMainLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  gpsMainSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#111827', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6 },
-  resultRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  resultIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  resultLabel: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  resultSub: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 8, backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10 },
-  errorText: { fontSize: 13, color: '#EF4444' },
-  mapWrapper: { height: MAP_H, position: 'relative', overflow: 'hidden' },
-  map: { ...StyleSheet.absoluteFill },
-  pinWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  pinBody: { alignItems: 'center', transform: [{ translateY: -22 }] },
-  pinBodyUp: { transform: [{ translateY: -32 }] },
-  pinHead: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FF6835', borderWidth: 3.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#FF6835', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 8, elevation: 8 },
-  pinDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#fff' },
-  pinTip: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 12, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#FF6835', marginTop: -1 },
-  pinShadow: { width: 14, height: 6, borderRadius: 7, backgroundColor: 'rgba(0,0,0,0.2)', transform: [{ translateY: 16 }] },
-  pinShadowUp: { width: 8, height: 4, opacity: 0.1 },
-  gpsMapBtn: { position: 'absolute', bottom: 14, right: 14, width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 },
-  resolvedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#F8F7F4', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', minHeight: 52 },
-  resolvedText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827', lineHeight: 20 },
-  detailsContent: { paddingHorizontal: 20, paddingTop: 8, gap: 6 },
-  fieldLabel: { fontSize: 15, fontWeight: '700', color: '#111827', marginTop: 12, marginBottom: 6 },
-  field: { backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 11, fontSize: 15, color: '#111827' },
-  dropdown: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 11 },
-  dropdownValue: { fontSize: 15, color: '#111827' },
-  dropdownMenu: { backgroundColor: '#fff', borderRadius: 12, marginTop: 4, borderWidth: 1, borderColor: '#E5E7EB', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 6 },
-  dropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  dropdownItemActive: { backgroundColor: '#FEF2EC' },
-  dropdownItemText: { fontSize: 15, color: '#111827' },
-  confirmFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  confirmBtn: { backgroundColor: '#FF6835', borderRadius: 14, paddingVertical: 17, alignItems: 'center' },
-  confirmBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  coverPicker:      { height: 180, borderRadius: 16, overflow: 'hidden', backgroundColor: '#FAFAFA', borderWidth: 1.5, borderColor: '#EFEFEF', borderStyle: 'dashed' },
+  coverPreview:     { width: '100%', height: '100%', resizeMode: 'cover' },
+  coverOverlay:     { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
+  coverOverlayText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  coverEmpty:       { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  coverEmptyIcon:   { width: 60, height: 60, borderRadius: 30, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  coverEmptyTitle:  { fontSize: 14, fontWeight: '700', color: '#6B7280' },
+  coverEmptySub:    { fontSize: 12, color: '#9CA3AF' },
+
+  footer:            { backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#EFEFEF', gap: 10 },
+  footerWarning:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFFBEB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  footerWarningText: { fontSize: 12, color: '#D97706', fontWeight: '600' },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalBox:      { backgroundColor: '#fff', borderRadius: 22, padding: 8, width: '100%', maxWidth: 360 },
+  modalHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 4 },
+  modalTitle:    { fontSize: 16, fontWeight: '700', color: '#111827' },
+  dialItem:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 12 },
+  dialItemActive: { backgroundColor: '#FFF4EF' },
+  dialItemFlag:  { fontSize: 22 },
+  dialItemName:  { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827' },
+  dialItemCode:  { fontSize: 13, color: '#9CA3AF', fontWeight: '500' },
 });

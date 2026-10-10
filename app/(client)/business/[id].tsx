@@ -14,6 +14,37 @@ import { isBusinessOpen } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
 
 
+const ItemImages = React.memo(function ItemImages({ item }: { item: any }) {
+  const allUrls = [
+    ...(safeFirstUrl(item.image_url) ? [safeFirstUrl(item.image_url)!] : []),
+    ...safeUrls(item.image_urls).filter((u: string) => u !== safeFirstUrl(item.image_url)),
+  ];
+  if (allUrls.length === 0) return (
+    <View style={{ width:90, height:90, backgroundColor:'#F3F4F6', alignItems:'center', justifyContent:'center', borderRadius:10 }}>
+      <Text style={{ fontSize:26 }}>{item.kind==='article'?'📦':'🛎️'}</Text>
+    </View>
+  );
+  return (
+    <View style={{ position:'relative', width:90, height:90 }}>
+      <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+        style={{ width:90, height:90 }} scrollEnabled={allUrls.length > 1}>
+        {allUrls.map((url: string, i: number) => (
+          <Image key={i} source={{ uri: url ?? undefined }}
+            style={{ width:90, height:90, borderRadius:10, resizeMode:'cover' }}
+            onError={() => {}}/>
+        ))}
+      </ScrollView>
+      {allUrls.length > 1 && (
+        <View style={{ position:'absolute', bottom:4, left:0, right:0, flexDirection:'row', justifyContent:'center', gap:3 }}>
+          {allUrls.map((_: string, i: number) => (
+            <View key={i} style={{ width:4, height:4, borderRadius:2, backgroundColor:'rgba(255,255,255,0.85)' }}/>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
 function safeFirstUrl(raw: any): string | null {
   if (!raw) return null;
   if (typeof raw === 'string') {
@@ -52,16 +83,15 @@ function fmtPrice(price: number, billing: string, unit?: string) {
   return `${p} FCFA`;
 }
 
-type TabId = 'all' | 'article' | 'prestation';
+type TabId = 'all' | 'article' | 'prestation' | 'promo';
 
 export default function ClientBusinessPage() {
   const insets       = useSafeAreaInsets();
   const { id }  = useLocalSearchParams<{ id: string }>();
 
   // ── Cart ─────────────────────────────────────────────────────────────────
-  const cartStore    = useCartStore() as any;
-  const cartItems    = cartStore.items ?? [];
-  const addToCart    = cartStore.addItem ?? cartStore.addToCart;
+  const cartStore      = useCartStore() as any;
+  const cartItems      = cartStore.items ?? [];
   const removeFromCart = cartStore.removeItem ?? cartStore.removeFromCart;
 
   const getItemQty = (itemId: string) =>
@@ -114,30 +144,39 @@ export default function ClientBusinessPage() {
   const tag     = (business as any).tag ?? '';
   const botPad  = Math.max(insets.bottom, 16);
 
+  const hasPromos = !catLoading && catalog.length > 0 && catalog.some((i: any) => i.promo_active === true);
+
   const tabs: { id: TabId; label: string; color: string; bg: string }[] = [
-    { id: 'all',        label: 'Tout',     color: '#FF6835', bg: '#FEF2EC' },
-    { id: 'article',    label: 'Articles', color: '#1E3A5F', bg: '#EEF2FF' },
-    { id: 'prestation', label: 'Services', color: '#7C3AED', bg: '#F5F3FF' },
+    { id: 'all',        label: 'Tout',       color: '#FF6835', bg: '#FEF2EC' },
+    { id: 'article',    label: 'Articles',   color: '#1E3A5F', bg: '#EEF2FF' },
+    { id: 'prestation', label: 'Services',   color: '#7C3AED', bg: '#F5F3FF' },
+    ...(hasPromos ? [{ id: 'promo' as TabId, label: 'Promos 🏷️', color: '#EF4444', bg: '#FEF2F2' }] : []),
   ];
 
   const items = activeTab === 'all'
     ? catalog
+    : activeTab === 'promo'
+    ? catalog.filter((i: any) => i.promo_active)
     : catalog.filter((i: any) => i.kind === activeTab);
 
   // ── Ajouter au panier ─────────────────────────────────────────────────
+  // IMPORTANT : addItem(item, businessId, businessName) — 3 arguments obligatoires
   const handleAdd = (item: any) => {
-    if (typeof addToCart === 'function') {
-      addToCart({
-        id:           item.id,
-        service_id:   item.id,
-        title:        item.title,
-        price:        item.price ?? 0,
-        business_id:  id,
-        business_name: business.name,
-        quantity:     1,
-        image_url:    item.image_url,
-      });
-    }
+    cartStore.addItem(
+      {
+        id:             item.id,
+        title:          item.title,
+        price:          item.price ?? 0,
+        image_url:      item.image_url,
+        allows_booking: false,
+        is_available:   true,
+        show_stock:     false,
+        currency:       'XOF',
+        kind:           item.kind,
+      },
+      id!,            // businessId — 2e argument
+      business.name,  // businessName — 3e argument
+    );
   };
 
   const handleRemove = (item: any) => {
@@ -229,7 +268,9 @@ export default function ClientBusinessPage() {
         <View style={s.tabBar}>
           {tabs.map((t) => {
             const active = activeTab === t.id;
-            const count  = t.id === 'all' ? catalog.length : catalog.filter((i:any) => i.kind === t.id).length;
+            const count = t.id === 'all' ? catalog.length
+              : t.id === 'promo' ? catalog.filter((i: any) => i.promo_active).length
+              : catalog.filter((i: any) => i.kind === t.id).length;
             return (
               <TouchableOpacity
                 key={t.id}
@@ -263,36 +304,7 @@ export default function ClientBusinessPage() {
                 const qty = getItemQty(item.id);
                 return (
                   <View key={item.id} style={s.card}>
-                    {(() => {
-                      const allUrls = [
-                        ...(safeFirstUrl(item.image_url) ? [safeFirstUrl(item.image_url)] : []),
-                        ...safeUrls(item.image_urls).filter(u => u !== safeFirstUrl(item.image_url)),
-                      ];
-                      if (allUrls.length === 0) return (
-                        <View style={s.cardImgPh}>
-                          <Text style={{ fontSize:26 }}>{item.kind==='article'?'📦':'🛎️'}</Text>
-                        </View>
-                      );
-                      return (
-                        <View style={{ position:'relative', width:90, height:90 }}>
-                          <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-                            style={{ width:90, height:90 }} scrollEnabled={allUrls.length > 1}>
-                            {allUrls.map((url, i) => (
-                              <Image key={i} source={{ uri: url ?? undefined }}
-                                style={[s.cardImg, { width:90, height:90 }]}
-                                onError={() => {}}/>
-                            ))}
-                          </ScrollView>
-                          {allUrls.length > 1 && (
-                            <View style={{ position:'absolute', bottom:4, left:0, right:0, flexDirection:'row', justifyContent:'center', gap:3 }}>
-                              {allUrls.map((_, i) => (
-                                <View key={i} style={{ width:4, height:4, borderRadius:2, backgroundColor:'rgba(255,255,255,0.85)' }}/>
-                              ))}
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })()}
+                    <ItemImages item={item} />
                     <View style={s.cardBody}>
                       <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
                         <Text style={s.cardTitle} numberOfLines={1}>{item.title}</Text>
@@ -348,23 +360,6 @@ export default function ClientBusinessPage() {
           }
         </View>
       </ScrollView>
-
-      {/* ══ FAB panier — bouton rond flottant ══ */}
-      <TouchableOpacity
-        style={[s.fab, { bottom: (Platform.OS === 'ios' ? 83 : 60) + 12 }]}
-        activeOpacity={0.88}
-        onPress={() => router.push({
-          pathname: '/(client)/order/cart' as any,
-          params: { businessId: id },
-        })}
-      >
-        <Feather name="shopping-cart" size={22} color="#fff" />
-        {totalItems > 0 && (
-          <View style={s.fabBadge}>
-            <Text style={s.fabBadgeTxt}>{totalItems}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
 
       {/* ── Modal À propos ── */}
       <Modal visible={aboutVisible} transparent animationType="slide" onRequestClose={() => setAboutVisible(false)}>
@@ -461,26 +456,20 @@ const s = StyleSheet.create({
   cardImgPh:     { width:96, height:96, backgroundColor:'#F3F4F6', alignItems:'center', justifyContent:'center' },
   cardBody:      { flex:1, padding:12, gap:4 },
   cardTitle:     { flex:1, fontSize:14, fontWeight:'700', color:'#111827' },
-
   cardDesc:      { fontSize:12, color:'#9CA3AF', lineHeight:17 },
   cardPrice:     { fontSize:13, fontWeight:'700', color:'#FF6835' },
   promoTag:      { flexDirection:'row', alignItems:'center', gap:3, backgroundColor:'#FEF2EC', borderRadius:100, paddingHorizontal:6, paddingVertical:2 },
   promoTxt:      { fontSize:10, fontWeight:'700', color:'#FF6835' },
-  // Service
   reserveBtn:    { backgroundColor:'#FF6835', margin:10, paddingHorizontal:10, paddingVertical:8, borderRadius:12, flexDirection:'row', alignItems:'center', gap:4 },
   reserveTxt:    { fontSize:12, fontWeight:'700', color:'#fff' },
-  // Article — bouton +
   addBtn:        { width:38, height:38, borderRadius:19, backgroundColor:'#FF6835', alignItems:'center', justifyContent:'center', margin:12 },
-  // Article — contrôle quantité
   qtyControl:    { flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, paddingHorizontal:10, paddingVertical:8 },
   qtyBtnPlus:    { width:30, height:30, borderRadius:15, backgroundColor:'#FF6835', alignItems:'center', justifyContent:'center' },
   qtyBtnMinus:   { width:30, height:30, borderRadius:15, backgroundColor:'#FEF2EC', borderWidth:1.5, borderColor:'#FF6835', alignItems:'center', justifyContent:'center' },
   qtyVal:        { fontSize:15, fontWeight:'800', color:'#111827' },
-  // Footer
   fab:           { position:'absolute', right:20, width:56, height:56, borderRadius:28, backgroundColor:'#1E3A5F', alignItems:'center', justifyContent:'center', shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.2, shadowRadius:10, elevation:8 },
   fabBadge:      { position:'absolute', top:-4, right:-4, width:20, height:20, borderRadius:10, backgroundColor:'#FF6835', alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'#fff' },
   fabBadgeTxt:   { fontSize:10, fontWeight:'800', color:'#fff' },
-  // Modal
   modalBg:       { flex:1, backgroundColor:'rgba(0,0,0,0.5)' },
   modalSheet:    { backgroundColor:'#fff', borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, maxHeight:'85%', gap:14 },
   handle:        { width:40, height:4, borderRadius:2, backgroundColor:'#E5E7EB', alignSelf:'center', marginBottom:4 },

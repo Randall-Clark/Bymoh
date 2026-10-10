@@ -1,613 +1,1045 @@
+/**
+ * components/LocationPickerModal.tsx
+ *
+ * 3 étapes :
+ *  'list'  — adresses sauvegardées (AsyncStorage)
+ *  'map'   — carte MapLibre, floating pin, point GPS bleu, barre de recherche
+ *  'form'  — label, complément, sauvegarde locale, partage
+ *
+ * Logique géocodage :
+ *  - PAS de géocodage automatique pendant le déplacement de la carte
+ *  - Géocodage déclenché UNIQUEMENT quand on appuie sur "Pin ici"
+ *  - Barre de recherche Nominatim pour trouver une adresse connue
+ *  - Point bleu GPS via expo-location watchPosition + injectJavaScript
+ */
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import Entypo from '@expo/vector-icons/Entypo';
 import * as Location from 'expo-location';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Animated, Dimensions, Keyboard, Linking,
-  Modal, Platform, ScrollView, Share, StyleSheet, Text, TextInput,
-  TouchableOpacity, TouchableWithoutFeedback, View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import MapView, { Marker, Region, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import { useLocationStore } from '@/stores/locationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
-import { ALL_CITIES } from '@/types';
+
+/* ─── Types ─────────────────────────────────────────────────────── */
+interface SavedAddr {
+  id:          string;
+  label:       string;
+  address:     string;
+  city:        string;
+  lat:         number;
+  lon:         number;
+  complement?: string;
+  accessCode?: string;  // code d'accès ou numéro à appeler à l'arrivée
+}
+interface NominatimResult {
+  place_id:     number;
+  display_name: string;
+  lat:          string;
+  lon:          string;
+}
+type Step = 'list' | 'map' | 'form';
 
 interface Props { visible: boolean; onClose: () => void; }
-type Step = 'view' | 'search' | 'details';
-interface AddressResult { label: string; sublabel?: string; lat?: number; lon?: number; }
 
-const BUILDING_TYPES = ['Maison', 'Appartement', 'Bureau', 'Commerce', 'Autre'];
-const { height: SCREEN_H } = Dimensions.get('window');
-const SHEET_H = SCREEN_H * 0.92;
-const MAP_H = 300;
-const PREVIEW_H = 200;
-const DEFAULT_LAT = 6.3654;
-const DEFAULT_LON = 2.4183;
+/* ─── Constants ──────────────────────────────────────────────────── */
+const STORAGE_KEY   = 'bymoh_saved_addresses';
+const P             = '#FF6835';
+const GPS_BLUE      = '#4285F4';
+const LABEL_OPTIONS = [
+  { key: 'Maison',  label: 'Maison',  Icon: (p: any) => <FontAwesome5 name="home"      size={13} {...p} /> },
+  { key: 'Travail', label: 'Travail', Icon: (p: any) => <Entypo       name="briefcase" size={13} {...p} /> },
+  { key: 'Autre',   label: 'Autre',   Icon: (p: any) => <Feather      name="map-pin"   size={13} {...p} /> },
+] as const;
+const DEFAULT_LAT   = 6.3654;
+const DEFAULT_LON   = 2.4183;
 
-const RECENTS: AddressResult[] = [
-  { label: 'Marché de Tokpa',     sublabel: 'Cotonou, Bénin', lat: 6.3667, lon: 2.4167 },
-  { label: 'Carrefour Cadjèhoun', sublabel: 'Cotonou, Bénin', lat: 6.3600, lon: 2.4100 },
-  { label: "Stade de l'Amitié",   sublabel: 'Cotonou, Bénin', lat: 6.3570, lon: 2.4220 },
-];
+/* ─── Nominatim helpers ──────────────────────────────────────────── */
+async function reverseGeocode(lat: number, lon: number): Promise<{ address: string; city: string }> {
+  try {
+    const res  = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+      { headers: { 'Accept-Language': 'fr', 'User-Agent': 'Bymoh/1.0' } },
+    );
+    const data = await res.json();
+    const a    = data.address ?? {};
+    const road    = a.road ?? a.pedestrian ?? a.footway ?? a.neighbourhood ?? '';
+    const number  = a.house_number ?? '';
+    const city    = a.city ?? a.town ?? a.village ?? a.county ?? '';
+    const address = ([number, road].filter(Boolean).join(' ')
+                  || data.display_name?.split(',')[0]) ?? '';
+    return { address: address.trim(), city: city.trim() };
+  } catch {
+    return { address: `${lat.toFixed(5)}, ${lon.toFixed(5)}`, city: '' };
+  }
+}
 
-export function LocationPickerModal({ visible, onClose }: Props) {
-  const insets = useSafeAreaInsets();
-  const store = useLocationStore() as any;
-  const {
-    city: savedCity, address: savedAddress,
-    lat: savedLat, lon: savedLon,
-    setCity, setAddress, setCoords, clearCity,
-  } = store;
+async function searchNominatim(q: string): Promise<NominatimResult[]> {
+  if (q.trim().length < 2) return [];
+  try {
+    const res  = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&accept-language=fr`,
+      { headers: { 'User-Agent': 'Bymoh/1.0' } },
+    );
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
 
-  const mapRef    = useRef<MapView>(null);
-  const previewRef = useRef<MapView>(null);
+/* ─── WebView HTML ───────────────────────────────────────────────── */
+// - Pas de map.on('move') — pas de géocodage continu
+// - Point GPS bleu mis à jour via injectJavaScript (updateGPS)
+// - Envoie les coordonnées du centre UNIQUEMENT quand sendPin() est appelé depuis RN
+const MAP_HTML = (lat: number, lon: number) => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body,#map{width:100%;height:100%;}
 
-  const hasAddress = !!(savedAddress || savedCity);
-  const hasCoords  = !!(savedLat && savedLon);
+    /* Zoom buttons */
+    .zoom{position:absolute;right:12px;bottom:90px;display:flex;flex-direction:column;gap:6px;z-index:10;}
+    .zbtn{width:40px;height:40px;border-radius:10px;background:#fff;border:none;
+          font-size:22px;font-weight:700;color:#374151;
+          box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer;
+          display:flex;align-items:center;justify-content:center;}
+    .zbtn:active{background:#f3f4f6;}
 
-  const [step, setStep]                         = useState<Step>(hasAddress ? 'view' : 'search');
-  const [query, setQuery]                       = useState('');
-  const [gpsLoading, setGpsLoading]             = useState(false);
-  const [gpsError, setGpsError]                 = useState<string | null>(null);
-  const [nearbyAddress, setNearbyAddress]       = useState<AddressResult | null>(null);
-  const [selectedAddress, setSelectedAddress]   = useState<AddressResult | null>(null);
-  const [mapAddress, setMapAddress]             = useState('');
-  const [geocoding, setGeocoding]               = useState(false);
-  const [isDragging, setIsDragging]             = useState(false);
-  const [nominatimResults, setNominatimResults] = useState<AddressResult[]>([]);
-  const [searching, setSearching]               = useState(false);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cachedPosition  = useRef<{ lat: number; lon: number } | null>(null);
-  const currentCenter   = useRef({ lat: savedLat ?? DEFAULT_LAT, lon: savedLon ?? DEFAULT_LON });
-
-  const [streetNumber, setStreetNumber]         = useState('');
-  const [buildingType, setBuildingType]         = useState(BUILDING_TYPES[0]);
-  const [buildingTypeOpen, setBuildingTypeOpen] = useState(false);
-  const [aptUnit, setAptUnit]                   = useState('');
-  const [buildingName, setBuildingName]         = useState('');
-  const [buzzerCode, setBuzzerCode]             = useState('');
-
-  const slideY = useRef(new Animated.Value(SCREEN_H)).current;
-
-  useEffect(() => {
-    if (visible) {
-      setQuery(''); setGpsError(null); setMapAddress(''); setSelectedAddress(null);
-      setStep(hasAddress ? 'view' : 'search');
-      detectNearby();
-      Animated.spring(slideY, { toValue: 0, tension: 68, friction: 12, useNativeDriver: true }).start();
-    } else {
-      Animated.timing(slideY, { toValue: SHEET_H, duration: 240, useNativeDriver: true }).start();
+    /* Point GPS bleu pulsant */
+    .gps-wrap{position:relative;width:22px;height:22px;}
+    .gps-pulse{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:40px;height:40px;border-radius:50%;
+      background:rgba(66,133,244,.2);
+      animation:pulse 2s ease-out infinite;
     }
-  }, [visible]);
+    .gps-dot{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:16px;height:16px;border-radius:50%;
+      background:${GPS_BLUE};border:3px solid #fff;
+      box-shadow:0 2px 6px rgba(66,133,244,.6);
+    }
+    @keyframes pulse{0%{transform:translate(-50%,-50%) scale(0.6);opacity:.8}
+                     100%{transform:translate(-50%,-50%) scale(2);opacity:0}}
 
-  // ── Recherche Nominatim (même que step2) ────────────────────────────────────
+    /* Masquer les contrôles MapLibre par défaut */
+    .maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right,
+    .maplibregl-ctrl-top-left,.maplibregl-ctrl-top-right{display:none!important;}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="zoom">
+  <button class="zbtn" onclick="map.zoomIn()">+</button>
+  <button class="zbtn" onclick="map.zoomOut()">−</button>
+</div>
+<script>
+  var map = new maplibregl.Map({
+    container:'map',
+    style:'https://tiles.openfreemap.org/styles/positron',
+    center:[${lon},${lat}],
+    zoom:17,
+    attributionControl:false
+  });
+
+  /* ── Point GPS bleu ── */
+  var gpsMarker = null;
+  var mapReady  = false;
+  var pendingGPS = null;
+
+  map.on('load', function(){
+    mapReady = true;
+    if (pendingGPS) { _placeGPS(pendingGPS[0], pendingGPS[1]); pendingGPS = null; }
+  });
+
+  function _placeGPS(lng, lat) {
+    if (!gpsMarker) {
+      var wrap = document.createElement('div');
+      wrap.className = 'gps-wrap';
+      wrap.innerHTML = '<div class="gps-pulse"></div><div class="gps-dot"></div>';
+      gpsMarker = new maplibregl.Marker({element:wrap, anchor:'center'})
+        .setLngLat([lng,lat]).addTo(map);
+    } else {
+      gpsMarker.setLngLat([lng,lat]);
+    }
+  }
+
+  /* Appelé par injectJavaScript depuis RN quand la position GPS change */
+  function updateGPS(lng, lat) {
+    if (!mapReady) { pendingGPS = [lng, lat]; return; }
+    _placeGPS(lng, lat);
+  }
+
+  /* Appelé par injectJavaScript quand l'utilisateur appuie sur "Pin ici" */
+  function sendPin() {
+    var c = map.getCenter();
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'pin',lat:c.lat,lng:c.lng}));
+  }
+</script>
+</body>
+</html>`;
+
+/* ─── HTML statique pour l'aperçu ───────────────────────────────── */
+const MAP_HTML_STATIC = (lat: number, lon: number) => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}html,body,#map{width:100%;height:100%;}
+    .mo{width:28px;height:28px;border-radius:50%;background:#FF6835;border:3px solid #fff;
+        box-shadow:0 3px 8px rgba(255,104,53,.5);display:flex;align-items:center;justify-content:center;}
+    .mi{width:8px;height:8px;border-radius:50%;background:#fff;}
+    .maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right{display:none!important;}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var map=new maplibregl.Map({
+    container:'map',style:'https://tiles.openfreemap.org/styles/positron',
+    center:[${lon},${lat}],zoom:16,interactive:false,attributionControl:false
+  });
+  var el=document.createElement('div');
+  el.innerHTML='<div class="mo"><div class="mi"></div></div>';
+  new maplibregl.Marker({element:el}).setLngLat([${lon},${lat}]).addTo(map);
+</script>
+</body>
+</html>`;
+
+/* ═══════════════════════════════════════════════════════════════════
+   Composant
+═══════════════════════════════════════════════════════════════════ */
+export default function LocationPickerModal({ visible, onClose }: Props) {
+  const { setLocation, lat: activeLat, lon: activeLon } = useLocationStore();
+  const userId = useAuthStore(s => s.session?.user?.id ?? null);
+
+  /* navigation */
+  const [step, setStep] = useState<Step>('list');
+
+  /* adresses sauvegardées */
+  const [savedAddrs, setSavedAddrs] = useState<SavedAddr[]>([]);
+
+  /* carte */
+  const [mapCenter,    setMapCenter]    = useState({ lat: DEFAULT_LAT, lon: DEFAULT_LON });
+  const [mapKey,       setMapKey]       = useState(0);
+  const webviewRef                      = useRef<WebView>(null);
+  const currentCenter                   = useRef({ lat: DEFAULT_LAT, lon: DEFAULT_LON });
+  const latestGPS                       = useRef<{ lat: number; lon: number } | null>(null);
+
+  /* recherche */
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [searching,     setSearching]     = useState(false);
+  const [showResults,   setShowResults]   = useState(false);
+  const searchTimer                       = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* pin + géocodage (déclenché par "Pin ici") */
+  const [pinning,   setPinning]   = useState(false); // géocodage en cours après Pin ici
+  const [mapAddr,   setMapAddr]   = useState('');
+  const [mapCity,   setMapCity]   = useState('');
+
+  /* formulaire */
+  const [label,      setLabel]      = useState('');
+  const [complement, setComplement] = useState('');
+  const [accessCode, setAccessCode] = useState('');
+  const [saveLocal,  setSaveLocal]  = useState(true);
+  const [saving,     setSaving]     = useState(false);
+
+  /* GPS watch */
+  const [locating, setLocating] = useState(false);
+  const gpsSub = useRef<Location.LocationSubscription | null>(null);
+
+  /* ──────────────────────────────────────────────────────────────
+     AsyncStorage
+  ────────────────────────────────────────────────────────────── */
+  const loadSaved = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      setSavedAddrs(raw ? JSON.parse(raw) : []);
+    } catch { setSavedAddrs([]); }
+  }, []);
+
   useEffect(() => {
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (query.trim().length < 3) { setNominatimResults([]); return; }
+    if (visible) { loadSaved(); setStep('list'); }
+    else { gpsSub.current?.remove(); gpsSub.current = null; }
+  }, [visible, loadSaved]);
 
-    searchTimeout.current = setTimeout(async () => {
-      setSearching(true);
+  /* ──────────────────────────────────────────────────────────────
+     GPS watch — démarre quand on est sur la carte
+  ────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (step !== 'map') {
+      gpsSub.current?.remove();
+      gpsSub.current = null;
+      return;
+    }
+    let active = true;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || !active) return;
+      gpsSub.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
+        (loc) => {
+          const lat = loc.coords.latitude;
+          const lon = loc.coords.longitude;
+          latestGPS.current = { lat, lon };
+          // Met à jour le point bleu dans la WebView
+          webviewRef.current?.injectJavaScript(
+            `updateGPS(${lon}, ${lat}); true;`
+          );
+        },
+      );
+    })();
+    return () => {
+      active = false;
+      gpsSub.current?.remove();
+      gpsSub.current = null;
+    };
+  }, [step]);
+
+  /* ──────────────────────────────────────────────────────────────
+     Ouvrir la carte
+  ────────────────────────────────────────────────────────────── */
+  const openMap = useCallback(async (initLat?: number, initLon?: number) => {
+    setMapAddr('');
+    setMapCity('');
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowResults(false);
+
+    let lat = initLat ?? DEFAULT_LAT;
+    let lon = initLon ?? DEFAULT_LON;
+
+    if (initLat === undefined) {
+      // Essayer de centrer sur la position GPS actuelle
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&addressdetails=1`,
-          { headers: { 'Accept-Language': 'fr', 'User-Agent': 'BymohApp/1.0' } }
-        );
-        const data = await res.json();
-        const results: AddressResult[] = data.map((item: any) => ({
-          label:    item.display_name,
-          sublabel: item.address?.city ?? item.address?.town ?? item.address?.village ?? item.address?.state,
-          lat:      parseFloat(item.lat),
-          lon:      parseFloat(item.lon),
-        }));
-        setNominatimResults(results);
-      } catch { setNominatimResults([]); }
-      finally { setSearching(false); }
-    }, 500);
-  }, [query]);
+        setLocating(true);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          lat = pos.coords.latitude;
+          lon = pos.coords.longitude;
+        }
+      } catch { /* ignore */ }
+      finally { setLocating(false); }
+    }
 
-  const dismiss = () => {
-    Keyboard.dismiss();
-    Animated.timing(slideY, { toValue: SHEET_H, duration: 240, useNativeDriver: true }).start(() => onClose());
-  };
-
-  const detectNearby = async () => {
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      cachedPosition.current = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      if (geo) {
-        const label = [geo.street, geo.district ?? geo.subregion, geo.city].filter(Boolean).join(', ');
-        setNearbyAddress({ label: label || geo.city || 'Position actuelle', sublabel: geo.city ?? undefined, lat: pos.coords.latitude, lon: pos.coords.longitude });
-      }
-    } catch {}
-  };
-
-  const useGPS = async () => {
-    if (cachedPosition.current && nearbyAddress) { goToDetails(nearbyAddress); return; }
-    setGpsLoading(true); setGpsError(null);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { setGpsError('Permission refusée'); return; }
-      const pos = await Location.getLastKnownPositionAsync({ maxAge: 60000, requiredAccuracy: 500 })
-        ?? await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      if (geo) {
-        const label = [geo.street, geo.district ?? geo.subregion, geo.city].filter(Boolean).join(', ');
-        goToDetails({ label: label || 'Position actuelle', sublabel: geo.city ?? undefined, lat: pos.coords.latitude, lon: pos.coords.longitude });
-      } else { setGpsError('Position non reconnue.'); }
-    } catch { setGpsError('Impossible de récupérer votre position.'); }
-    finally { setGpsLoading(false); }
-  };
-
-  const goToDetails = (addr: AddressResult) => {
-    setSelectedAddress(addr);
-    setMapAddress(addr.label);
-    setStreetNumber(''); setAptUnit(''); setBuildingName('');
-    setBuzzerCode(''); setBuildingType(BUILDING_TYPES[0]);
-    const lat = addr.lat ?? DEFAULT_LAT;
-    const lon = addr.lon ?? DEFAULT_LON;
     currentCenter.current = { lat, lon };
-    setStep('details');
-    setTimeout(() => {
-      mapRef.current?.animateToRegion({ latitude: lat, longitude: lon, latitudeDelta: 0.005, longitudeDelta: 0.005 }, 600);
-    }, 400);
-  };
+    setMapCenter({ lat, lon });
+    setMapKey(k => k + 1);
+    setStep('map');
+  }, []);
 
-  const onRegionChange = () => setIsDragging(true);
-  const onRegionChangeComplete = (region: Region) => {
-    setIsDragging(false);
-    currentCenter.current = { lat: region.latitude, lon: region.longitude };
-  };
-
-  const handlePinpoint = async () => {
-    const { lat, lon } = currentCenter.current;
-    setGeocoding(true);
+  /* ──────────────────────────────────────────────────────────────
+     Message WebView → RN
+  ────────────────────────────────────────────────────────────── */
+  const onWebViewMessage = useCallback((e: any) => {
     try {
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
-      if (geo) {
-        const label = [geo.street, geo.district ?? geo.subregion, geo.postalCode, geo.city].filter(Boolean).join(', ');
-        setMapAddress(label || `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
-        setSelectedAddress({ label: label || 'Position sélectionnée', sublabel: geo.city ?? undefined, lat, lon });
+      const msg = JSON.parse(e.nativeEvent.data);
+      if (msg.type === 'pin') {
+        // Géocodage après "Pin ici"
+        handlePin(msg.lat, msg.lng);
       }
-    } catch { setMapAddress(`${lat.toFixed(5)}, ${lon.toFixed(5)}`); }
-    finally { setGeocoding(false); }
-  };
+    } catch { /* ignore */ }
+  }, []);
 
-  const recenterGPS = async () => {
+  const handlePin = useCallback(async (lat: number, lng: number) => {
+    currentCenter.current = { lat, lon: lng };
+    setPinning(true);
+    setMapAddr('…');
+    setMapCity('');
+    setStep('form');
+    setLabel('');
+    setComplement('');
+    setAccessCode('');
+    setSaveLocal(true);
+    const { address, city } = await reverseGeocode(lat, lng);
+    setMapAddr(address);
+    setMapCity(city);
+    setPinning(false);
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+     "Pin ici" — demande à la WebView d'envoyer le centre actuel
+  ────────────────────────────────────────────────────────────── */
+  const handlePinIci = useCallback(() => {
+    webviewRef.current?.injectJavaScript(`sendPin(); true;`);
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+     Recentrer sur la position GPS
+  ────────────────────────────────────────────────────────────── */
+  const recenterGPS = useCallback(() => {
+    const gps = latestGPS.current;
+    if (!gps) { Alert.alert('GPS', 'Position GPS non encore disponible.'); return; }
+    webviewRef.current?.injectJavaScript(
+      `map.flyTo({center:[${gps.lon},${gps.lat}],zoom:17,essential:true}); true;`
+    );
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+     Recherche Nominatim
+  ────────────────────────────────────────────────────────────── */
+  const onSearchChange = useCallback((text: string) => {
+    setSearchQuery(text);
+    setShowResults(false);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (text.trim().length < 2) { setSearchResults([]); return; }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      const results = await searchNominatim(text);
+      setSearchResults(results);
+      setShowResults(results.length > 0);
+      setSearching(false);
+    }, 500);
+  }, []);
+
+  const onSelectResult = useCallback((result: NominatimResult) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    Keyboard.dismiss();
+    setShowResults(false);
+    setSearchQuery(result.display_name.split(',')[0]);
+    webviewRef.current?.injectJavaScript(
+      `map.flyTo({center:[${lon},${lat}],zoom:17,essential:true}); true;`
+    );
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────────
+     Sauvegarder l'adresse
+  ────────────────────────────────────────────────────────────── */
+  const handleSave = useCallback(async () => {
+    const { lat, lon } = currentCenter.current;
+    const finalLabel  = label.trim() || mapAddr || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    const fullAddress = [mapAddr, complement.trim()].filter(Boolean).join(', ');
+
+    setSaving(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = cachedPosition.current
-        ? { coords: { latitude: cachedPosition.current.lat, longitude: cachedPosition.current.lon } }
-        : await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      mapRef.current?.animateToRegion({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }, 500);
-    } catch {}
-  };
-
-  // ── Confirme et sauvegarde ─────────────────────────────────────────────────
-  const confirm = async () => {
-    if (!selectedAddress) return;
-    const fullAddress = [streetNumber, selectedAddress.label, aptUnit, buildingName].filter(Boolean).join(', ');
-    const city = selectedAddress.sublabel ?? selectedAddress.label;
-    const lat  = selectedAddress.lat ?? null;
-    const lon  = selectedAddress.lon ?? null;
-
-    setCity(city);
-    setAddress(fullAddress);
-    if (lat && lon && typeof setCoords === 'function') setCoords(lat, lon);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      if (userId) {
         await supabase.from('users').update({
           delivery_address: fullAddress,
-          delivery_city: city,
-          delivery_lat: lat,
-          delivery_lon: lon,
-        }).eq('id', user.id);
+          delivery_city:    mapCity,
+          delivery_lat:     lat,
+          delivery_lon:     lon,
+        }).eq('id', userId);
       }
-    } catch (err) {
-      console.warn('[LocationPicker] Sauvegarde échouée:', err);
+      setLocation(mapCity, fullAddress, lat, lon, userId ?? '', finalLabel);
+
+      if (saveLocal) {
+        const newAddr: SavedAddr = {
+          id:          Date.now().toString(),
+          label:       finalLabel,
+          address:     fullAddress,
+          city:        mapCity,
+          lat,
+          lon,
+          complement:  complement.trim() || undefined,
+          accessCode:  accessCode.trim() || undefined,
+        };
+        const updated = [
+          newAddr,
+          ...savedAddrs.filter(a =>
+            Math.abs(a.lat - lat) > 0.0002 || Math.abs(a.lon - lon) > 0.0002
+          ),
+        ].slice(0, 10);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        setSavedAddrs(updated);
+      }
+      onClose();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sauvegarder l\'adresse.');
+    } finally {
+      setSaving(false);
     }
-    dismiss();
-  };
+  }, [label, complement, mapAddr, mapCity, saveLocal, savedAddrs, setLocation, userId, onClose]);
 
-  // ── Partager avec vrai lien Google Maps ───────────────────────────────────
-  const shareAddress = async () => {
-    const addr = savedAddress ?? savedCity ?? '';
-    let googleMapsUrl: string;
-
-    if (savedLat && savedLon) {
-      // Lien avec coordonnées exactes — s'ouvre directement au bon endroit
-      googleMapsUrl = `https://www.google.com/maps?q=${savedLat},${savedLon}`;
-    } else {
-      // Lien avec adresse texte
-      googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
-    }
-
+  /* ──────────────────────────────────────────────────────────────
+     Sélectionner une adresse sauvegardée
+  ────────────────────────────────────────────────────────────── */
+  const selectSaved = useCallback(async (addr: SavedAddr) => {
+    setSaving(true);
     try {
-      await Share.share({
-        message: `Mon adresse de livraison Bymoh :\n${addr}\n\n📍 Voir sur Google Maps :\n${googleMapsUrl}`,
-        url: googleMapsUrl, // iOS uniquement — affiche l'URL séparément
-      });
-    } catch {}
-  };
+      if (userId) {
+        await supabase.from('users').update({
+          delivery_address: addr.address,
+          delivery_city:    addr.city,
+          delivery_lat:     addr.lat,
+          delivery_lon:     addr.lon,
+        }).eq('id', userId);
+      }
+      setLocation(addr.city, addr.address, addr.lat, addr.lon, userId ?? '', addr.label);
+      onClose();
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sélectionner l\'adresse.');
+    } finally { setSaving(false); }
+  }, [setLocation, userId, onClose]);
 
-  // ── Ouvrir Google Maps directement ────────────────────────────────────────
-  const openInGoogleMaps = async () => {
-    const url = savedLat && savedLon
-      ? `https://www.google.com/maps?q=${savedLat},${savedLon}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(savedAddress ?? '')}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (canOpen) Linking.openURL(url);
-  };
+  const deleteSaved = useCallback(async (id: string) => {
+    const updated = savedAddrs.filter(a => a.id !== id);
+    setSavedAddrs(updated);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  }, [savedAddrs]);
 
-  const cityResults = ALL_CITIES.filter(
-    (c) => query && (c.name.toLowerCase().includes(query.toLowerCase()) || c.country.toLowerCase().includes(query.toLowerCase()))
-  );
+  const shareAddr = useCallback(async (addr: SavedAddr) => {
+    const mapsUrl = `https://maps.google.com/?q=${addr.lat},${addr.lon}`;
+    const lines: string[] = [mapsUrl];
+    if (addr.complement) lines.push(`🏠 ${addr.complement}`);
+    if (addr.accessCode) lines.push(`🔑 ${addr.accessCode}`);
+    const message = lines.join('\n');
+    try {
+      await Share.share(
+        Platform.OS === 'ios'
+          ? { message, url: mapsUrl }
+          : { message },
+      );
+    } catch { /* annulé par l'utilisateur */ }
+  }, []);
 
-  // ── ÉTAPE 0 : Vue adresse enregistrée ─────────────────────────────────────
-  const renderView = () => (
-    <>
-      <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Mon adresse de livraison</Text>
-        <TouchableOpacity onPress={dismiss} style={styles.closeBtn}>
-          <Feather name="x" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
-      </View>
+  const openInMaps = useCallback((lat: number, lon: number) => {
+    const url = Platform.OS === 'ios'
+      ? `http://maps.apple.com/?ll=${lat},${lon}`
+      : `https://maps.google.com/?q=${lat},${lon}`;
+    Linking.openURL(url);
+  }, []);
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
-
-        {/* ── Mini carte de prévisualisation ── */}
-        {hasCoords ? (
-          <View style={styles.previewMapWrapper}>
-            <MapView
-              ref={previewRef}
-              style={styles.previewMap}
-              provider={PROVIDER_GOOGLE}
-              initialRegion={{
-                latitude: savedLat,
-                longitude: savedLon,
-                latitudeDelta: 0.003,
-                longitudeDelta: 0.003,
-              }}
-              // ── Non interagissable ──
-              scrollEnabled={false}
-              zoomEnabled={false}
-              rotateEnabled={false}
-              pitchEnabled={false}
-              toolbarEnabled={false}
-              showsUserLocation={false}
-              showsCompass={false}
-              showsMyLocationButton={false}
-              mapType="standard"
-            >
-              {/* Marqueur rouge à la position exacte */}
-              <Marker
-                coordinate={{ latitude: savedLat, longitude: savedLon }}
-                pinColor="#FF6835"
-              />
-            </MapView>
-
-            {/* Bouton "Ouvrir dans Google Maps" par-dessus la carte */}
-            <TouchableOpacity style={styles.openMapsBtn} onPress={openInGoogleMaps} activeOpacity={0.88}>
-              <Feather name="external-link" size={13} color="#fff" />
-              <Text style={styles.openMapsBtnText}>Ouvrir dans Google Maps</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.previewPlaceholder}>
-            <Feather name="map" size={32} color="#D1D5DB" />
-            <Text style={styles.previewPlaceholderText}>Carte non disponible</Text>
-            <Text style={styles.previewPlaceholderSub}>Les coordonnées ne sont pas enregistrées</Text>
-          </View>
-        )}
-
-        <View style={styles.viewContent}>
-          {/* Adresse */}
-          <View style={styles.addressCard}>
-            <View style={styles.addressCardIcon}>
-              <Feather name="map-pin" size={20} color="#FF6835" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.addressCardLabel}>Adresse enregistrée</Text>
-              <Text style={styles.addressCardValue}>
-                {savedAddress ?? savedCity ?? 'Aucune adresse'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Bouton Partager */}
-          <TouchableOpacity style={styles.shareBtn} onPress={shareAddress} activeOpacity={0.8}>
-            <Feather name="share-2" size={17} color="#1E3A5F" />
-            <Text style={styles.shareBtnText}>Partager mon adresse</Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>ou</Text>
-            <View style={styles.divider} />
-          </View>
-
-          {/* Bouton Modifier */}
-          <TouchableOpacity style={styles.modifyBtn} onPress={() => setStep('search')} activeOpacity={0.88}>
-            <Feather name="edit-2" size={17} color="#fff" />
-            <Text style={styles.modifyBtnText}>Modifier l'adresse</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </>
-  );
-
-  // ── ÉTAPE 1 : Recherche ───────────────────────────────────────────────────
-  const renderSearch = () => (
-    <>
-      <View style={styles.pageHeader}>
-        <TouchableOpacity onPress={() => hasAddress ? setStep('view') : dismiss()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.pageTitle}>Choisir une adresse</Text>
-      </View>
-
-      <View style={styles.searchWrap}>
-        <Feather name="search" size={16} color="#9CA3AF" />
-        <TextInput style={styles.searchInput} placeholder="Rechercher une adresse" placeholderTextColor="#9CA3AF" value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="words" />
-        {query.length > 0 && <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}><Feather name="x-circle" size={16} color="#C4C9D4" /></TouchableOpacity>}
-      </View>
-
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {query.length > 1 ? (
-          <>
-            <TouchableOpacity style={styles.gpsRow} onPress={useGPS} disabled={gpsLoading}>
-              <View style={styles.gpsRowIcon}>{gpsLoading ? <ActivityIndicator size="small" color="#FF6835" /> : <Feather name="navigation" size={16} color="#FF6835" />}</View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.gpsRowLabel}>Utiliser ma position actuelle</Text>
-                {gpsError && <Text style={styles.gpsRowError}>{gpsError}</Text>}
-              </View>
-            </TouchableOpacity>
-
-            {/* ✅ Résultats Nominatim — vraies adresses */}
-            {searching && (
-              <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-                <ActivityIndicator size="small" color="#FF6835" />
-              </View>
-            )}
-            {!searching && nominatimResults.map((r, i) => (
-              <TouchableOpacity key={i} style={styles.resultRow} onPress={() => goToDetails(r)} activeOpacity={0.8}>
-                <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#FF6835" /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.resultLabel} numberOfLines={1}>{r.sublabel ?? r.label}</Text>
-                  <Text style={styles.resultSub} numberOfLines={1}>{r.label}</Text>
-                </View>
-                <Feather name="chevron-right" size={14} color="#D1D5DB" />
-              </TouchableOpacity>
-            ))}
-            {!searching && nominatimResults.length === 0 && query.trim().length > 2 && (
-              <TouchableOpacity style={styles.resultRow} onPress={() => goToDetails({ label: query.trim(), lat: DEFAULT_LAT, lon: DEFAULT_LON })}>
-                <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#6B7280" /></View>
-                <View style={{ flex: 1 }}><Text style={styles.resultLabel}>{query.trim()}</Text><Text style={styles.resultSub}>Affiner sur la carte</Text></View>
-                <Feather name="chevron-right" size={14} color="#D1D5DB" />
-              </TouchableOpacity>
-            )}
-          </>
-        ) : (
-          <>
-            <TouchableOpacity style={styles.gpsMainBtn} onPress={useGPS} disabled={gpsLoading}>
-              <View style={styles.gpsMainIcon}>{gpsLoading ? <ActivityIndicator size="small" color="#FF6835" /> : <Feather name="navigation" size={18} color="#FF6835" />}</View>
-              <View style={{ flex: 1 }}><Text style={styles.gpsMainLabel}>Utiliser ma position actuelle</Text><Text style={styles.gpsMainSub}>Détection automatique par GPS</Text></View>
-              <Feather name="chevron-right" size={16} color="#FF6835" />
-            </TouchableOpacity>
-            {nearbyAddress && (
-              <>
-                <Text style={styles.sectionTitle}>Adresses à proximité</Text>
-                <TouchableOpacity style={[styles.resultRow, styles.resultRowHighlight]} onPress={() => goToDetails(nearbyAddress)}>
-                  <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#111827" /></View>
-                  <View style={{ flex: 1 }}><Text style={styles.resultLabel}>{nearbyAddress.label}</Text>{nearbyAddress.sublabel && <Text style={styles.resultSub}>{nearbyAddress.sublabel}</Text>}</View>
-                </TouchableOpacity>
-              </>
-            )}
-            <Text style={styles.sectionTitle}>Adresses précédentes</Text>
-            {RECENTS.map((r, i) => (
-              <TouchableOpacity key={i} style={styles.resultRow} onPress={() => goToDetails(r)}>
-                <View style={styles.resultIcon}><Feather name="map-pin" size={16} color="#9CA3AF" /></View>
-                <View style={{ flex: 1 }}><Text style={styles.resultLabel}>{r.label}</Text>{r.sublabel && <Text style={styles.resultSub}>{r.sublabel}</Text>}</View>
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
-        <View style={{ height: insets.bottom + 40 }} />
-      </ScrollView>
-    </>
-  );
-
-  // ── ÉTAPE 2 : Carte Google Maps + Détails ─────────────────────────────────
-  const renderDetails = () => (
-    <>
-      <View style={styles.pageHeader}>
-        <TouchableOpacity onPress={() => setStep('search')} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.pageTitle}>Choisir sur la carte</Text>
-      </View>
-
-      <View style={styles.mapWrapper}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={{ latitude: selectedAddress?.lat ?? DEFAULT_LAT, longitude: selectedAddress?.lon ?? DEFAULT_LON, latitudeDelta: 0.005, longitudeDelta: 0.005 }}
-          onRegionChange={onRegionChange}
-          onRegionChangeComplete={onRegionChangeComplete}
-          showsUserLocation showsMyLocationButton={false}
-          showsCompass={false} toolbarEnabled={false} mapType="standard"
-        />
-        <View style={styles.pinWrap} pointerEvents="none">
-          <View style={[styles.pinShadow, isDragging && styles.pinShadowUp]} />
-          <View style={[styles.pinBody, isDragging && styles.pinBodyUp]}>
-            <View style={styles.pinHead}><View style={styles.pinHeadDot} /></View>
-            <View style={styles.pinTip} />
-          </View>
-        </View>
-        <TouchableOpacity style={styles.gpsMapBtn} onPress={recenterGPS} activeOpacity={0.8}>
-          <Feather name="navigation" size={18} color="#FF6835" />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.pinpointBtn, geocoding && { opacity: 0.8 }]} onPress={handlePinpoint} disabled={geocoding} activeOpacity={0.88}>
-          {geocoding ? <ActivityIndicator size="small" color="#fff" /> : <><Feather name="crosshair" size={15} color="#fff" /><Text style={styles.pinpointText}>Pointer ici</Text></>}
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.resolvedRow}>
-        <Feather name="map-pin" size={14} color={mapAddress ? '#FF6835' : '#9CA3AF'} />
-        <Text style={[styles.resolvedText, !mapAddress && styles.resolvedPlaceholder]} numberOfLines={2}>
-          {isDragging ? 'Déplacement…' : mapAddress || 'Déplacez la carte puis appuyez sur "Pointer ici"'}
-        </Text>
-      </View>
-
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.detailsContent}>
-          <Text style={styles.fieldLabel}>Numéro de la rue</Text>
-          <TextInput style={styles.field} placeholder="ex : 42" placeholderTextColor="#9CA3AF" value={streetNumber} onChangeText={setStreetNumber} />
-
-          <Text style={styles.fieldLabel}>Type de bâtiment</Text>
-          <TouchableOpacity style={styles.dropdown} onPress={() => setBuildingTypeOpen((v) => !v)}>
-            <Text style={styles.dropdownValue}>{buildingType}</Text>
-            <Feather name={buildingTypeOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
-          </TouchableOpacity>
-          {buildingTypeOpen && (
-            <View style={styles.dropdownMenu}>
-              {BUILDING_TYPES.map((t) => (
-                <TouchableOpacity key={t} style={[styles.dropdownItem, t === buildingType && styles.dropdownItemActive]} onPress={() => { setBuildingType(t); setBuildingTypeOpen(false); }}>
-                  <Text style={[styles.dropdownItemText, t === buildingType && { color: '#FF6835' }]}>{t}</Text>
-                  {t === buildingType && <Feather name="check" size={14} color="#FF6835" />}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          <Text style={styles.fieldLabel}>Appartement / Étage <Text style={styles.optional}>(optionnel)</Text></Text>
-          <TextInput style={styles.field} placeholder="ex : Apt 3B" placeholderTextColor="#9CA3AF" value={aptUnit} onChangeText={setAptUnit} />
-          <Text style={styles.fieldLabel}>Nom du bâtiment <Text style={styles.optional}>(optionnel)</Text></Text>
-          <TextInput style={styles.field} placeholder="ex : Résidence Les Cocotiers" placeholderTextColor="#9CA3AF" value={buildingName} onChangeText={setBuildingName} />
-          <Text style={styles.fieldLabel}>Code d'entrée <Text style={styles.optional}>(optionnel)</Text></Text>
-          <TextInput style={styles.field} placeholder="ex : 1234#" placeholderTextColor="#9CA3AF" value={buzzerCode} onChangeText={setBuzzerCode} />
-        </View>
-        <View style={{ height: 120 }} />
-      </ScrollView>
-
-      <View style={[styles.confirmFooter, { paddingBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity style={[styles.confirmBtn, !mapAddress && styles.confirmBtnDisabled]} onPress={confirm} activeOpacity={0.88} disabled={!mapAddress}>
-          <Text style={styles.confirmBtnText}>Confirmer cette adresse</Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-
-  if (!visible) return null;
-
+  /* ════════════════════════════════════════════════════════════════
+     RENDER
+  ═══════════════════════════════════════════════════════════════ */
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
-      <TouchableWithoutFeedback onPress={dismiss}>
-        <Animated.View style={[styles.backdrop, { opacity: slideY.interpolate({ inputRange: [0, SHEET_H], outputRange: [1, 0], extrapolate: 'clamp' }) }]} />
-      </TouchableWithoutFeedback>
-      <Animated.View style={[styles.sheet, { transform: [{ translateY: slideY }] }]}>
-        <View style={styles.handleZone}><View style={styles.handle} /></View>
-        {step === 'view'    && renderView()}
-        {step === 'search'  && renderSearch()}
-        {step === 'details' && renderDetails()}
-      </Animated.View>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={s.root}>
+
+        {/* ══════════════════════════════
+            LISTE
+        ══════════════════════════════ */}
+        {step === 'list' && (
+          <>
+            <View style={s.header}>
+              <Text style={s.headerTitle}>Adresse de livraison</Text>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Feather name="x" size={22} color="#374151" />
+              </Pressable>
+            </View>
+
+            <FlatList
+              data={savedAddrs}
+              keyExtractor={item => item.id}
+              contentContainerStyle={s.listContent}
+              ListHeaderComponent={
+                <TouchableOpacity style={s.newBtn} onPress={() => openMap()}>
+                  <View style={s.newBtnIcon}>
+                    {locating
+                      ? <ActivityIndicator size="small" color={P} />
+                      : <Feather name="plus" size={20} color={P} />
+                    }
+                  </View>
+                  <View>
+                    <Text style={s.newBtnTitle}>Nouvelle adresse</Text>
+                    <Text style={s.newBtnSub}>Se centre sur votre position GPS</Text>
+                  </View>
+                </TouchableOpacity>
+              }
+              ListEmptyComponent={
+                <View style={s.emptyBox}>
+                  <Feather name="map-pin" size={44} color="#D1D5DB" />
+                  <Text style={s.emptyTitle}>Aucune adresse sauvegardée</Text>
+                  <Text style={s.emptySub}>
+                    Ajoutez votre adresse maison ou travail pour la retrouver facilement
+                  </Text>
+                </View>
+              }
+              renderItem={({ item }) => {
+                const isActive = activeLat !== null && activeLon !== null
+                  && Math.abs(item.lat - (activeLat ?? 0)) < 0.0003
+                  && Math.abs(item.lon - (activeLon ?? 0)) < 0.0003;
+                return (
+                <View style={[s.addrCard, isActive && s.addrCardActive]}>
+                  <Pressable style={s.addrMain} onPress={() => selectSaved(item)}>
+                    <View style={[s.addrIconWrap, isActive && s.addrIconWrapActive]}>
+                      <Feather name={isActive ? 'check' : 'map-pin'} size={15} color={isActive ? '#fff' : P} />
+                    </View>
+                    <View style={s.addrTexts}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={s.addrLabel} numberOfLines={1}>{item.label}</Text>
+                        {isActive && (
+                          <View style={s.activeBadge}>
+                            <Text style={s.activeBadgeTxt}>En cours</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={s.addrSub} numberOfLines={1}>{item.address}</Text>
+                    </View>
+                  </Pressable>
+                  <View style={s.addrActions}>
+                    <Pressable hitSlop={10} style={s.iconBtn} onPress={() => shareAddr(item)}>
+                      <Feather name="share-2" size={16} color="#9CA3AF" />
+                    </Pressable>
+                    <Pressable hitSlop={10} style={s.iconBtn} onPress={() => openMap(item.lat, item.lon)}>
+                      <Feather name="edit-2" size={16} color="#9CA3AF" />
+                    </Pressable>
+                    <Pressable
+                      hitSlop={10}
+                      style={s.iconBtn}
+                      onPress={() =>
+                        Alert.alert('Supprimer', `Supprimer "${item.label}" ?`, [
+                          { text: 'Annuler', style: 'cancel' },
+                          { text: 'Supprimer', style: 'destructive', onPress: () => deleteSaved(item.id) },
+                        ])
+                      }
+                    >
+                      <Feather name="trash-2" size={16} color="#EF4444" />
+                    </Pressable>
+                  </View>
+                </View>
+                );
+              }}
+            />
+          </>
+        )}
+
+        {/* ══════════════════════════════
+            CARTE
+        ══════════════════════════════ */}
+        {step === 'map' && (
+          <View style={s.mapContainer}>
+            {/* Barre du haut : retour + recherche + GPS */}
+            <View style={s.mapTopBar}>
+              <Pressable onPress={() => setStep('list')} hitSlop={12} style={s.backBtn}>
+                <Feather name="arrow-left" size={20} color="#374151" />
+              </Pressable>
+
+              <View style={s.searchWrap}>
+                <Feather name="search" size={14} color="#9CA3AF" style={{ marginRight: 7 }} />
+                <TextInput
+                  style={s.searchInput}
+                  placeholder="Rechercher une adresse…"
+                  placeholderTextColor="#9CA3AF"
+                  value={searchQuery}
+                  onChangeText={onSearchChange}
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                  autoCorrect={false}
+                />
+                {searching && <ActivityIndicator size="small" color={P} style={{ marginLeft: 6 }} />}
+              </View>
+
+              <Pressable onPress={recenterGPS} hitSlop={12} style={s.gpsBtn}>
+                <Feather name="crosshair" size={21} color={GPS_BLUE} />
+              </Pressable>
+            </View>
+
+            {/* Dropdown résultats de recherche */}
+            {showResults && searchResults.length > 0 && (
+              <View style={s.resultsDropdown}>
+                {searchResults.map(r => (
+                  <Pressable
+                    key={r.place_id}
+                    style={s.resultRow}
+                    onPress={() => onSelectResult(r)}
+                  >
+                    <Feather name="map-pin" size={13} color="#9CA3AF" style={{ marginRight: 8 }} />
+                    <Text style={s.resultTxt} numberOfLines={2}>{r.display_name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Carte */}
+            <View style={s.mapWrap}>
+              <WebView
+                key={mapKey}
+                ref={webviewRef}
+                source={{ html: MAP_HTML(mapCenter.lat, mapCenter.lon) }}
+                style={StyleSheet.absoluteFill}
+                onMessage={onWebViewMessage}
+                scrollEnabled={false}
+                bounces={false}
+                javaScriptEnabled
+                originWhitelist={['*']}
+              />
+
+              {/* ── Floating pin (overlay RN, immobile au centre) ── */}
+              <View style={s.floatingPinWrap} pointerEvents="none">
+                <View style={s.pinCircle}>
+                  <View style={s.pinDot} />
+                </View>
+                <View style={s.pinTip} />
+                <View style={s.pinShadow} />
+              </View>
+            </View>
+
+            {/* Légende + bouton "Pin ici" */}
+            <View style={s.pinBtnWrap}>
+              <Text style={s.pinHint}>
+                Déplacez la carte pour positionner le pin, puis confirmez
+              </Text>
+              <TouchableOpacity style={s.pinBtn} onPress={handlePinIci} activeOpacity={0.85}>
+                <Feather name="check-circle" size={17} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={s.pinBtnTxt}>Pin ici</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ══════════════════════════════
+            FORMULAIRE
+        ══════════════════════════════ */}
+        {step === 'form' && (
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={s.header}>
+              <Pressable onPress={() => setStep('map')} hitSlop={12}>
+                <Feather name="arrow-left" size={20} color="#374151" />
+              </Pressable>
+              <Text style={s.headerTitle}>Confirmer l'adresse</Text>
+              <View style={{ width: 22 }} />
+            </View>
+
+            <ScrollView contentContainerStyle={s.formContent} keyboardShouldPersistTaps="handled">
+
+              {/* Mini-carte */}
+              <View style={s.previewMap}>
+                <WebView
+                  source={{ html: MAP_HTML_STATIC(currentCenter.current.lat, currentCenter.current.lon) }}
+                  style={StyleSheet.absoluteFill}
+                  scrollEnabled={false}
+                  javaScriptEnabled
+                  originWhitelist={['*']}
+                  pointerEvents="none"
+                />
+              </View>
+
+              {/* Adresse géocodée */}
+              <View style={s.resolvedBox}>
+                {pinning
+                  ? <ActivityIndicator color={P} style={{ marginRight: 10 }} />
+                  : <Feather name="map-pin" size={16} color={P} style={{ marginRight: 10, marginTop: 2 }} />
+                }
+                <View style={{ flex: 1 }}>
+                  <Text style={s.resolvedAddr}>{mapAddr || '…'}</Text>
+                  {mapCity ? <Text style={s.resolvedCity}>{mapCity}</Text> : null}
+                </View>
+              </View>
+
+              {/* Nom */}
+              <View>
+                <Text style={s.fieldLabel}>Nom de l'adresse</Text>
+                <View style={s.chipRow}>
+                  {LABEL_OPTIONS.map(opt => {
+                    const active = label === opt.key;
+                    return (
+                      <Pressable
+                        key={opt.key}
+                        style={[s.chip, active && s.chipOn]}
+                        onPress={() => setLabel(prev => prev === opt.key ? '' : opt.key)}
+                      >
+                        <opt.Icon color={active ? P : '#6B7280'} />
+                        <Text style={[s.chipTxt, active && s.chipTxtOn]}>{opt.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  style={s.input}
+                  placeholder="Nom personnalisé…"
+                  placeholderTextColor="#9CA3AF"
+                  value={label}
+                  onChangeText={setLabel}
+                  returnKeyType="next"
+                />
+              </View>
+
+              {/* Complément */}
+              <View>
+                <Text style={s.fieldLabel}>Complément (optionnel)</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Appartement, étage, bâtiment…"
+                  placeholderTextColor="#9CA3AF"
+                  value={complement}
+                  onChangeText={setComplement}
+                  returnKeyType="next"
+                />
+              </View>
+
+              {/* Code d'accès / contact à l'arrivée */}
+              <View>
+                <Text style={s.fieldLabel}>Code / Numéro à l'arrivée (optionnel)</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Code portail, interphone, tél. à appeler…"
+                  placeholderTextColor="#9CA3AF"
+                  value={accessCode}
+                  onChangeText={setAccessCode}
+                  returnKeyType="done"
+                />
+                <Text style={s.fieldHint}>
+                  Ces infos seront incluses dans le lien partagé avec le livreur
+                </Text>
+              </View>
+
+              {/* Sauvegarder localement */}
+              <Pressable style={s.toggleRow} onPress={() => setSaveLocal(v => !v)}>
+                <View style={[s.checkbox, saveLocal && s.checkboxOn]}>
+                  {saveLocal && <Feather name="check" size={11} color="#fff" />}
+                </View>
+                <Text style={s.toggleTxt}>Sauvegarder dans mes adresses</Text>
+              </Pressable>
+
+              {/* Confirmer */}
+              <TouchableOpacity
+                style={[s.confirmBtn, (saving || pinning) && s.confirmBtnOff]}
+                onPress={handleSave}
+                disabled={saving || pinning}
+                activeOpacity={0.85}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.confirmBtnTxt}>Confirmer l'adresse</Text>
+                }
+              </TouchableOpacity>
+
+              {/* Bouton partager */}
+              <TouchableOpacity
+                style={s.shareBtn}
+                onPress={() => shareAddr({
+                  id: '',
+                  label: label.trim() || mapAddr,
+                  address: [mapAddr, complement.trim()].filter(Boolean).join(', '),
+                  city: mapCity,
+                  lat: currentCenter.current.lat,
+                  lon: currentCenter.current.lon,
+                  complement: complement.trim() || undefined,
+                  accessCode: accessCode.trim() || undefined,
+                })}
+              >
+                <Feather name="share-2" size={15} color={P} style={{ marginRight: 8 }} />
+                <Text style={s.shareBtnTxt}>Partager cette adresse</Text>
+              </TouchableOpacity>
+
+              {/* Ouvrir dans Maps */}
+              <TouchableOpacity
+                style={s.mapsRow}
+                onPress={() => openInMaps(currentCenter.current.lat, currentCenter.current.lon)}
+              >
+                <Feather name="external-link" size={14} color="#9CA3AF" style={{ marginRight: 6 }} />
+                <Text style={s.mapsTxt}>
+                  {Platform.OS === 'ios' ? 'Ouvrir dans Plans' : 'Ouvrir dans Google Maps'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        )}
+
+      </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, height: SHEET_H, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  handleZone: { alignItems: 'center', paddingTop: 10, paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB' },
-  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  backBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  closeBtn: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
-  pageTitle: { flex: 1, fontSize: 18, fontWeight: '800', color: '#111827' },
+/* ═══════════════════════════════════════════════════════════════════
+   Styles
+═══════════════════════════════════════════════════════════════════ */
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#fff' },
 
-  // ── Vue adresse ──
-  previewMapWrapper: { height: PREVIEW_H, position: 'relative', overflow: 'hidden' },
-  previewMap: { ...StyleSheet.absoluteFill },
-  openMapsBtn: {
-    position: 'absolute', bottom: 12, right: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 100,
-    paddingHorizontal: 14, paddingVertical: 8,
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB',
   },
-  openMapsBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-  previewPlaceholder: { height: 120, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  previewPlaceholderText: { fontSize: 14, fontWeight: '600', color: '#9CA3AF' },
-  previewPlaceholderSub: { fontSize: 12, color: '#C4C9D4' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
 
-  viewContent: { padding: 20, gap: 14 },
-  addressCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: '#F8F7F4', borderRadius: 16, padding: 16, borderWidth: 1.5, borderColor: '#E5E7EB' },
-  addressCardIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
-  addressCardLabel: { fontSize: 11, fontWeight: '600', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  addressCardValue: { fontSize: 15, fontWeight: '700', color: '#111827', lineHeight: 22 },
-  shareBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#F3F4F6', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB' },
-  shareBtnText: { fontSize: 14, fontWeight: '600', color: '#1E3A5F' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  divider: { flex: 1, height: 1, backgroundColor: '#F3F4F6' },
-  dividerText: { fontSize: 13, color: '#9CA3AF' },
-  modifyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#FF6835', borderRadius: 14, padding: 16, shadowColor: '#FF6835', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
-  modifyBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  /* ── liste ── */
+  listContent: { padding: 16, gap: 10, paddingBottom: 40 },
+  newBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    padding: 14, borderRadius: 14, borderWidth: 1.5,
+    borderStyle: 'dashed', borderColor: P, marginBottom: 4,
+  },
+  newBtnIcon: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFF0EB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  newBtnTitle: { fontSize: 15, fontWeight: '700', color: P },
+  newBtnSub:   { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
+  emptyBox:    { alignItems: 'center', paddingTop: 60, paddingHorizontal: 24, gap: 10 },
+  emptyTitle:  { fontSize: 16, fontWeight: '700', color: '#374151' },
+  emptySub:    { fontSize: 13, color: '#9CA3AF', textAlign: 'center', lineHeight: 19 },
+  addrCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F9FAFB', borderRadius: 14,
+    borderWidth: 1.5, borderColor: '#E5E7EB', overflow: 'hidden',
+  },
+  addrCardActive: {
+    backgroundColor: '#FFF7F4', borderColor: P,
+  },
+  addrMain:    { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 14 },
+  addrIconWrap:{
+    width: 36, height: 36, borderRadius: 10, backgroundColor: '#FFF0EB',
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  addrIconWrapActive: { backgroundColor: P },
+  activeBadge: {
+    backgroundColor: P, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+  },
+  activeBadgeTxt: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  addrTexts:   { flex: 1 },
+  addrLabel:   { fontSize: 14, fontWeight: '600', color: '#111827' },
+  addrSub:     { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  addrActions: { flexDirection: 'row', paddingRight: 2 },
+  iconBtn:     { padding: 12 },
 
-  // ── Recherche ──
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, margin: 16, marginBottom: 12, backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 16, paddingVertical: Platform.OS === 'ios' ? 13 : 11 },
-  searchInput: { flex: 1, fontSize: 15, color: '#111827', padding: 0 },
-  gpsMainBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginVertical: 8, backgroundColor: '#FEF2EC', borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#FDDCCA' },
-  gpsMainIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  gpsMainLabel: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  gpsMainSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  gpsRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  gpsRowIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center' },
-  gpsRowLabel: { fontSize: 14, fontWeight: '600', color: '#FF6835' },
-  gpsRowError: { fontSize: 12, color: '#EF4444', marginTop: 2 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#111827', paddingHorizontal: 16, paddingTop: 20, paddingBottom: 6 },
-  resultRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  resultRowHighlight: { backgroundColor: '#F9FAFB' },
-  resultIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  resultLabel: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  resultSub: { fontSize: 13, color: '#9CA3AF', marginTop: 2 },
+  /* ── carte ── */
+  mapContainer: { flex: 1 },
+  mapTopBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: Platform.OS === 'ios' ? 12 : 10, paddingBottom: 10,
+    backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 3, zIndex: 20,
+  },
+  backBtn:  { padding: 4 },
+  searchWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F3F4F6', borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 8,
+  },
+  searchInput: { flex: 1, fontSize: 13, color: '#111827', padding: 0 },
+  gpsBtn: { padding: 4 },
 
-  // ── Carte interactive ──
-  mapWrapper: { height: MAP_H, position: 'relative', overflow: 'hidden' },
-  map: { ...StyleSheet.absoluteFill },
-  pinWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  pinBody: { alignItems: 'center', transform: [{ translateY: -22 }] },
-  pinBodyUp: { transform: [{ translateY: -32 }] },
-  pinHead: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FF6835', borderWidth: 3.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#FF6835', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.45, shadowRadius: 8, elevation: 8 },
-  pinHeadDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#fff' },
-  pinTip: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 12, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: '#FF6835', marginTop: -1 },
-  pinShadow: { width: 14, height: 6, borderRadius: 7, backgroundColor: 'rgba(0,0,0,0.2)', transform: [{ translateY: 16 }] },
-  pinShadowUp: { width: 8, height: 4, opacity: 0.1 },
-  gpsMapBtn: { position: 'absolute', bottom: 52, right: 14, width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 },
-  pinpointBtn: { position: 'absolute', bottom: 14, alignSelf: 'center', left: '50%', transform: [{ translateX: -65 }], width: 130, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#111827', borderRadius: 100, paddingHorizontal: 18, paddingVertical: 11, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6 },
-  pinpointText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  resolvedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#F8F7F4', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', minHeight: 52 },
-  resolvedText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#111827', lineHeight: 20 },
-  resolvedPlaceholder: { color: '#9CA3AF', fontWeight: '400', fontSize: 13 },
+  resultsDropdown: {
+    position: 'absolute', top: Platform.OS === 'ios' ? 62 : 58,
+    left: 12, right: 12, zIndex: 30,
+    backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12, shadowRadius: 8, elevation: 10,
+  },
+  resultRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6',
+  },
+  resultTxt: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 18 },
 
-  // ── Détails ──
-  detailsContent: { paddingHorizontal: 20, paddingTop: 8, gap: 6 },
-  fieldLabel: { fontSize: 15, fontWeight: '700', color: '#111827', marginTop: 12, marginBottom: 6 },
-  optional: { fontSize: 13, fontWeight: '400', color: '#9CA3AF' },
-  field: { backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 11, fontSize: 15, color: '#111827' },
-  dropdown: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 14 : 11 },
-  dropdownValue: { fontSize: 15, color: '#111827' },
-  dropdownMenu: { backgroundColor: '#fff', borderRadius: 12, marginTop: 4, borderWidth: 1, borderColor: '#E5E7EB', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 6 },
-  dropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  dropdownItemActive: { backgroundColor: '#FEF2EC' },
-  dropdownItemText: { fontSize: 15, color: '#111827' },
-  confirmFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  confirmBtn: { backgroundColor: '#FF6835', borderRadius: 14, paddingVertical: 17, alignItems: 'center' },
-  confirmBtnDisabled: { backgroundColor: '#D1D5DB' },
-  confirmBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  mapWrap: { flex: 1, position: 'relative' },
+
+  /* floating pin */
+  floatingPinWrap: {
+    position: 'absolute', top: '50%', left: '50%',
+    marginLeft: -18, marginTop: -42, // centre du cercle à 50%
+    alignItems: 'center', width: 36,
+  },
+  pinCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: P, borderWidth: 3, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: P, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45, shadowRadius: 8, elevation: 8,
+  },
+  pinDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#fff' },
+  pinTip: {
+    width: 0, height: 0,
+    borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 8,
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: P,
+    marginTop: -1,
+  },
+  pinShadow: {
+    width: 14, height: 5, borderRadius: 7,
+    backgroundColor: 'rgba(0,0,0,0.13)', marginTop: 3,
+  },
+
+  pinBtnWrap: {
+    padding: 16, paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 6,
+  },
+  pinHint: {
+    fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginBottom: 10,
+  },
+  pinBtn: {
+    backgroundColor: P, borderRadius: 14, paddingVertical: 15,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+  },
+  pinBtnTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
+
+  /* ── formulaire ── */
+  formContent: { padding: 20, gap: 18, paddingBottom: 40 },
+  previewMap:  { height: 150, borderRadius: 14, overflow: 'hidden', backgroundColor: '#F3F4F6' },
+  resolvedBox: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#FFF7F4', borderRadius: 12,
+    borderWidth: 1, borderColor: '#FFD6C4', padding: 14,
+  },
+  resolvedAddr: { fontSize: 15, fontWeight: '600', color: '#111827' },
+  resolvedCity: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  fieldLabel:   { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
+  chipRow:      { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#F3F4F6', borderWidth: 1.5, borderColor: '#E5E7EB',
+  },
+  chipOn:    { backgroundColor: '#FFF0EB', borderColor: P },
+  chipTxt:   { fontSize: 13, color: '#6B7280', fontWeight: '500' },
+  chipTxtOn: { color: P, fontWeight: '700' },
+  input: {
+    backgroundColor: '#F9FAFB', borderRadius: 10, borderWidth: 1,
+    borderColor: '#E5E7EB', paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: '#111827',
+  },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#D1D5DB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxOn:    { backgroundColor: P, borderColor: P },
+  toggleTxt:     { fontSize: 14, color: '#374151' },
+  confirmBtn:    { backgroundColor: P, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  confirmBtnOff: { opacity: 0.5 },
+  confirmBtnTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  fieldHint: { fontSize: 11, color: '#9CA3AF', marginTop: 5 },
+
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: P, borderRadius: 14, paddingVertical: 13,
+  },
+  shareBtnTxt: { fontSize: 15, fontWeight: '600', color: P },
+
+  mapsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8,
+  },
+  mapsTxt: { fontSize: 13, color: '#9CA3AF' },
 });

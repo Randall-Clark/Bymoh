@@ -83,6 +83,28 @@ Deno.serve(async (req) => {
     const { data: businesses } = await admin.from('businesses').select('id').eq('owner_id', userId);
     if (businesses?.length) {
       const ids = businesses.map((b: any) => b.id);
+
+      // ── Nettoyage Storage avant suppression DB ──────────────────────────────
+      for (const bizId of ids) {
+        // Image de couverture
+        await admin.storage.from('businesses').remove(
+          ['jpg', 'jpeg', 'png', 'gif', 'webp'].map((e) => `covers/${bizId}.${e}`)
+        );
+
+        // Images des articles/services (deux chemins possibles selon comment
+        // elles sont uploadées dans l'app)
+        for (const folder of [`services/${bizId}`, `items/${bizId}`]) {
+          try {
+            const { data: files } = await admin.storage.from('businesses').list(folder);
+            if (files?.length) {
+              await admin.storage.from('businesses')
+                .remove(files.map((f: any) => `${folder}/${f.name}`));
+            }
+          } catch {}
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       await admin.from('business_hours').delete().in('business_id', ids);
       await admin.from('services').delete().in('business_id', ids);
       await admin.from('businesses').delete().in('id', ids);

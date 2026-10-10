@@ -3,25 +3,24 @@ import { uploadImageToSupabase } from '@/lib/uploadImage';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, Platform,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { useCartStore } from '@/stores/cartStore';
 
 const ORANGE = '#FF6835';
 const DARK   = '#1E3A5F';
 const RED    = '#EF4444';
 
-// ── Liste des sections de paramètres ─────────────────────────────────────────
 type SettingSection =
   | 'info'
   | 'address'
-  // | 'wallet'
   | 'socials'
   | 'danger';
 
@@ -34,15 +33,49 @@ interface SettingItem {
   bg:    string;
 }
 
+interface DeliveryZone {
+  id:    string;
+  label: string;
+  price: number;
+}
+
 const SETTING_ITEMS: SettingItem[] = [
   { id:'info',    icon:'edit-3',      label:'Informations generales', sub:'Nom, description, telephone, livraison', color:DARK,    bg:'#EEF2FF' },
   { id:'address', icon:'map-pin',     label:'Adresse',                sub:'Localisation de la boutique',           color:'#059669', bg:'#F0FDF4' },
-  // { id:'wallet',  icon:'credit-card', label:'Portefeuille',           sub:'Numero de reception Mobile Money',       color:'#7C3AED', bg:'#F5F3FF' },
   { id:'socials', icon:'share-2',     label:'Reseaux sociaux',        sub:'Facebook, Instagram, WhatsApp...',       color:'#F59E0B', bg:'#FFFBEB' },
   { id:'danger',  icon:'trash-2',     label:'Supprimer la boutique',  sub:'Action irreversible',                   color:RED,       bg:'#FEF2F2' },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
+function generateId(): string {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+// ── Validation géographique via Nominatim (OpenStreetMap) ─────────────────────
+/**
+ * Vérifie qu'un lieu (ville, quartier) existe dans le pays donné.
+ * countryCode = code ISO 2 lettres (ex : "BJ", "CI", "SN")
+ * Fail-open : retourne true si le réseau est inaccessible.
+ */
+async function validateLocationInCountry(
+  locationName: string,
+  countryCode: string,
+): Promise<boolean> {
+  try {
+    const q  = encodeURIComponent(locationName.trim());
+    const cc = countryCode.toLowerCase();
+    const url =
+      `https://nominatim.openstreetmap.org/search` +
+      `?q=${q}&countrycodes=${cc}&format=json&limit=1&accept-language=fr`;
+    const res  = await fetch(url, {
+      headers: { 'User-Agent': 'BymohApp/1.0 contact@bymoh.com' },
+    });
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return true;   // Pas de réseau → on laisse passer (fail-open)
+  }
+}
+
 export default function BusinessSettingsPage() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -50,29 +83,40 @@ export default function BusinessSettingsPage() {
   const qc     = useQueryClient();
 
   const [activeSection, setActiveSection] = useState<SettingSection | null>(null);
-  const [saving,  setSaving]  = useState(false);
-  const [deleting,setDeleting]= useState(false);
+  const [saving,   setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  // Champs
+  // Champs infos
   const [name,        setName]        = useState('');
   const [description, setDescription] = useState('');
   const [phone,       setPhone]       = useState('');
   const [hasDelivery, setHasDelivery] = useState(false);
   const [address,     setAddress]     = useState('');
   const [city,        setCity]        = useState('');
-  const [walletPhone,    setWalletPhone]    = useState('');
-  const [walletProvider, setWalletProvider] = useState('mtn');
+  const [countryCode, setCountryCode] = useState<string | null>(null);   // ← code pays boutique
   const [socials, setSocials] = useState({
     facebook:'', instagram:'', tiktok:'', whatsapp:'', twitter:'', website:'',
   });
   const [imageUri, setImageUri] = useState<string|null>(null);
   const [coverUrl, setCoverUrl] = useState<string|null>(null);
 
+  // Zones de livraison
+  const [deliveryZones,  setDeliveryZones]  = useState<DeliveryZone[]>([]);
+  const [addingZone,     setAddingZone]     = useState(false);
+  const [newZoneLabel,   setNewZoneLabel]   = useState('');
+  const [newZonePrice,   setNewZonePrice]   = useState('');
+  const [savingZone,     setSavingZone]     = useState(false);
+  const [validatingZone, setValidatingZone] = useState(false);   // ← vérif. géo en cours
+  const infoScrollRef = useRef<ScrollView>(null);
+
   // ── Charger les données ───────────────────────────────────────────────────
   const { data: business, isLoading } = useQuery({
     queryKey: ['pro-biz', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('businesses').select('*').eq('id', id!).single();
+      const [{ data, error }, { data: zones }] = await Promise.all([
+        supabase.from('businesses').select('*').eq('id', id!).single(),
+        supabase.from('delivery_zones').select('*').eq('business_id', id!).order('created_at'),
+      ]);
       if (error) throw error;
       setName(data.name ?? '');
       setDescription(data.description ?? '');
@@ -80,9 +124,8 @@ export default function BusinessSettingsPage() {
       setHasDelivery(data.has_delivery ?? false);
       setAddress(data.address ?? '');
       setCity(data.city ?? '');
+      setCountryCode(data.country_code ?? null);                  // ← stocker le code pays
       setCoverUrl(data.cover_url ?? null);
-      setWalletPhone((data as any).wallet_phone ?? '');
-      setWalletProvider((data as any).wallet_provider ?? 'mtn');
       setSocials({
         facebook:  (data as any).social_facebook  ?? '',
         instagram: (data as any).social_instagram ?? '',
@@ -91,6 +134,7 @@ export default function BusinessSettingsPage() {
         twitter:   (data as any).social_twitter   ?? '',
         website:   (data as any).website          ?? '',
       });
+      setDeliveryZones((zones ?? []).map((z: any) => ({ id: z.id, label: z.label, price: z.price })));
       return data;
     },
     enabled: !!id,
@@ -112,10 +156,84 @@ export default function BusinessSettingsPage() {
     try {
       const ext  = imageUri.split('.').pop()?.split('?')[0] ?? 'jpg';
       const path = `covers/${id}.${ext}`;
-          const uploadedUrl = await uploadImageToSupabase(imageUri!, 'businesses', path);
-    if (uploadedUrl) return uploadedUrl;
+      const uploadedUrl = await uploadImageToSupabase(imageUri!, 'businesses', path);
+      if (uploadedUrl) return uploadedUrl;
     } catch {}
     return coverUrl;
+  };
+
+  // ── Zones de livraison ────────────────────────────────────────────────────
+  const addDeliveryZone = async () => {
+    if (!newZoneLabel.trim()) { Alert.alert('Erreur', 'Indiquez une ville ou un quartier.'); return; }
+    if (!newZonePrice.trim()) { Alert.alert('Erreur', 'Indiquez un prix de livraison.'); return; }
+
+    // ── Validation géographique ──────────────────────────────────────────
+    if (countryCode) {
+      setValidatingZone(true);
+      const exists = await validateLocationInCountry(newZoneLabel.trim(), countryCode);
+      setValidatingZone(false);
+      if (!exists) {
+        Alert.alert(
+          'Lieu introuvable',
+          `"${newZoneLabel.trim()}" n'a pas été trouvé dans ce pays.\n\nVérifiez l'orthographe ou essayez un nom plus général.`,
+        );
+        return;
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────
+
+    setSavingZone(true);
+    try {
+      const { data, error } = await supabase
+        .from('delivery_zones')
+        .insert({
+          id:          generateId(),
+          business_id: id!,
+          label:       newZoneLabel.trim(),
+          price:       parseInt(newZonePrice, 10) || 0,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setDeliveryZones(z => [...z, { id: data.id, label: data.label, price: data.price }]);
+      setNewZoneLabel('');
+      setNewZonePrice('');
+      setAddingZone(false);
+    } catch (e: any) {
+      Alert.alert('Erreur', e.message);
+    } finally {
+      setSavingZone(false);
+    }
+  };
+
+  const deleteDeliveryZone = (zoneId: string) => {
+    Alert.alert('Supprimer cette zone ?', 'Cette zone de livraison sera définitivement supprimée.', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Supprimer', style: 'destructive', onPress: async () => {
+        try {
+          await supabase.from('delivery_zones').delete().eq('id', zoneId);
+          setDeliveryZones(z => z.filter(zone => zone.id !== zoneId));
+        } catch (e: any) {
+          Alert.alert('Erreur', e.message);
+        }
+      }},
+    ]);
+  };
+
+  // ── Toggle livraison ──────────────────────────────────────────────────────
+  const toggleDelivery = async (val: boolean) => {
+    setHasDelivery(val);
+    try {
+      const { error } = await supabase
+        .from('businesses')
+        .update({ has_delivery: val })
+        .eq('id', id!);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ['pro-biz', id] });
+    } catch (e: any) {
+      setHasDelivery(!val);
+      Alert.alert('Erreur', e.message);
+    }
   };
 
   // ── Sauvegarder section ───────────────────────────────────────────────────
@@ -131,9 +249,6 @@ export default function BusinessSettingsPage() {
       if (section === 'address') {
         payload = { address: address.trim(), city: city.trim() };
       }
-      // if (section === 'wallet') {
-      //   payload = { wallet_phone: walletPhone.trim() || null, wallet_provider: walletPhone.trim() ? walletProvider : null };
-      // }
       if (section === 'socials') {
         payload = {
           social_facebook:  socials.facebook  || null,
@@ -159,6 +274,27 @@ export default function BusinessSettingsPage() {
   };
 
   // ── Supprimer boutique ────────────────────────────────────────────────────
+  const cleanBusinessStorage = async (bizId: string) => {
+    const coverExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    await Promise.allSettled(
+      coverExts.map((ext) =>
+        supabase.storage.from('businesses').remove([`covers/${bizId}.${ext}`])
+      )
+    );
+    try {
+      const { data: serviceFiles } = await supabase.storage.from('businesses').list(`services/${bizId}`);
+      if (serviceFiles && serviceFiles.length > 0) {
+        await supabase.storage.from('businesses').remove(serviceFiles.map((f) => `services/${bizId}/${f.name}`));
+      }
+    } catch {}
+    try {
+      const { data: serviceItems } = await supabase.storage.from('businesses').list(`items/${bizId}`);
+      if (serviceItems && serviceItems.length > 0) {
+        await supabase.storage.from('businesses').remove(serviceItems.map((f) => `items/${bizId}/${f.name}`));
+      }
+    } catch {}
+  };
+
   const deleteBusiness = () => {
     Alert.alert('Supprimer la boutique ?',
       `"${business?.name}" sera definitivement supprimee.`,
@@ -171,10 +307,14 @@ export default function BusinessSettingsPage() {
               { text: 'Oui, supprimer', style: 'destructive', onPress: async () => {
                 setDeleting(true);
                 try {
+                  await supabase.from('delivery_zones').delete().eq('business_id', id!);
                   await supabase.from('services').delete().eq('business_id', id!);
                   await supabase.from('business_hours').delete().eq('business_id', id!);
                   await supabase.from('businesses').delete().eq('id', id!);
+                  await cleanBusinessStorage(id!);
                   await qc.invalidateQueries({ queryKey: ['my-businesses'] });
+                  const cartStore = useCartStore.getState();
+                  if (cartStore.businessId === id!) cartStore.clearCart();
                   router.replace('/(pro)/dashboard' as any);
                 } catch (e: any) {
                   Alert.alert('Erreur', e.message);
@@ -224,7 +364,6 @@ export default function BusinessSettingsPage() {
       {/* ── Liste des sections ── */}
       {!activeSection && (
         <ScrollView contentContainerStyle={{ padding: 20, gap: 10 }}>
-          {/* Photo de couverture */}
           <TouchableOpacity style={s.coverRow} onPress={pickImage} activeOpacity={0.85}>
             {(imageUri || coverUrl)
               ? <Image source={{ uri: imageUri ?? coverUrl! }} style={s.coverThumb} />
@@ -237,16 +376,14 @@ export default function BusinessSettingsPage() {
             <Feather name="chevron-right" size={16} color="#9CA3AF" />
           </TouchableOpacity>
 
-          {/* Items de paramètres */}
           {SETTING_ITEMS.map((item) => (
             <TouchableOpacity
               key={item.id}
               style={[s.settingRow, item.id === 'danger' && s.settingRowDanger]}
               onPress={() => {
-              if (item.id === 'danger') { deleteBusiness(); return; }
-              // if (item.id === 'wallet') { router.push({ pathname:'/(pro)/business/wallet', params:{ businessId: id } } as any); return; }
-              setActiveSection(item.id);
-            }}
+                if (item.id === 'danger') { deleteBusiness(); return; }
+                setActiveSection(item.id);
+              }}
               activeOpacity={0.85}
             >
               <View style={[s.settingIcon, { backgroundColor: item.bg }]}>
@@ -269,7 +406,8 @@ export default function BusinessSettingsPage() {
 
       {/* ── Informations générales ── */}
       {activeSection === 'info' && (
-        <ScrollView contentContainerStyle={s.formScroll} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={topPad + 60}>
+        <ScrollView ref={infoScrollRef} contentContainerStyle={s.formScroll} keyboardShouldPersistTaps="handled">
           <TouchableOpacity style={s.coverPickerInForm} onPress={pickImage} activeOpacity={0.85}>
             {(imageUri || coverUrl)
               ? <Image source={{ uri: imageUri ?? coverUrl! }} style={s.coverImgFull} />
@@ -280,18 +418,104 @@ export default function BusinessSettingsPage() {
             }
             <View style={s.coverEdit}><Feather name="edit-2" size={14} color="#fff" /></View>
           </TouchableOpacity>
+
           <Field label="Nom *" value={name} onChangeText={setName} placeholder="Nom de la boutique" />
           <FieldArea label="Description" value={description} onChangeText={setDescription} placeholder="Decrivez votre boutique..." />
           <Field label="Telephone" value={phone} onChangeText={setPhone} placeholder="+229 XX XX XX XX" keyboardType="phone-pad" />
+
           <View style={s.switchRow}>
             <View style={{ flex: 1 }}>
               <Text style={s.fieldLabel as any}>Livraison disponible</Text>
               <Text style={s.fieldSub as any}>Les clients pourront commander avec livraison</Text>
             </View>
-            <Switch value={hasDelivery} onValueChange={setHasDelivery}
+            <Switch value={hasDelivery} onValueChange={toggleDelivery}
               trackColor={{ false:'#E5E7EB', true:ORANGE }} thumbColor="#fff" />
           </View>
+
+          {/* ── Zones de livraison ── */}
+          {hasDelivery && (
+            <View style={s.zonesCard}>
+              <View style={s.zonesHeader}>
+                <View style={s.zonesIconWrap}>
+                  <Feather name="map-pin" size={14} color={ORANGE} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.zonesTitle as any}>Zones de livraison</Text>
+                  <Text style={s.zonesSub as any}>Définissez les villes / quartiers et leurs tarifs</Text>
+                </View>
+              </View>
+
+              <View style={s.zonesDivider} />
+
+              {deliveryZones.length === 0 && !addingZone && (
+                <Text style={s.zonesEmpty as any}>Aucune zone configurée</Text>
+              )}
+              {deliveryZones.map(zone => (
+                <View key={zone.id} style={s.zoneRow}>
+                  <Feather name="map-pin" size={12} color={ORANGE} />
+                  <Text style={s.zoneLabel as any} numberOfLines={1}>{zone.label}</Text>
+                  <Text style={s.zonePrice as any}>{zone.price.toLocaleString('fr-FR')} FCFA</Text>
+                  <TouchableOpacity onPress={() => deleteDeliveryZone(zone.id)} hitSlop={10}>
+                    <Feather name="trash-2" size={14} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {addingZone ? (
+                <View style={s.zoneForm}>
+                  <TextInput
+                    style={s.input}
+                    placeholder="Ville ou quartier"
+                    placeholderTextColor="#9CA3AF"
+                    value={newZoneLabel}
+                    onChangeText={setNewZoneLabel}
+                  />
+                  <TextInput
+                    style={s.input}
+                    placeholder="Prix de livraison (FCFA)"
+                    placeholderTextColor="#9CA3AF"
+                    value={newZonePrice}
+                    onChangeText={setNewZonePrice}
+                    keyboardType="numeric"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[s.zoneFormBtn, { backgroundColor: '#F3F4F6', flex: 1 }]}
+                      onPress={() => { setAddingZone(false); setNewZoneLabel(''); setNewZonePrice(''); }}
+                    >
+                      <Text style={{ fontSize: 13, color: '#374151', fontWeight: '600' }}>Annuler</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[s.zoneFormBtn, { backgroundColor: ORANGE, flex: 1, opacity: (savingZone || validatingZone) ? 0.7 : 1 }]}
+                      onPress={addDeliveryZone}
+                      disabled={savingZone || validatingZone}
+                    >
+                      {(validatingZone || savingZone) ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <ActivityIndicator size="small" color="#fff" />
+                          <Text style={{ fontSize: 12, color: '#fff', fontWeight: '600' }}>
+                            {validatingZone ? 'Vérification...' : 'Ajout...'}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 13, color: '#fff', fontWeight: '700' }}>Ajouter</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity style={s.addZoneBtn} onPress={() => {
+                  setAddingZone(true);
+                  setTimeout(() => infoScrollRef.current?.scrollToEnd({ animated: true }), 100);
+                }} activeOpacity={0.8}>
+                  <Feather name="plus" size={14} color={ORANGE} />
+                  <Text style={s.addZoneTxt as any}>Ajouter une livraison</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </ScrollView>
+        </KeyboardAvoidingView>
       )}
 
       {/* ── Adresse ── */}
@@ -301,42 +525,6 @@ export default function BusinessSettingsPage() {
           <Field label="Ville" value={city} onChangeText={setCity} placeholder="Cotonou, Abidjan..." />
         </ScrollView>
       )}
-
-      {/* ── Portefeuille ──
-      {activeSection === 'wallet' && (
-        <ScrollView contentContainerStyle={s.formScroll} keyboardShouldPersistTaps="handled">
-          <View style={s.walletInfo}>
-            <Feather name="info" size={15} color="#7C3AED" />
-            <Text style={s.walletInfoTxt as any}>
-              Renseignez le numero sur lequel vous souhaitez recevoir vos paiements.
-            </Text>
-          </View>
-          <View style={{ gap: 8 }}>
-            <Text style={s.fieldLabel as any}>Operateur</Text>
-            <View style={{ flexDirection:'row', gap:8, flexWrap:'wrap' }}>
-              {['mtn','moov','orange','wave'].map((p) => (
-                <TouchableOpacity key={p}
-                  style={[s.provChip, walletProvider===p && s.provChipActive]}
-                  onPress={() => setWalletProvider(p)}>
-                  <Text style={[s.provChipTxt as any, walletProvider===p && { color:ORANGE, fontWeight:'700' }]}>
-                    {p.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          <Field label="Numero Mobile Money" value={walletPhone} onChangeText={setWalletPhone}
-            placeholder="+229 XX XX XX XX" keyboardType="phone-pad" />
-          {walletPhone.trim() && (
-            <View style={s.walletConfirm}>
-              <Feather name="check-circle" size={14} color="#22C55E" />
-              <Text style={s.walletConfirmTxt as any}>
-                Paiements sur {walletProvider.toUpperCase()} : {walletPhone}
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      )} */}
 
       {/* ── Réseaux sociaux ── */}
       {activeSection === 'socials' && (
@@ -415,11 +603,20 @@ const s = StyleSheet.create({
   fieldSub:        { fontSize:12, color:'#9CA3AF', marginTop:1 },
   input:           { backgroundColor:'#F3F4F6', borderRadius:12, paddingHorizontal:14, paddingVertical:13, fontSize:15, color:'#111827', borderWidth:1.5, borderColor:'#E5E7EB' },
   switchRow:       { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingVertical:4 },
-  walletInfo:      { flexDirection:'row', gap:10, backgroundColor:'#F5F3FF', borderRadius:12, padding:12, borderWidth:1, borderColor:'#DDD6FE' },
-  walletInfoTxt:   { flex:1, fontSize:13, color:'#6D28D9', lineHeight:18 },
-  walletConfirm:   { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'#F0FDF4', borderRadius:10, padding:12 },
-  walletConfirmTxt:{ fontSize:13, color:'#166534', fontWeight:'500' },
-  provChip:        { paddingHorizontal:14, paddingVertical:8, borderRadius:100, backgroundColor:'#F3F4F6', borderWidth:1.5, borderColor:'#E5E7EB' },
-  provChipActive:  { backgroundColor:'#FEF2EC', borderColor:ORANGE },
-  provChipTxt:     { fontSize:12, fontWeight:'600', color:'#6B7280' },
+
+  // Zones de livraison
+  zonesCard:    { backgroundColor:'#FFFBF8', borderRadius:16, padding:14, gap:10, borderWidth:1.5, borderColor:'#FED7C3' },
+  zonesHeader:  { flexDirection:'row', alignItems:'center', gap:10 },
+  zonesIconWrap:{ width:30, height:30, borderRadius:9, backgroundColor:'#FFF0EA', alignItems:'center', justifyContent:'center' },
+  zonesTitle:   { fontSize:13, fontWeight:'800', color:'#111827' },
+  zonesSub:     { fontSize:11, color:'#9CA3AF', marginTop:1 },
+  zonesDivider: { height:1, backgroundColor:'#FED7C3', marginHorizontal:-4 },
+  zonesEmpty:   { fontSize:12, color:'#9CA3AF', textAlign:'center', paddingVertical:4 },
+  zoneRow:      { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'#fff', borderRadius:10, padding:10, borderWidth:1, borderColor:'#F3F4F6' },
+  zoneLabel:    { flex:1, fontSize:13, fontWeight:'600', color:'#111827' },
+  zonePrice:    { fontSize:13, color:ORANGE, fontWeight:'700' },
+  zoneForm:     { gap:8, backgroundColor:'#fff', borderRadius:12, padding:12, borderWidth:1, borderColor:'#E5E7EB' },
+  zoneFormBtn:  { borderRadius:10, paddingVertical:12, alignItems:'center', justifyContent:'center' },
+  addZoneBtn:   { flexDirection:'row', alignItems:'center', gap:6, backgroundColor:'#FFF0EA', borderRadius:10, padding:12, justifyContent:'center', borderWidth:1.5, borderColor:'#FED7C3', borderStyle:'dashed' },
+  addZoneTxt:   { fontSize:13, fontWeight:'700', color:ORANGE },
 });

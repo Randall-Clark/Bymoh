@@ -5,6 +5,7 @@ import type { Business, CatalogItem } from '@/types';
 
 export interface BusinessFilters {
   city?:         string;
+  excludeCity?:  string;   // ← exclut la ville (rangée "Hors de")
   country_code?: string;   // ← filtre par pays
   category?:     string;
   searchQuery?:  string;
@@ -20,6 +21,8 @@ async function fetchBusinesses(filters: BusinessFilters): Promise<Business[]> {
   // ✅ Filtre par pays — prioritaire
   if (filters.country_code) q = q.eq('country_code', filters.country_code);
   if (filters.city)         q = q.ilike('city', `%${filters.city}%`);
+  // ✅ Exclure une ville (pour la rangée "Hors de")
+  if (filters.excludeCity)  q = q.not('city', 'ilike', `%${filters.excludeCity}%`);
   if (filters.category)     q = q.eq('category', filters.category);
   if (filters.searchQuery)  q = q.or(
     `name.ilike.%${filters.searchQuery}%,description.ilike.%${filters.searchQuery}%`

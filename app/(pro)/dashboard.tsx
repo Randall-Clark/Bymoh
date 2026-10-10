@@ -1,7 +1,7 @@
 // app/(pro)/dashboard.tsx
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Dimensions, Image, Modal, Platform,
   ScrollView, StyleSheet, Text,
@@ -65,8 +65,46 @@ export default function DashboardScreen() {
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const { data: businesses = [] } = useMyBusinesses(profile?.id ?? '');
+  const { data: businesses = [], isLoading: bizLoading } = useMyBusinesses(profile?.id ?? '');
 
+  // ── Si aucune boutique enregistrée → page d'accueil marchand ────────────
+  useEffect(() => {
+    if (!bizLoading && businesses.length === 0) {
+      router.replace('/(pro)/merchant-welcome' as any);
+    }
+  }, [bizLoading, businesses.length]);
+
+  if (!bizLoading && businesses.length === 0) return null;
+
+  // ── Si encore en chargement ───────────────────────────────────────────────
+  if (bizLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={ORANGE} size="large" />
+      </View>
+    );
+  }
+
+  return <DashboardContent
+    insets={insets}
+    profile={profile}
+    businesses={businesses}
+    period={period}
+    setPeriod={setPeriod}
+    filterBiz={filterBiz}
+    setFilterBiz={setFilterBiz}
+    bizPickerOpen={bizPickerOpen}
+    setBizPickerOpen={setBizPickerOpen}
+    menuOpen={menuOpen}
+    setMenuOpen={setMenuOpen}
+  />;
+}
+
+function DashboardContent({
+  insets, profile, businesses,
+  period, setPeriod, filterBiz, setFilterBiz,
+  bizPickerOpen, setBizPickerOpen, menuOpen, setMenuOpen,
+}: any) {
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notif-count', profile?.id],
     queryFn: async () => {
@@ -458,3 +496,4 @@ const s = StyleSheet.create({
   menuLabel:      { fontSize: 15, fontWeight: '700', color: '#111827' },
   menuSub:        { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
 });
+

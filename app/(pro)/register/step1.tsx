@@ -13,6 +13,10 @@ import { StepIndicator } from '@/components/forms/StepIndicator';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { SECTEURS } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
+
+const ORANGE = '#FF6835';
+const DARK   = '#1A1025';
 
 // ── Schéma ────────────────────────────────────────────────────────────────────
 const schema = z.object({
@@ -26,7 +30,18 @@ const registerDraft: Record<string, unknown> = {};
 export { registerDraft };
 
 export default function RegisterStep1() {
-  const insets = useSafeAreaInsets();
+  const insets     = useSafeAreaInsets();
+  const { profile } = useAuthStore();
+
+
+  const handleCancel = () => {
+    router.dismissAll();
+    if ((profile as any)?.role === 'pro') {
+      router.replace('/(pro)/dashboard' as any);
+    } else {
+      router.replace('/(client)/' as any);
+    }
+  };
 
   const {
     control, handleSubmit, setValue, watch,
@@ -49,176 +64,158 @@ export default function RegisterStep1() {
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 12 }]}>
+    <View style={s.root}>
 
-      {/* Header fixe */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
-          <Feather name="arrow-left" size={22} color="#111827" />
+      {/* ── Navbar sombre ── */}
+      <View style={[s.navbar, { paddingTop: insets.top + 8 }]}>
+        <View style={{ width: 40 }} />
+        <Text style={s.navTitle}>Créer mon commerce</Text>
+        <TouchableOpacity onPress={handleCancel} style={s.cancelBtn}>
+          <Text style={s.cancelTxt}>Annuler</Text>
         </TouchableOpacity>
       </View>
 
-      {/* StepIndicator fixe */}
-      <View style={styles.stepWrap}>
+      {/* ── Indicateur d'étape ── */}
+      <View style={s.stepWrap}>
         <StepIndicator current={1} total={5} title="Informations de base" />
       </View>
 
-      {/* Contenu défilant */}
+      {/* ── Contenu défilant ── */}
       <ScrollView
-        style={styles.flex}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 120 }]}
+        style={s.flex}
+        contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
         {/* Nom du commerce */}
-        <Controller
-          control={control}
-          name="name"
-          render={({ field: { onChange, value, onBlur } }) => (
-            <Input
-              label="Nom du commerce *"
-              placeholder="Ex : Chez Maman Restaurant"
-              value={value}
-              onChangeText={onChange}
-              onBlur={onBlur}
-              error={errors.name?.message}
-              leftIcon="briefcase"
-            />
-          )}
-        />
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}>
+              <Feather name="briefcase" size={15} color={ORANGE} />
+            </View>
+            <Text style={s.cardTitle}>Nom du commerce</Text>
+          </View>
+          <Controller
+            control={control}
+            name="name"
+            render={({ field: { onChange, value, onBlur } }) => (
+              <Input
+                placeholder="Ex : Chez Maman Restaurant"
+                value={value}
+                onChangeText={onChange}
+                onBlur={onBlur}
+                error={errors.name?.message}
+              />
+            )}
+          />
+        </View>
 
         {/* Catégorie */}
-        <View style={styles.catSection}>
-          <Text style={styles.catLabel}>Catégorie *</Text>
-          <Text style={styles.catSub}>Choisissez le secteur d'activité de votre commerce</Text>
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <View style={s.cardIcon}>
+              <Feather name="grid" size={15} color={ORANGE} />
+            </View>
+            <Text style={s.cardTitle}>Secteur d'activité</Text>
+          </View>
+          <Text style={s.cardSub}>Choisissez la catégorie qui correspond à votre commerce</Text>
 
           {errors.category && (
-            <View style={styles.errorBox}>
+            <View style={s.errorBox}>
               <Feather name="alert-circle" size={13} color="#EF4444" />
-              <Text style={styles.errorText}>{errors.category.message}</Text>
+              <Text style={s.errorText}>{errors.category.message}</Text>
             </View>
           )}
 
-          {/* Grille 2 colonnes avec emojis */}
-          <View style={styles.catGrid}>
-            {SECTEURS.map((s) => {
-              const active = selectedCategory === s.id;
+          {/* Grille 2 colonnes */}
+          <View style={s.catGrid}>
+            {SECTEURS.map((sec) => {
+              const active = selectedCategory === sec.id;
               return (
                 <TouchableOpacity
-                  key={s.id}
-                  style={[styles.catCard, active && styles.catCardActive]}
-                  onPress={() => setValue('category', s.id, { shouldValidate: true })}
+                  key={sec.id}
+                  style={[s.catCard, active && s.catCardActive]}
+                  onPress={() => setValue('category', sec.id, { shouldValidate: true })}
                   activeOpacity={0.8}
                 >
-                  {/* Coche de sélection */}
                   {active && (
-                    <View style={styles.checkmark}>
+                    <View style={s.checkmark}>
                       <Feather name="check" size={10} color="#fff" />
                     </View>
                   )}
-
-                  <Text style={styles.catEmoji}>{s.emoji}</Text>
-                  <Text style={[styles.catCardLabel, active && styles.catCardLabelActive]}>
-                    {s.label}
+                  <Text style={s.catEmoji}>{sec.emoji}</Text>
+                  <Text style={[s.catLabel, active && s.catLabelActive]} numberOfLines={2}>
+                    {sec.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {/* Résumé de la sélection */}
+          {/* Badge de sélection */}
           {selectedCategory && (
-            <View style={styles.selectedBadge}>
-              <Text style={styles.selectedBadgeEmoji}>
-                {SECTEURS.find((s) => s.id === selectedCategory)?.emoji}
+            <View style={s.selectedBadge}>
+              <Text style={{ fontSize: 18 }}>
+                {SECTEURS.find((sec) => sec.id === selectedCategory)?.emoji}
               </Text>
-              <Text style={styles.selectedBadgeText}>
-                {SECTEURS.find((s) => s.id === selectedCategory)?.label} sélectionné
+              <Text style={s.selectedBadgeText}>
+                {SECTEURS.find((sec) => sec.id === selectedCategory)?.label} sélectionné
               </Text>
-              <Feather name="check-circle" size={14} color="#22C55E" />
+              <Feather name="check-circle" size={15} color="#22C55E" />
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Footer fixe */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        <Button
-          title="Suivant →"
-          onPress={handleSubmit(onSubmit)}
-          fullWidth
-          size="lg"
-        />
+      {/* ── Footer ── */}
+      <View style={[s.footer, { paddingBottom: insets.bottom + 16 }]}>
+        <Button title="Suivant →" onPress={handleSubmit(onSubmit)} fullWidth size="lg" />
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F8F7F4' },
-  flex: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 4 },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  stepWrap: { paddingHorizontal: 20, paddingBottom: 12, backgroundColor: '#F8F7F4' },
-  content: { paddingHorizontal: 20, paddingTop: 8, gap: 24 },
+const s = StyleSheet.create({
+  root:    { flex: 1, backgroundColor: '#F7F6F3' },
+  flex:    { flex: 1 },
 
-  // Catégorie
-  catSection: { gap: 10 },
-  catLabel: { fontSize: 13, fontWeight: '700', color: '#374151' },
-  catSub: { fontSize: 12, color: '#9CA3AF', marginTop: -6 },
+  // Navbar
+  navbar:     { backgroundColor: DARK, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 18 },
+  backBtn:    { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  navTitle:   { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: 0.2 },
+  cancelBtn:  { paddingHorizontal: 12, paddingVertical: 8 },
+  cancelTxt:  { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
 
-  errorBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: '#FECACA',
-  },
+  // Step indicator
+  stepWrap: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EFEFEF' },
+
+  // Contenu
+  content: { paddingHorizontal: 16, paddingTop: 18, gap: 14 },
+
+  // Cards
+  card:       { backgroundColor: '#fff', borderRadius: 20, padding: 18, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cardIcon:   { width: 32, height: 32, borderRadius: 10, backgroundColor: '#FFF0EA', alignItems: 'center', justifyContent: 'center' },
+  cardTitle:  { fontSize: 15, fontWeight: '800', color: '#111827' },
+  cardSub:    { fontSize: 13, color: '#9CA3AF', lineHeight: 18, marginTop: -6 },
+
+  // Erreur
+  errorBox:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FECACA' },
   errorText: { fontSize: 13, color: '#EF4444' },
 
-  // Grille 2 colonnes
-  catGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
-  },
-  catCard: {
-    width: '47%',
-    backgroundColor: '#fff',
-    borderRadius: 16, padding: 16,
-    alignItems: 'center', gap: 8,
-    borderWidth: 1.5, borderColor: '#E5E7EB',
-    position: 'relative',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
-  },
-  catCardActive: {
-    borderColor: '#FF6835',
-    backgroundColor: '#FEF2EC',
-    shadowColor: '#FF6835', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
-  },
-  checkmark: {
-    position: 'absolute', top: 8, right: 8,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: '#FF6835',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  catEmoji: { fontSize: 32 },
-  catCardLabel: {
-    fontSize: 12, fontWeight: '600', color: '#6B7280',
-    textAlign: 'center', lineHeight: 16,
-  },
-  catCardLabelActive: { color: '#FF6835' },
+  // Grille catégories
+  catGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 2 },
+  catCard:        { width: '47%', borderRadius: 16, padding: 16, alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: '#EFEFEF', backgroundColor: '#FAFAFA', position: 'relative' },
+  catCardActive:  { borderColor: ORANGE, backgroundColor: '#FFF4EF', shadowColor: ORANGE, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3 },
+  checkmark:      { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center' },
+  catEmoji:       { fontSize: 32 },
+  catLabel:       { fontSize: 12, fontWeight: '600', color: '#6B7280', textAlign: 'center', lineHeight: 16 },
+  catLabelActive: { color: ORANGE },
 
   // Badge sélection
-  selectedBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12,
-    borderWidth: 1, borderColor: '#BBF7D0',
-  },
-  selectedBadgeEmoji: { fontSize: 18 },
+  selectedBadge:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0FDF4', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#BBF7D0', marginTop: 2 },
   selectedBadgeText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#166534' },
 
   // Footer
-  footer: {
-    backgroundColor: '#F8F7F4',
-    paddingHorizontal: 20, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
-  },
+  footer: { backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#EFEFEF' },
 });

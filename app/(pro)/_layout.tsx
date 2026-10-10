@@ -78,6 +78,7 @@ export default function ProLayout() {
         }}/>
 
       {/* ── Écrans cachés de la tab bar ── */}
+      <Tabs.Screen name="merchant-welcome" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
       <Tabs.Screen name="orders/[id]"   options={{ href: null }}/>
       <Tabs.Screen name="notifications"  options={{ href: null }}/>
       <Tabs.Screen name="bookings"         options={{ href: null }}/>
@@ -88,11 +89,7 @@ export default function ProLayout() {
       <Tabs.Screen name="business/wallet"  options={{ href: null }}/>
       <Tabs.Screen name="catalog/edit"     options={{ href: null }}/>
       <Tabs.Screen name="catalog/index"    options={{ href: null }}/>
-      <Tabs.Screen name="register/payment" options={{ href: null }}/>
-      <Tabs.Screen name="register/step1"   options={{ href: null }}/>
-      <Tabs.Screen name="register/step2"   options={{ href: null }}/>
-      <Tabs.Screen name="register/step3"   options={{ href: null }}/>
-      <Tabs.Screen name="register/step4"   options={{ href: null }}/>
+      <Tabs.Screen name="register"          options={{ href: null, tabBarStyle: { display: 'none' } }}/>
 
     </Tabs>
   );
