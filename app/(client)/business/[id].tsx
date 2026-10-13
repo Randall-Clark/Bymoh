@@ -66,7 +66,6 @@ function safeUrls(raw: any): string[] {
 
 
 const { width: W } = Dimensions.get('window');
-const FOOTER_H = 80; // hauteur du footer panier
 
 const DAY_FR: Record<string, string> = {
   Mon:'Lundi', Tue:'Mardi', Wed:'Mercredi',
@@ -92,7 +91,6 @@ export default function ClientBusinessPage() {
   // ── Cart ─────────────────────────────────────────────────────────────────
   const cartStore      = useCartStore() as any;
   const cartItems      = cartStore.items ?? [];
-  const removeFromCart = cartStore.removeItem ?? cartStore.removeFromCart;
 
   const getItemQty = (itemId: string) =>
     cartItems.find((i: any) => i.id === itemId || i.service_id === itemId)?.quantity ?? 0;
@@ -160,28 +158,31 @@ export default function ClientBusinessPage() {
     : catalog.filter((i: any) => i.kind === activeTab);
 
   // ── Ajouter au panier ─────────────────────────────────────────────────
-  // IMPORTANT : addItem(item, businessId, businessName) — 3 arguments obligatoires
   const handleAdd = (item: any) => {
     cartStore.addItem(
       {
         id:             item.id,
         title:          item.title,
         price:          item.price ?? 0,
-        image_url:      item.image_url,
+        image_url:      safeFirstUrl(item.image_url) ?? safeUrls(item.image_urls)[0] ?? undefined,
         allows_booking: false,
         is_available:   true,
         show_stock:     false,
         currency:       'XOF',
         kind:           item.kind,
       },
-      id!,            // businessId — 2e argument
-      business.name,  // businessName — 3e argument
+      id!,
+      business.name,
     );
   };
 
-  const handleRemove = (item: any) => {
-    if (typeof removeFromCart === 'function') {
-      removeFromCart(item.id);
+  // ── Décrémenter quantité (− 1 ; à 0 → supprime) ──────────────────────
+  const handleDecrement = (item: any) => {
+    const qty = getItemQty(item.id);
+    if (qty <= 1) {
+      cartStore.removeItem(item.id);
+    } else {
+      cartStore.updateQuantity(item.id, qty - 1);
     }
   };
 
@@ -344,7 +345,7 @@ export default function ClientBusinessPage() {
                             <Feather name="plus" size={18} color="#fff" />
                           </TouchableOpacity>
                         : <View style={s.qtyControl}>
-                            <TouchableOpacity style={s.qtyBtnMinus} onPress={() => handleRemove(item)}>
+                            <TouchableOpacity style={s.qtyBtnMinus} onPress={() => handleDecrement(item)}>
                               <Feather name="minus" size={14} color="#FF6835" />
                             </TouchableOpacity>
                             <Text style={s.qtyVal}>{qty}</Text>

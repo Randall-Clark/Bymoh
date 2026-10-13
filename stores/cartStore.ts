@@ -15,6 +15,23 @@ interface CartState {
   totalAmount: () => number;
 }
 
+function makeCartItem(
+  item: CatalogItem,
+  businessId: string,
+  businessName: string,
+): CartItem {
+  return {
+    service_id: item.id,
+    title: item.title,
+    price: item.price ?? 0,
+    quantity: 1,
+    business_id: businessId,
+    business_name: businessName,
+    kind: item.kind ?? '',
+    ...((item as any).image_url ? { image_url: (item as any).image_url } : {}),
+  } as CartItem;
+}
+
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
@@ -22,21 +39,13 @@ export const useCartStore = create<CartState>()(
       businessId: null,
       businessName: null,
 
-      addItem: (item, businessId, businessName) => {
-        set((state) => {
+      addItem: (item: CatalogItem, businessId: string, businessName: string) => {
+        set((state: CartState) => {
           if (state.businessId && state.businessId !== businessId) {
             return {
               businessId,
               businessName,
-              items: [{
-                service_id: item.id,
-                title: item.title,
-                price: item.price,
-                quantity: 1,
-                business_id: businessId,
-                business_name: businessName,
-                kind: item.kind,
-              }],
+              items: [makeCartItem(item, businessId, businessName)],
             };
           }
           const existing = state.items.find((i) => i.service_id === item.id);
@@ -50,27 +59,19 @@ export const useCartStore = create<CartState>()(
           return {
             businessId,
             businessName,
-            items: [...state.items, {
-              service_id: item.id,
-              title: item.title,
-              price: item.price,
-              quantity: 1,
-              business_id: businessId,
-              business_name: businessName,
-              kind: item.kind,
-            }],
+            items: [...state.items, makeCartItem(item, businessId, businessName)],
           };
         });
       },
 
-      removeItem: (serviceId) =>
-        set((state) => {
+      removeItem: (serviceId: string) =>
+        set((state: CartState) => {
           const updated = state.items.filter((i) => i.service_id !== serviceId);
           return { items: updated, ...(updated.length === 0 ? { businessId: null, businessName: null } : {}) };
         }),
 
-      updateQuantity: (serviceId, quantity) =>
-        set((state) => {
+      updateQuantity: (serviceId: string, quantity: number) =>
+        set((state: CartState) => {
           if (quantity <= 0) {
             const updated = state.items.filter((i) => i.service_id !== serviceId);
             return { items: updated, ...(updated.length === 0 ? { businessId: null, businessName: null } : {}) };

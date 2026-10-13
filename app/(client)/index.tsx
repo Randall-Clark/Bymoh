@@ -3,9 +3,9 @@
  * Design fidèle aux maquettes fournies — données 100 % Supabase
  */
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Animated, Dimensions, FlatList, Image, Modal, Platform, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
@@ -34,14 +34,26 @@ const WHITE   = '#FFFFFF';
 const TEAL    = '#06B6D4';
 const H_PAD   = 20;
 
-// ── Catégories homepage (sans "Tout") ─────────────────────────────────────────
-const HOME_CATS = [
-  { id: 'restaurant',  label: 'Restaurants', icon: 'coffee'       },
-  { id: 'mode',        label: 'Mode',        icon: 'shopping-bag' },
-  { id: 'beaute',      label: 'Beauté',      icon: 'user'         },
-  { id: 'maison',      label: 'Maison',      icon: 'home'         },
-  { id: 'ouvrier',     label: 'Services',    icon: 'settings'     },
-] as const;
+// ── Catégories homepage ────────────────────────────────────────────────────────
+const CAT_ICONS = {
+  offres:     require('@/assets/images/discount.png'),
+  restaurant: require('@/assets/images/restaurant.png'),
+  mode:       require('@/assets/images/clothes.png'),
+  beaute:     require('@/assets/images/beauty.png'),
+  maison:     require('@/assets/images/house.png'),
+  tech:       require('@/assets/images/tech.png'),
+  ouvrier:    require('@/assets/images/services.png'),
+} as const;
+
+const HOME_CATS: { id: keyof typeof CAT_ICONS; label: string; bg: string }[] = [
+  { id: 'offres',      label: 'Offres',      bg: '#FFF0EA' },
+  { id: 'restaurant',  label: 'Restaurants', bg: '#FFF7ED' },
+  { id: 'mode',        label: 'Mode',        bg: '#FAF0FC' },
+  { id: 'beaute',      label: 'Beauté',      bg: '#FFF0F6' },
+  { id: 'maison',      label: 'Maison',      bg: '#F0F9FF' },
+  { id: 'tech',        label: 'Tech',        bg: '#EFF6FF' },
+  { id: 'ouvrier',     label: 'Services',    bg: '#F0FDF4' },
+];
 
 // ── Hero banners (catalogue statique — filtrés dynamiquement selon la ville) ────
 const ALL_HERO_BANNERS = [
@@ -85,6 +97,9 @@ type ServiceWithBusiness = Service & {
   business?: { name: string; cover_url?: string | null; category_icon?: string | null };
 };
 
+// ── Type zones de livraison ────────────────────────────────────────────────────
+type ZoneInfo = { count: number; firstLabel: string };
+
 // ── Type modal section ─────────────────────────────────────────────────────────
 type SectionModalData =
   | { kind: 'businesses'; title: string; items: Business[];            userLat?: number|null; userLon?: number|null }
@@ -96,7 +111,6 @@ type SectionModalData =
 function getBadgeLabel(b: Business): string {
   if ((b.rating ?? 0) >= 4.8)                              return 'Très apprécié';
   if (b.category?.toLowerCase().includes('artisan'))        return 'Créateur local';
-  if (b.has_delivery)                                       return 'Livraison offerte';
   if (Date.now() - new Date(b.created_at).getTime() < 30 * 24 * 3600 * 1000) return 'Nouveau';
   return b.city ? `Populaire à ${b.city}` : 'À découvrir';
 }
@@ -113,6 +127,9 @@ function fmtRating(r?: number | null): string {
   return Math.max(1, r ?? 0).toFixed(1).replace('.', ',');
 }
 
+// Nombre de zones de livraison — calculé depuis la Map fetchée en HomeScreen
+// (plus de fallback sur l'objet business — la Map est la seule source de vérité)
+
 // ── Composant : photo ou placeholder ──────────────────────────────────────────
 function CoverPhoto({ uri, style, emoji }: { uri?: string | null; style: any; emoji?: string }) {
   if (uri) return <Image source={{ uri }} style={style} resizeMode="cover" />;
@@ -124,25 +141,45 @@ function CoverPhoto({ uri, style, emoji }: { uri?: string | null; style: any; em
 }
 
 // ── Rangée de statut ───────────────────────────────────────────────────────────
-function StatusRow({ open, time, reviews }: { open: boolean; time?: string; reviews?: number }) {
+function StatusRow({ open, time, reviews, promo }: { open: boolean; time?: string; reviews?: number; promo?: string | null }) {
   return (
     <View style={sh.statusRow}>
       <Text style={[sh.openTxt, !open && { color: '#EF4444' }]}>{open ? 'Ouvert' : 'Fermé'}</Text>
       {time != null && <><Text style={sh.dot}>·</Text><Text style={sh.meta}>{time}</Text></>}
       <Text style={sh.dot}>·</Text>
       <Text style={sh.meta}>{reviews ?? 0} avis</Text>
+      {!!promo && (
+        <>
+          <View style={{ flex: 1 }} />
+          <Text style={sh.promoTxt} numberOfLines={1}>{promo}</Text>
+        </>
+      )}
+    </View>
+  );
+}
+
+// ── DeliveryRow — icône livraison sous la catégorie (uniquement si livraison dispo) ──
+function DeliveryRow({ zoneInfo }: { zoneInfo?: { count: number; firstLabel: string } }) {
+  if (!zoneInfo || zoneInfo.count === 0) return null;
+  const { count, firstLabel } = zoneInfo;
+  const label = count > 1
+    ? `Livraison à ${firstLabel} et ${count - 1} autre${count - 1 > 1 ? 's' : ''}`
+    : `Livraison à ${firstLabel}`;
+  return (
+    <View style={dlv.row}>
+      <Feather name="truck" size={11} color="#22C55E" />
+      <Text style={dlv.available} numberOfLines={1}>{label}</Text>
     </View>
   );
 }
 
 // ── NearbyCard ─────────────────────────────────────────────────────────────────
-function NearbyCard({ b, userLat, userLon, idx }: { b: Business; userLat?: number|null; userLon?: number|null; idx: number }) {
+function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; idx: number; zoneInfo?: { count: number; firstLabel: string } }) {
   const [fav, setFav] = useState(false);
   const open  = isBusinessOpen(b.hours, (b as any).timezone);
   const dist  = (userLat && userLon && (b as any).latitude && (b as any).longitude)
     ? formatDistance(getDistanceKm(userLat, userLon, (b as any).latitude, (b as any).longitude))
     : null;
-  const badge = b.has_delivery ? 'Livraison offerte' : idx === 0 ? 'Proche de vous' : null;
 
   return (
     <TouchableOpacity
@@ -152,16 +189,9 @@ function NearbyCard({ b, userLat, userLon, idx }: { b: Business; userLat?: numbe
     >
       <View style={nc.imgWrap}>
         <CoverPhoto uri={b.cover_url} style={nc.img} emoji={b.category_icon} />
-        {badge && <View style={nc.badge}><Text style={nc.badgeTxt}>{badge}</Text></View>}
         <TouchableOpacity style={nc.heart} onPress={() => setFav(f => !f)}>
           <Ionicons name={fav ? 'heart' : 'heart-outline'} size={15} color={fav ? ORANGE : '#374151'} />
         </TouchableOpacity>
-        {!b.has_delivery && (
-          <View style={nc.noDelivery}>
-            <Feather name="truck" size={10} color="#EF4444" />
-            <Text style={nc.noDeliveryTxt}>Pas de livraison</Text>
-          </View>
-        )}
       </View>
       <View style={nc.body}>
         <View style={nc.nameRow}>
@@ -174,7 +204,9 @@ function NearbyCard({ b, userLat, userLon, idx }: { b: Business; userLat?: numbe
         {b.category && (
           <Text style={nc.category} numberOfLines={1}>{b.category}</Text>
         )}
-        <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} />
+        {/* Livraison sous la catégorie */}
+        <DeliveryRow zoneInfo={zoneInfo} />
+        <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} promo={(b as any).current_promotion ?? (b as any).promotion_label ?? null} />
       </View>
     </TouchableOpacity>
   );
@@ -188,7 +220,7 @@ function OfferCard({ item }: { item: ServiceWithBusiness }) {
   return (
     <TouchableOpacity
       style={oc.card}
-      onPress={() => router.push('/(client)/search')}
+      onPress={() => router.push({ pathname: '/(client)/business/[id]' as any, params: { id: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={oc.imgWrap}>
@@ -230,7 +262,7 @@ function PopularCard({ b }: { b: Business }) {
 }
 
 // ── DiscoverCard / ExploreCard ─────────────────────────────────────────────────
-function DiscoverCard({ b, userLat, userLon }: { b: Business; userLat?: number|null; userLon?: number|null }) {
+function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; zoneInfo?: { count: number; firstLabel: string } }) {
   const [fav, setFav] = useState(false);
   const open = isBusinessOpen(b.hours, (b as any).timezone);
   const dist = (userLat && userLon && (b as any).latitude && (b as any).longitude)
@@ -248,12 +280,6 @@ function DiscoverCard({ b, userLat, userLon }: { b: Business; userLat?: number|n
         <TouchableOpacity style={dc.heart} onPress={() => setFav(f => !f)}>
           <Ionicons name={fav ? 'heart' : 'heart-outline'} size={15} color={fav ? ORANGE : '#374151'} />
         </TouchableOpacity>
-        {!b.has_delivery && (
-          <View style={dc.noDelivery}>
-            <Feather name="truck" size={10} color="#EF4444" />
-            <Text style={dc.noDeliveryTxt}>Pas de livraison</Text>
-          </View>
-        )}
       </View>
       <View style={dc.body}>
         <View style={dc.nameRow}>
@@ -264,7 +290,9 @@ function DiscoverCard({ b, userLat, userLon }: { b: Business; userLat?: number|n
           </View>
         </View>
         {b.category && <Text style={dc.category} numberOfLines={1}>{b.category}</Text>}
-        <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} />
+        {/* Livraison sous la catégorie */}
+        <DeliveryRow zoneInfo={zoneInfo} />
+        <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} promo={(b as any).current_promotion ?? (b as any).promotion_label ?? null} />
       </View>
     </TouchableOpacity>
   );
@@ -282,7 +310,7 @@ function ServiceCard({ item }: { item: ServiceWithBusiness }) {
   return (
     <TouchableOpacity
       style={svc.card}
-      onPress={() => router.push('/(client)/search')}
+      onPress={() => router.push({ pathname: '/(client)/business/[id]', params: { id: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={svc.imgWrap}>
@@ -314,7 +342,7 @@ function ServiceCardFull({ item }: { item: ServiceWithBusiness }) {
   return (
     <TouchableOpacity
       style={svf.card}
-      onPress={() => router.push('/(client)/search')}
+      onPress={() => router.push({ pathname: '/(client)/business/[id]', params: { id: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={svf.imgWrap}>
@@ -342,7 +370,7 @@ function OfferCardFull({ item }: { item: ServiceWithBusiness }) {
   return (
     <TouchableOpacity
       style={off.card}
-      onPress={() => router.push('/(client)/search')}
+      onPress={() => router.push({ pathname: '/(client)/business/[id]', params: { id: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={off.imgWrap}>
@@ -361,7 +389,7 @@ function OfferCardFull({ item }: { item: ServiceWithBusiness }) {
 }
 
 // ── SectionListModal ──────────────────────────────────────────────────────────
-function SectionListModal({ data, onClose }: { data: SectionModalData; onClose: () => void }) {
+function SectionListModal({ data, onClose, zoneCountMap }: { data: SectionModalData; onClose: () => void; zoneCountMap: Map<string, ZoneInfo> }) {
   const insets = useSafeAreaInsets();
   if (!data) return null;
 
@@ -393,7 +421,7 @@ function SectionListModal({ data, onClose }: { data: SectionModalData; onClose: 
               contentContainerStyle={slm.list}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
-                <DiscoverCard b={item} userLat={data.userLat} userLon={data.userLon} />
+                <DiscoverCard b={item} userLat={data.userLat} userLon={data.userLon} zoneInfo={zoneCountMap.get(item.id)} />
               )}
             />
           )
@@ -552,6 +580,19 @@ export default function HomeScreen() {
   const cartTotal   = (cartStore.items ?? []).reduce((a: number, i: any) => a + (i.quantity ?? 0), 0);
   useLocation();
   const locationStore = useLocationStore();
+  const queryClient   = useQueryClient();
+
+  // ── Actualisation au focus + tick toutes les minutes pour le statut ouvert/fermé
+  const [_tick, setTick] = useState(0);
+  useFocusEffect(useCallback(() => {
+    // Invalide toutes les queries de la page pour forcer un rechargement
+    queryClient.invalidateQueries({ queryKey: ['businesses'] });
+    queryClient.invalidateQueries({ queryKey: ['home-catalog'] });
+    queryClient.invalidateQueries({ queryKey: ['home-services'] });
+    // Tick toutes les 60 secondes pour recalculer open/fermé sans requête réseau
+    const interval = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(interval);
+  }, [queryClient]));
   const savedCity     = (locationStore as any).city    ?? null;
   const savedAddress  = (locationStore as any).address ?? null;
   const savedLabel    = (locationStore as any).label   ?? null;
@@ -591,7 +632,6 @@ export default function HomeScreen() {
       .eq('is_read', false)
       .then(({ count }) => setUnreadNotifs(count ?? 0));
 
-    // Retirer l'éventuel ancien channel du même nom avant de re-souscrire
     const channelName = `home-notifs-${userId}`;
     const existing = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`);
     if (existing) supabase.removeChannel(existing);
@@ -618,6 +658,33 @@ export default function HomeScreen() {
   };
   const { data: businesses = [], isLoading } = useBusinesses(bizFilters);
 
+  // ── Zones de livraison par boutique ──────────────────────────────────────
+  const businessIds = useMemo(() => businesses.map(b => b.id), [businesses]);
+  const { data: zoneCountMap = new Map<string, ZoneInfo>() } = useQuery<Map<string, ZoneInfo>>({
+    queryKey: ['delivery-zone-counts', businessIds.join(',')],
+    queryFn: async () => {
+      if (businessIds.length === 0) return new Map<string, ZoneInfo>();
+      const { data, error } = await supabase
+        .from('delivery_zones')
+        .select('business_id, label')
+        .in('business_id', businessIds)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const map = new Map<string, ZoneInfo>();
+      for (const row of data ?? []) {
+        const existing = map.get(row.business_id);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          map.set(row.business_id, { count: 1, firstLabel: row.label ?? '' });
+        }
+      }
+      return map;
+    },
+    enabled: businessIds.length > 0,
+    staleTime: 60_000,
+  });
+
   const nearbyBizs    = businesses.slice(0, 6);
   const discoverBizs  = businesses.slice(2, 6);
   const exploreBizs   = businesses.length >= 10 ? businesses.slice(6, 10) : [];
@@ -625,13 +692,11 @@ export default function HomeScreen() {
     .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
     .slice(0, 6);
 
-  // Liste complète pour les modals
   const allPopularBizs = useMemo(
     () => [...businesses].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)),
     [businesses],
   );
 
-  // ── Liste filtrée par catégorie ──────────────────────────────────────────────
   const filteredBizs = useMemo(() => {
     if (!selCat) return [];
     const score = (b: Business): number => {
@@ -649,16 +714,13 @@ export default function HomeScreen() {
     });
   }, [businesses, selCat, userLat, userLon]);
 
-  // ── Comptage dynamique des boutiques par ville pour les bannières hero ───────
   const { data: heroBanners = ALL_HERO_BANNERS } = useQuery({
     queryKey: ['hero-banner-counts', cityName],
     queryFn: async () => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
       const cityFilter = cityName ? cityName : null;
 
-      // Construit les queries de manière conditionnelle
       let modeQ = supabase.from('businesses').select('id', { count: 'exact', head: true })
         .eq('is_active', true).eq('category', 'mode');
       let restQ = supabase.from('businesses').select('id', { count: 'exact', head: true })
@@ -673,7 +735,6 @@ export default function HomeScreen() {
       }
 
       const [modeRes, restaurantRes, newRes] = await Promise.all([modeQ, restQ, newQ]);
-
       const modeCount       = modeRes.count       ?? 0;
       const restaurantCount = restaurantRes.count  ?? 0;
       const newCount        = newRes.count         ?? 0;
@@ -685,10 +746,9 @@ export default function HomeScreen() {
         return false;
       });
     },
-    staleTime: 5 * 60_000, // 5 minutes
+    staleTime: 5 * 60_000,
   });
 
-  // ── Catalogue ──────────────────────────────────────────────────────────────
   const { data: catalogItems = [] } = useQuery<ServiceWithBusiness[]>({
     queryKey: ['home-catalog'],
     queryFn: async () => {
@@ -705,7 +765,6 @@ export default function HomeScreen() {
     staleTime: 60_000,
   });
 
-  // ── Services réservables ──────────────────────────────────────────────────
   const { data: bookableServices = [] } = useQuery<ServiceWithBusiness[]>({
     queryKey: ['home-services'],
     queryFn: async () => {
@@ -791,8 +850,12 @@ export default function HomeScreen() {
                   style={cat_s.item}
                   onPress={() => setSelCat(active ? null : cat.id)}
                 >
-                  <View style={[cat_s.iconBox, active && cat_s.iconBoxActive]}>
-                    <Feather name={cat.icon as any} size={20} color={active ? WHITE : DARK} />
+                  <View style={[cat_s.iconBox, { backgroundColor: active ? ORANGE : cat.bg }]}>
+                    <Image
+                      source={CAT_ICONS[cat.id]}
+                      style={{ width: 30, height: 30 }}
+                      resizeMode="contain"
+                    />
                   </View>
                   <Text style={[cat_s.label, active && cat_s.labelActive]}>{cat.label}</Text>
                 </TouchableOpacity>
@@ -820,7 +883,7 @@ export default function HomeScreen() {
               </View>
             ) : filteredBizs.length > 0 ? (
               filteredBizs.map(b => (
-                <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} />
+                <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
               ))
             ) : (
               <View style={g.empty}>
@@ -831,14 +894,12 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            {/* ── HERO BANNER (conditionnel selon les commerces en ville) ── */}
             {heroBanners.length > 0 && (
               <View style={{ paddingHorizontal: H_PAD }}>
                 <HeroBanner banners={heroBanners} />
               </View>
             )}
 
-            {/* ── PRÈS DE CHEZ VOUS ── */}
             {(nearbyBizs.length > 0 || isLoading) && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
@@ -859,16 +920,15 @@ export default function HomeScreen() {
                     <View style={g.skeleton} /><View style={g.skeleton} />
                   </View>
                 ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, gap: 12 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
                     {nearbyBizs.map((b, i) => (
-                      <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} />
+                      <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
                     ))}
                   </ScrollView>
                 )}
               </View>
             )}
 
-            {/* ── OFFRES DU MOMENT ── */}
             {catalogItems.length > 0 && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
@@ -887,7 +947,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── LES PLUS POPULAIRES ── */}
             {popularBizs.length > 0 && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
@@ -908,7 +967,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── CELA POURRAIT VOUS INTÉRESSER ── */}
             {discoverBizs.length > 0 && (
               <View style={{ paddingHorizontal: H_PAD, marginBottom: 28 }}>
                 <SecHeader
@@ -922,12 +980,11 @@ export default function HomeScreen() {
                   })}
                 />
                 {discoverBizs.map(b => (
-                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} />
+                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
                 ))}
               </View>
             )}
 
-            {/* État vide */}
             {!isLoading && businesses.length === 0 && (
               <View style={g.empty}>
                 <Feather name="search" size={44} color="#D1D5DB" />
@@ -935,12 +992,10 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── BANNIÈRE COMMERÇANT ── */}
             <View style={{ paddingHorizontal: H_PAD }}>
               <SellerBanner />
             </View>
 
-            {/* ── BESOIN D'UN SERVICE ? ── */}
             {bookableServices.length > 0 && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
@@ -959,7 +1014,6 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* ── EXPLOREZ ── */}
             {exploreBizs.length > 0 && (
               <View style={{ paddingHorizontal: H_PAD, marginBottom: 16 }}>
                 <SecHeader
@@ -973,7 +1027,7 @@ export default function HomeScreen() {
                   })}
                 />
                 {exploreBizs.map(b => (
-                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} />
+                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
                 ))}
               </View>
             )}
@@ -981,11 +1035,9 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-
       {/* ── Modals ── */}
       <LocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} />
-
-      <SectionListModal data={sectionModal} onClose={() => setSectionModal(null)} />
+      <SectionListModal data={sectionModal} onClose={() => setSectionModal(null)} zoneCountMap={zoneCountMap} />
 
       <Modal visible={addrPopup && !hasAddress} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
         <View style={g.popupBg}>
@@ -1060,14 +1112,12 @@ const hb = StyleSheet.create({
 });
 
 const nc = StyleSheet.create({
-  card:     { width: W * 0.72, backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
+  card:     { width: W * 0.72, backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8' },
   imgWrap:  { position: 'relative' },
   img:      { width: '100%', height: 142 },
   badge:    { position: 'absolute', top: 10, left: 10, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 9, paddingVertical: 4 },
   badgeTxt: { fontSize: 10, fontWeight: '800', color: WHITE },
-  heart:          { position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: WHITE, borderWidth: 1.5, borderColor: '#374151', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 2 },
-  noDelivery:     { position: 'absolute', bottom: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#FECACA' },
-  noDeliveryTxt:  { fontSize: 9, fontWeight: '700', color: '#EF4444' },
+  heart:    { position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
   body:        { padding: 10, gap: 3 },
   nameRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name:        { fontSize: 13, fontWeight: '700', color: DARK, flex: 1, marginRight: 6 },
@@ -1100,24 +1150,22 @@ const pc = StyleSheet.create({
 });
 
 const dc = StyleSheet.create({
-  card:     { backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: '#ECECE8', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
+  card:     { backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: '#ECECE8' },
   imgWrap:  { position: 'relative' },
   img:      { width: '100%', height: 142 },
   badge:    { position: 'absolute', top: 12, left: 12, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
   badgeTxt: { fontSize: 11, fontWeight: '700', color: WHITE },
-  heart:          { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: WHITE, borderWidth: 1.5, borderColor: '#374151', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 2 },
-  noDelivery:     { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: '#FECACA' },
-  noDeliveryTxt:  { fontSize: 10, fontWeight: '700', color: '#EF4444' },
+  heart:    { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
   body:       { padding: 14, gap: 3 },
   nameRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   name:       { fontSize: 15, fontWeight: '700', color: DARK, flex: 1, marginRight: 8 },
   ratingRow:  { flexDirection: 'row', alignItems: 'center', gap: 3 },
   rating:     { fontSize: 13, fontWeight: '700', color: DARK },
-  category:   { fontSize: 12, fontWeight: '500', color: GRAY, textTransform: 'capitalize', marginBottom: 4 },
+  category:   { fontSize: 12, fontWeight: '500', color: GRAY, textTransform: 'capitalize', marginBottom: 2 },
 });
 
 const svc = StyleSheet.create({
-  card:      { width: 205, backgroundColor: WHITE, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  card:      { width: 205, backgroundColor: WHITE, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8' },
   imgWrap:   { position: 'relative' },
   img:       { width: '100%', height: 126 },
   timeBadge: { position: 'absolute', bottom: 10, left: 10, backgroundColor: WHITE, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 },
@@ -1127,9 +1175,8 @@ const svc = StyleSheet.create({
   price:     { fontSize: 12, color: ORANGE, fontWeight: '600' },
 });
 
-// ── Styles plein-largeur (modal) ──────────────────────────────────────────────
 const svf = StyleSheet.create({
-  card:     { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  card:     { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8' },
   imgWrap:  { position: 'relative', width: 110 },
   img:      { width: 110, height: 100 },
   timeBadge:{ position: 'absolute', bottom: 8, left: 8, backgroundColor: WHITE, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
@@ -1140,7 +1187,7 @@ const svf = StyleSheet.create({
 });
 
 const off = StyleSheet.create({
-  card:    { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  card:    { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8' },
   imgWrap: { position: 'relative', width: 110 },
   img:     { width: 110, height: 100 },
   body:    { flex: 1, padding: 12, justifyContent: 'center', gap: 3 },
@@ -1160,7 +1207,6 @@ const promo = StyleSheet.create({
   ctaTxt:      { fontSize: 14, fontWeight: '800', color: WHITE },
 });
 
-
 const filt = StyleSheet.create({
   bar:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   count:    { fontSize: 14, fontWeight: '700', color: DARK },
@@ -1169,13 +1215,19 @@ const filt = StyleSheet.create({
 });
 
 const sh = StyleSheet.create({
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'nowrap' },
   openTxt:   { fontSize: 12, fontWeight: '700', color: TEAL },
   dot:       { fontSize: 12, color: '#D1D5DB', marginHorizontal: 1 },
   meta:      { fontSize: 12, color: GRAY },
+  promoTxt:  { fontSize: 11, fontWeight: '700', color: '#EF4444', marginLeft: 4 },
 });
 
-// ── Styles modal liste ────────────────────────────────────────────────────────
+// ── Styles DeliveryRow ────────────────────────────────────────────────────────
+const dlv = StyleSheet.create({
+  row:       { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  available: { fontSize: 11, fontWeight: '600', color: '#22C55E' },
+});
+
 const slm = StyleSheet.create({
   root:    { flex: 1, backgroundColor: WHITE },
   header:  {

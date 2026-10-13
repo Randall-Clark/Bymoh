@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase';
 import {
   ActivityIndicator, Dimensions, Image, Platform,
   ScrollView, StyleSheet, Text, TextInput,
@@ -57,6 +59,24 @@ const TYPE_FILTERS: { id: SearchFilterType; label: string; emoji: string }[] = [
 ];
 
 
+// ── Type zones de livraison ────────────────────────────────────────────────────
+type ZoneInfo = { count: number; firstLabel: string };
+
+// ── Formate le label de promotion à partir des champs service ─────────────────
+function formatPromo(
+  type?: string | null,
+  value?: number | null,
+  buyQty?: number | null,
+  getQty?: number | null,
+  code?: string | null,
+): string | null {
+  if (type === 'percentage' && value)    return `-${value}%`;
+  if (type === 'fixed'      && value)    return `-${value} FCFA`;
+  if (type === 'buy_x_get_y')            return `${buyQty ?? 1} acheté = ${getQty ?? 1} offert`;
+  if (type === 'promo_code'  && code)    return `Code: ${code}`;
+  return 'Promo';
+}
+
 // ── Helper : parse image_url qui peut être un JSON array string ───────────────
 function safeFirstUrl(raw: any): string | null {
   if (!raw) return null;
@@ -84,7 +104,8 @@ type ServiceGroup = {
   rating: number | null;
   reviewCount: number;
   distanceKm: number | null;
-  hasPromo: boolean;
+  promoLabel: string | null;
+  businessCategory: string | null;
   isBiz: boolean;
   items: SearchResult[];
 };
@@ -99,18 +120,20 @@ function groupServiceResults(results: SearchResult[]): ServiceGroup[] {
       const raw  = item.raw ?? {};
       const bId  = item.id;
       if (!map.has(bId)) {
+        const bizPromo = raw.current_promotion ?? raw.promotion_label ?? null;
         map.set(bId, {
-          businessId:    bId,
-          businessName:  item.title,
-          businessCity:  raw.city   ?? item.meta ?? '',
-          businessEmoji: raw.category_icon ?? item.emoji ?? '🏪',
-          coverUrl:      raw.cover_url ?? raw.cover_image ?? null,
-          rating:        typeof item.rating === 'number' ? item.rating : null,
-          reviewCount:   raw.review_count ?? 0,
-          distanceKm:    item.distanceKm ?? null,
-          hasPromo:      raw.has_delivery ?? false,
-          isBiz:         true,
-          items:         [],
+          businessId:       bId,
+          businessName:     item.title,
+          businessCity:     raw.city   ?? item.meta ?? '',
+          businessEmoji:    raw.category_icon ?? item.emoji ?? '🏪',
+          coverUrl:         raw.cover_url ?? raw.cover_image ?? null,
+          rating:           typeof item.rating === 'number' ? item.rating : null,
+          reviewCount:      raw.review_count ?? 0,
+          distanceKm:       item.distanceKm ?? null,
+          promoLabel:       bizPromo,
+          businessCategory: raw.category ?? null,
+          isBiz:            true,
+          items:            [],
         });
       }
     } else {
@@ -121,19 +144,21 @@ function groupServiceResults(results: SearchResult[]): ServiceGroup[] {
       const bId    = (item.raw?.business_id ?? biz.id ?? item.id) as string;
       if (!bId) continue; // sécurité : ignorer si pas d'id
       if (!map.has(bId)) {
+        const bizPromo = biz.current_promotion ?? biz.promotion_label ?? null;
         map.set(bId, {
-          businessId:    bId,
-          businessName:  biz.name      ?? item.subtitle ?? 'Boutique',
-          businessCity:  biz.city      ?? '',
-          businessEmoji: biz.category_icon ?? item.emoji ?? '🏪',
-          coverUrl:      biz.cover_url ?? null,
-          rating:        typeof biz.rating === 'number' ? biz.rating
-                         : (typeof item.rating === 'number' ? item.rating : null),
-          reviewCount:   biz.review_count ?? 0,
-          distanceKm:    item.distanceKm ?? null,
-          hasPromo:      biz.has_delivery ?? false,
-          isBiz:         false,
-          items:         [],
+          businessId:       bId,
+          businessName:     biz.name      ?? item.subtitle ?? 'Boutique',
+          businessCity:     biz.city      ?? '',
+          businessEmoji:    biz.category_icon ?? item.emoji ?? '🏪',
+          coverUrl:         biz.cover_url ?? null,
+          rating:           typeof biz.rating === 'number' ? biz.rating
+                            : (typeof item.rating === 'number' ? item.rating : null),
+          reviewCount:      biz.review_count ?? 0,
+          distanceKm:       item.distanceKm ?? null,
+          promoLabel:       bizPromo,
+          businessCategory: biz.category ?? null,
+          isBiz:            false,
+          items:            [],
         });
       }
       // Éviter les doublons (même service peut apparaître en prestation ET article)
@@ -143,12 +168,28 @@ function groupServiceResults(results: SearchResult[]): ServiceGroup[] {
       }
     }
   }
+
+  // Calcule le label promo depuis les services (la plus récente promo active)
+  for (const group of map.values()) {
+    if (group.promoLabel === null && group.items.length > 0) {
+      const activePromos = group.items
+        .filter(i => i.raw?.promo_active === true)
+        .sort((a, b) =>
+          new Date(b.raw?.created_at ?? 0).getTime() - new Date(a.raw?.created_at ?? 0).getTime()
+        );
+      if (activePromos.length > 0) {
+        const p = activePromos[0].raw!;
+        group.promoLabel = formatPromo(p.promo_type, p.promo_value, p.promo_buy_qty, p.promo_get_qty, p.promo_code);
+      }
+    }
+  }
+
   return Array.from(map.values());
 }
 
 const SVC_ITEM_W = 120;
 
-function ServiceGroupCard({ group }: { group: ServiceGroup }) {
+function ServiceGroupCard({ group, zoneInfo }: { group: ServiceGroup; zoneInfo?: ZoneInfo }) {
   // Distance en minutes (vitesse moyenne ville ~30 km/h ≈ 2 min/km)
   const distMin = typeof group.distanceKm === 'number'
     ? Math.max(1, Math.round(group.distanceKm * 2))
@@ -175,9 +216,9 @@ function ServiceGroupCard({ group }: { group: ServiceGroup }) {
         <View style={{ flex: 1 }}>
           <View style={svc.nameRow}>
             <Text style={svc.bizName} numberOfLines={1}>{group.businessName}</Text>
-            {group.hasPromo && (
+            {!!group.promoLabel && (
               <View style={svc.promoBadge}>
-                <Text style={svc.promoText}>Promo</Text>
+                <Text style={svc.promoText}>{group.promoLabel}</Text>
               </View>
             )}
           </View>
@@ -203,6 +244,19 @@ function ServiceGroupCard({ group }: { group: ServiceGroup }) {
               </>
             )}
           </View>
+          {/* Livraison */}
+          {zoneInfo && zoneInfo.count > 0 && (() => {
+            const { count, firstLabel } = zoneInfo;
+            const lbl = count > 1
+              ? `Livraison à ${firstLabel} et ${count - 1} autre${count - 1 > 1 ? 's' : ''}`
+              : `Livraison à ${firstLabel}`;
+            return (
+              <View style={svc.deliveryRow}>
+                <Feather name="truck" size={11} color="#22C55E" />
+                <Text style={svc.deliveryTxt} numberOfLines={1}>{lbl}</Text>
+              </View>
+            );
+          })()}
         </View>
 
         <Feather name="chevron-right" size={16} color="#9CA3AF" />
@@ -243,7 +297,9 @@ function ServiceGroupCard({ group }: { group: ServiceGroup }) {
 }
 
 const svc = StyleSheet.create({
-  card:        { backgroundColor: '#fff', borderRadius: 20, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, overflow: 'hidden' },
+  card:        { backgroundColor: '#fff', borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: '#ECECE8', overflow: 'hidden' },
+  deliveryRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  deliveryTxt: { fontSize: 11, fontWeight: '600', color: '#22C55E', flex: 1 },
   header:      { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6' },
   avatar:      { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FEF2EC', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarImg:   { width: 56, height: 56, borderRadius: 28 },
@@ -380,7 +436,42 @@ export default function SearchScreen() {
   );
 
   // Tous les résultats dans le même format groupé
-  const allGroups = useMemo(() => groupServiceResults(results), [results]);
+  // Si une catégorie est active, on ne garde que les boutiques dont la catégorie correspond
+  // (évite qu'une boutique d'une autre catégorie remonte via ses produits)
+  const allGroups = useMemo(() => {
+    const groups = groupServiceResults(results);
+    if (!filters.categoryId) return groups;
+    return groups.filter(g =>
+      g.businessCategory?.toLowerCase() === filters.categoryId!.toLowerCase()
+    );
+  }, [results, filters.categoryId]);
+
+  // ── Zones de livraison pour les boutiques affichées ───────────────────────
+  const groupBusinessIds = useMemo(() => allGroups.map(g => g.businessId), [allGroups]);
+  const { data: zoneCountMap = new Map<string, ZoneInfo>() } = useQuery<Map<string, ZoneInfo>>({
+    queryKey: ['delivery-zone-counts-search', groupBusinessIds.join(',')],
+    queryFn: async () => {
+      if (groupBusinessIds.length === 0) return new Map<string, ZoneInfo>();
+      const { data, error } = await supabase
+        .from('delivery_zones')
+        .select('business_id, label')
+        .in('business_id', groupBusinessIds)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      const map = new Map<string, ZoneInfo>();
+      for (const row of data ?? []) {
+        const existing = map.get(row.business_id);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          map.set(row.business_id, { count: 1, firstLabel: row.label ?? '' });
+        }
+      }
+      return map;
+    },
+    enabled: groupBusinessIds.length > 0,
+    staleTime: 60_000,
+  });
 
   // ── Tendances : businesses de la ville de l'utilisateur ───────────────────
   const trendFilters = countryCode
@@ -541,7 +632,7 @@ export default function SearchScreen() {
 
             {/* Tous les résultats dans le même format */}
             {allGroups.map(group => (
-              <ServiceGroupCard key={group.businessId} group={group} />
+              <ServiceGroupCard key={group.businessId} group={group} zoneInfo={zoneCountMap.get(group.businessId)} />
             ))}
           </ScrollView>
         )

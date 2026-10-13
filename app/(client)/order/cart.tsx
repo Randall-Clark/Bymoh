@@ -1,25 +1,25 @@
 // app/(client)/order/cart.tsx
 import { Feather } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Image, LayoutAnimation, Modal, Platform, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '@/hooks/useCart';
 import { formatPrice } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 
 export default function CartScreen() {
-  const insets    = useSafeAreaInsets();
-  const topPad    = Platform.OS === 'web' ? 67 : insets.top + 8;
-  // Tab bar height fixe (cart est dans un stack, pas directement dans les tabs)
-  // 60 = hauteur standard de la tab bar, insets.bottom = zone safe area du bas
-  const TAB_BAR   = 60;
-  const footerBot = TAB_BAR + insets.bottom + 8;
+  const insets      = useSafeAreaInsets();
+  const topPad      = Platform.OS === 'web' ? 67 : insets.top + 8;
+  const TAB_BAR     = 60;
+  const footerBot   = TAB_BAR + insets.bottom + 8;
+  const queryClient = useQueryClient();
 
   const { businessId } = useLocalSearchParams<{ businessId?: string }>();
 
@@ -27,6 +27,11 @@ export default function CartScreen() {
     items, businessName, totalItems, totalAmount,
     addToCart, removeFromCart, updateQuantity, clearCart,
   } = useCart();
+
+  // Actualisation au focus : recharge les données panier / disponibilités
+  useFocusEffect(useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['cart-availability'] });
+  }, [queryClient]));
 
   const cartBusinessId = (items[0] as any)?.business_id ?? businessId ?? null;
 
@@ -49,6 +54,44 @@ export default function CartScreen() {
     enabled: !!cartBusinessId,
     staleTime: 30_000,
   });
+
+  // ── Vérifie quels articles sont encore disponibles ───────────────────────
+  const cartServiceIds = useMemo(
+    () => items.map((i: any) => i.service_id ?? i.id).filter(Boolean),
+    [items],
+  );
+
+  const { data: availableIds } = useQuery<Set<string>>({
+    queryKey: ['cart-items-available', cartServiceIds.join(',')],
+    queryFn: async () => {
+      if (cartServiceIds.length === 0) return new Set<string>();
+      const { data, error } = await supabase
+        .from('services')
+        .select('id')
+        .in('id', cartServiceIds)
+        .eq('is_available', true);
+      if (error) throw error;
+      return new Set((data ?? []).map((r: any) => r.id));
+    },
+    enabled: cartServiceIds.length > 0,
+    staleTime: 30_000,
+    refetchOnMount: 'always',
+  });
+
+  // Un article est "unavailable" si la query a terminé et son id n'y est pas
+  const isUnavailable = useCallback(
+    (item: any): boolean => {
+      if (!availableIds) return false; // pas encore chargé → optimiste
+      const id = item.service_id ?? item.id;
+      return !availableIds.has(id);
+    },
+    [availableIds],
+  );
+
+  const hasUnavailableItems = useMemo(
+    () => availableIds !== undefined && items.some((i: any) => isUnavailable(i)),
+    [availableIds, items, isUnavailable],
+  );
 
   // ── Auto-clear si boutique supprimée ────────────────────────────────────
   const clearedRef = useRef(false);
@@ -91,7 +134,7 @@ export default function CartScreen() {
     );
   }, [addToCart]);
 
-  // Décrémente ; à 0 → ouvre le modal de confirmation
+  // Décrémente ; à 1 → ouvre le modal de confirmation
   const handleDecrement = useCallback((item: any) => {
     if (item.quantity <= 1) {
       setPendingDelete(item);
@@ -151,6 +194,16 @@ export default function CartScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Bannière articles indisponibles ── */}
+      {hasUnavailableItems && (
+        <View style={s.unavailableBanner}>
+          <Feather name="alert-circle" size={15} color="#92400E" />
+          <Text style={s.unavailableBannerText}>
+            Certains articles ne sont plus disponibles. Retirez-les pour continuer.
+          </Text>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={[s.scroll, { paddingBottom: footerBot + 80 }]}
         showsVerticalScrollIndicator={false}
@@ -158,48 +211,83 @@ export default function CartScreen() {
       >
         {/* ── Liste d'articles ── */}
         <View style={s.itemsBlock}>
-          {items.map((item: any, index) => (
-            <View key={item.service_id ?? item.id ?? String(index)}>
-              {index > 0 && <View style={s.divider} />}
-              <View style={s.itemRow}>
+          {items.map((item: any, index) => {
+            const unavailable = isUnavailable(item);
+            return (
+              <View key={item.service_id ?? item.id ?? String(index)}>
+                {index > 0 && <View style={s.divider} />}
+                <View style={[s.itemRow, unavailable && s.itemRowUnavailable]}>
 
-                {item.image_url ? (
-                  <Image source={{ uri: item.image_url }} style={s.itemImg} resizeMode="cover" />
-                ) : (
-                  <View style={[s.itemImg, s.itemImgPlaceholder]}>
-                    <Feather name="image" size={20} color="#D1D5DB" />
+                  {/* Image */}
+                  {(() => {
+                    const uri = (item as any).image_url
+                      || (item as any).image
+                      || (item as any).photo
+                      || (item as any).thumbnail
+                      || null;
+                    return uri ? (
+                      <View>
+                        <Image source={{ uri }} style={[s.itemImg, unavailable && s.imgUnavailable]} resizeMode="cover" />
+                        {unavailable && (
+                          <View style={s.imgOverlay}>
+                            <Feather name="slash" size={20} color="#fff" />
+                          </View>
+                        )}
+                      </View>
+                    ) : (
+                      <View style={[s.itemImg, s.itemImgPlaceholder, unavailable && s.imgUnavailable]}>
+                        <Text style={{ fontSize: 24 }}>📦</Text>
+                      </View>
+                    );
+                  })()}
+
+                  <View style={s.itemInfo}>
+                    <Text style={[s.itemTitle, unavailable && s.textUnavailable]} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    {unavailable
+                      ? <Text style={s.unavailableLabel}>Plus disponible</Text>
+                      : <Text style={s.itemPrice}>{formatPrice(item.price)}</Text>
+                    }
                   </View>
-                )}
 
-                <View style={s.itemInfo}>
-                  <Text style={s.itemTitle} numberOfLines={2}>{item.title}</Text>
-                  <Text style={s.itemPrice}>{formatPrice(item.price)}</Text>
+                  {/* Stepper ou bouton Retirer si indisponible */}
+                  {unavailable ? (
+                    <TouchableOpacity
+                      style={s.removeBtn}
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        removeFromCart((item.service_id ?? item.id) as string);
+                      }}
+                    >
+                      <Feather name="trash-2" size={15} color="#EF4444" />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={s.stepper}>
+                      <TouchableOpacity
+                        style={s.stepperBtn}
+                        onPress={() => handleDecrement(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                      >
+                        <Feather name="minus" size={15} color="#6B7280" />
+                      </TouchableOpacity>
+
+                      <Text style={s.stepperCount}>{item.quantity}</Text>
+
+                      <TouchableOpacity
+                        style={s.stepperBtn}
+                        onPress={() => handleAdd(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                      >
+                        <Feather name="plus" size={15} color="#111827" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
                 </View>
-
-                {/* Stepper : − N + */}
-                <View style={s.stepper}>
-                  <TouchableOpacity
-                    style={s.stepperBtn}
-                    onPress={() => handleDecrement(item)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-                  >
-                    <Feather name="minus" size={15} color="#6B7280" />
-                  </TouchableOpacity>
-
-                  <Text style={s.stepperCount}>{item.quantity}</Text>
-
-                  <TouchableOpacity
-                    style={s.stepperBtn}
-                    onPress={() => handleAdd(item)}
-                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                  >
-                    <Feather name="plus" size={15} color="#111827" />
-                  </TouchableOpacity>
-                </View>
-
               </View>
-            </View>
-          ))}
+            );
+          })}
 
           {/* ── Ajouter des articles ── */}
           <View style={s.divider} />
@@ -219,22 +307,24 @@ export default function CartScreen() {
             </Text>
             <Text style={s.summaryValue}>{formatPrice(totalAmount)}</Text>
           </View>
+          <Text style={s.deliveryNote}>Les frais de livraison seront calculés à l'étape suivante.</Text>
         </View>
       </ScrollView>
 
       {/* ── Footer sticky ── */}
       <View style={[s.footer, { paddingBottom: footerBot }]}>
         <TouchableOpacity
-          style={s.checkoutBtn}
-          activeOpacity={0.88}
-          onPress={() =>
+          style={[s.checkoutBtn, hasUnavailableItems && s.checkoutBtnDisabled]}
+          activeOpacity={hasUnavailableItems ? 1 : 0.88}
+          onPress={() => {
+            if (hasUnavailableItems) return;
             router.push({
-              pathname: '/(client)/order/delivery' as any,
+              pathname: '/(client)/order/checkout' as any,
               params: { businessId: businessId ?? cartBusinessId ?? '' },
-            })
-          }
+            });
+          }}
         >
-          <Text style={s.checkoutText}>Passer la commande</Text>
+          <Text style={s.checkoutText}>Finaliser ma commande</Text>
         </TouchableOpacity>
       </View>
 
@@ -247,7 +337,6 @@ export default function CartScreen() {
       >
         <View style={s.overlay}>
           <View style={s.modalCard}>
-            {/* Icône */}
             <View style={s.modalIcon}>
               <Feather name="trash-2" size={24} color="#FF6835" />
             </View>
@@ -304,6 +393,14 @@ const s = StyleSheet.create({
   exploreCta:     { backgroundColor: '#FF6835', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 100 },
   exploreCtaText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
+  // ── Bannière indisponible ──
+  unavailableBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF3C7', paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: '#FDE68A',
+  },
+  unavailableBannerText: { flex: 1, fontSize: 13, color: '#92400E', lineHeight: 18 },
+
   // ── Scroll ──
   scroll: { paddingTop: 8 },
 
@@ -312,12 +409,20 @@ const s = StyleSheet.create({
   divider:    { height: StyleSheet.hairlineWidth, backgroundColor: '#F3F4F6', marginVertical: 4 },
 
   // ── Item row ──
-  itemRow:  { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
-  itemImg:  { width: 68, height: 68, borderRadius: 12 },
+  itemRow:            { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 12 },
+  itemRowUnavailable: { opacity: 0.6 },
+  itemImg:            { width: 68, height: 68, borderRadius: 12 },
+  imgUnavailable:     { opacity: 0.4 },
+  imgOverlay:         { position: 'absolute', top: 0, left: 0, width: 68, height: 68, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
   itemImgPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  itemInfo: { flex: 1, gap: 6 },
-  itemTitle: { fontSize: 14, fontWeight: '700', color: '#111827', lineHeight: 20 },
-  itemPrice: { fontSize: 14, fontWeight: '700', color: '#111827' },
+  itemInfo:           { flex: 1, gap: 6 },
+  itemTitle:          { fontSize: 14, fontWeight: '700', color: '#111827', lineHeight: 20 },
+  textUnavailable:    { color: '#9CA3AF', textDecorationLine: 'line-through' },
+  itemPrice:          { fontSize: 14, fontWeight: '700', color: '#111827' },
+  unavailableLabel:   { fontSize: 12, fontWeight: '600', color: '#EF4444' },
+
+  // ── Remove button (unavailable) ──
+  removeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
 
   // ── Stepper ──
   stepper:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 6, gap: 8 },
@@ -337,11 +442,10 @@ const s = StyleSheet.create({
   deliveryNote: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' },
 
   // ── Footer sticky ──
-  footer:           { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F3F4F6' },
-  checkoutBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 20 },
-  checkoutText:     { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  checkoutPill:     { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 100, paddingHorizontal: 12, paddingVertical: 4 },
-  checkoutPillText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  footer:               { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F3F4F6' },
+  checkoutBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827', borderRadius: 16, paddingVertical: 16, paddingHorizontal: 20 },
+  checkoutBtnDisabled:  { backgroundColor: '#9CA3AF' },
+  checkoutText:         { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   // ── Modal ──
   overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 32, paddingHorizontal: 16 },

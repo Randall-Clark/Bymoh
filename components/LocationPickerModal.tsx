@@ -99,7 +99,7 @@ async function searchNominatim(q: string): Promise<NominatimResult[]> {
   if (q.trim().length < 2) return [];
   try {
     const res  = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&accept-language=fr`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=10&accept-language=fr&countrycodes=bj,ci,sn,ml,bf,tg,gh,ng,gn,cm&viewbox=-17.5,25.0,15.0,4.0&bounded=0`,
       { headers: { 'User-Agent': 'Bymoh/1.0' } },
     );
     return await res.json();

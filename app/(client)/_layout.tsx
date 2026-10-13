@@ -72,6 +72,7 @@ export default function ClientLayout() {
       <Tabs.Screen name="business/[id]"              options={{ href: null }} />
       <Tabs.Screen name="service/[id]"               options={{ href: null }} />
       <Tabs.Screen name="order/cart"                 options={{ href: null }} />
+      <Tabs.Screen name="order/checkout"             options={{ href: null }} />
       <Tabs.Screen name="order/delivery"             options={{ href: null }} />
       <Tabs.Screen name="order/confirmation"         options={{ href: null }} />
       <Tabs.Screen name="order/tracking"             options={{ href: null }} />
