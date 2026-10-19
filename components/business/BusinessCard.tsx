@@ -1,4 +1,4 @@
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
 import {
@@ -6,6 +6,7 @@ import {
   TouchableOpacity, View, ViewStyle,
 } from 'react-native';
 import { isBusinessOpen, getDistanceKm, formatDistance } from '@/lib/utils';
+import { useFavoriteToggle } from '@/hooks/useFavoriteToggle';
 import type { Business } from '@/types';
 
 const { width: W } = Dimensions.get('window');
@@ -19,8 +20,10 @@ interface Props {
 }
 
 export function BusinessCard({ business, style, horizontal, userLat, userLon }: Props) {
-  // ✅ Tag depuis la DB en priorité, fallback calculé si absent
-  const tag  = business.tag ?? buildTagFallback(business.name, business.id);
+  // ← Hook partagé : Zustand + Supabase ensemble
+  const { isFav, toggle } = useFavoriteToggle(business.id);
+
+  const tag      = business.tag ?? buildTagFallback(business.name, business.id);
   const open     = isBusinessOpen(business.hours, (business as any).timezone);
   const distance = (userLat && userLon && (business as any).latitude && (business as any).longitude)
     ? getDistanceKm(userLat, userLon, (business as any).latitude, (business as any).longitude)
@@ -29,7 +32,12 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
   const onPress = () =>
     router.push({ pathname: '/(client)/business/[id]', params: { id: business.id } });
 
-  // ── Carte horizontale (scroll horizontal) ────────────────────────────────
+  const onHeartPress = (e: any) => {
+    e.stopPropagation?.();
+    toggle();
+  };
+
+  // ── Carte horizontale ─────────────────────────────────────────────────────
   if (horizontal) {
     return (
       <TouchableOpacity style={[styles.hCard, style]} onPress={onPress} activeOpacity={0.88}>
@@ -41,13 +49,18 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
               <Text style={styles.coverEmoji}>{business.category_icon ?? '🏪'}</Text>
             </View>
           )}
-          {/* Badge ouvert/fermé */}
           <View style={[styles.openBadge, !open && styles.closedBadge]}>
             <View style={[styles.openDot, !open && styles.closedDot]} />
             <Text style={[styles.openText, !open && styles.closedText]}>
               {open ? 'Ouvert' : 'Fermé'}
             </Text>
           </View>
+          <TouchableOpacity style={styles.heartBtn} onPress={onHeartPress} activeOpacity={0.8}>
+            {isFav
+              ? <Ionicons name="heart"         size={16} color="#EF4444" />
+              : <Ionicons name="heart-outline" size={16} color="#fff"    />
+            }
+          </TouchableOpacity>
         </View>
 
         <View style={styles.hInfo}>
@@ -86,7 +99,6 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
   // ── Carte verticale (défaut) ──────────────────────────────────────────────
   return (
     <TouchableOpacity style={[styles.card, style]} onPress={onPress} activeOpacity={0.88}>
-      {/* Cover */}
       <View style={styles.coverWrap}>
         {business.cover_url ? (
           <Image source={{ uri: business.cover_url }} style={styles.cover} />
@@ -96,7 +108,6 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
           </View>
         )}
 
-        {/* Badge ouvert/fermé */}
         <View style={[styles.openBadge, !open && styles.closedBadge]}>
           <View style={[styles.openDot, !open && styles.closedDot]} />
           <Text style={[styles.openText, !open && styles.closedText]}>
@@ -104,20 +115,25 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
           </Text>
         </View>
 
-        {/* Badge livraison */}
         {business.has_delivery && (
           <View style={styles.deliveryOverlay}>
             <Feather name="truck" size={10} color="#fff" />
             <Text style={styles.deliveryOverlayText}>Livraison</Text>
           </View>
         )}
+
+        {/* Cœur top-right */}
+        <TouchableOpacity style={styles.heartBtn} onPress={onHeartPress} activeOpacity={0.8}>
+          {isFav
+            ? <Ionicons name="heart"         size={16} color="#EF4444" />
+            : <Ionicons name="heart-outline" size={16} color="#fff"    />
+          }
+        </TouchableOpacity>
       </View>
 
-      {/* Corps */}
       <View style={styles.body}>
         <View style={styles.bodyTop}>
           <View style={{ flex: 1 }}>
-            {/* Nom + tag sur la même ligne */}
             <View style={styles.nameRow}>
               <Text style={styles.name} numberOfLines={1}>{business.name}</Text>
               {tag && <Text style={styles.tag}>{tag}</Text>}
@@ -126,8 +142,6 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
               {business.category_icon} {business.category}
             </Text>
           </View>
-
-          {/* Note */}
           {(business.rating ?? 0) > 0 && (
             <View style={styles.ratingPill}>
               <Feather name="star" size={11} color="#F59E0B" />
@@ -136,7 +150,6 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
           )}
         </View>
 
-        {/* Méta : ville + avis */}
         <View style={styles.meta}>
           {business.city ? (
             <View style={styles.metaItem}>
@@ -164,7 +177,6 @@ export function BusinessCard({ business, style, horizontal, userLat, userLon }: 
   );
 }
 
-// Fallback si tag pas encore en DB (anciennes boutiques)
 function buildTagFallback(name: string, id: string): string {
   const words   = name.trim().split(/\s+/).filter(Boolean);
   const letters = words.length >= 2
@@ -175,40 +187,41 @@ function buildTagFallback(name: string, id: string): string {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
-  coverWrap: { position: 'relative' },
-  cover: { width: '100%', height: 160, resizeMode: 'cover' },
-  coverPlaceholder: { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  coverEmoji: { fontSize: 42 },
-  body: { padding: 14, gap: 8 },
-  bodyTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  nameRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' },
-  name: { fontSize: 16, fontWeight: '700', color: '#111827', flexShrink: 1 },
-  tag: { fontSize: 12, fontWeight: '300', color: '#9CA3AF', letterSpacing: 0.3 },
-  category: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  ratingPill: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFFBEB', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, borderWidth: 1, borderColor: '#FDE68A' },
-  ratingPillText: { fontSize: 12, fontWeight: '700', color: '#D97706' },
-  meta: { flexDirection: 'row', gap: 14 },
-  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 12, color: '#9CA3AF' },
-  openBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
-  closedBadge: { backgroundColor: 'rgba(0,0,0,0.5)' },
-  openDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
-  closedDot: { backgroundColor: '#9CA3AF' },
-  openText: { fontSize: 11, fontWeight: '700', color: '#15803D' },
-  closedText: { color: '#fff' },
-  deliveryOverlay: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(34,197,94,0.85)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
+  card:                { backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
+  coverWrap:           { position: 'relative' },
+  cover:               { width: '100%', height: 160, resizeMode: 'cover' },
+  coverPlaceholder:    { backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  coverEmoji:          { fontSize: 42 },
+  body:                { padding: 14, gap: 8 },
+  bodyTop:             { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  nameRow:             { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' },
+  name:                { fontSize: 16, fontWeight: '700', color: '#111827', flexShrink: 1 },
+  tag:                 { fontSize: 12, fontWeight: '300', color: '#9CA3AF', letterSpacing: 0.3 },
+  category:            { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  ratingPill:          { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FFFBEB', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, borderWidth: 1, borderColor: '#FDE68A' },
+  ratingPillText:      { fontSize: 12, fontWeight: '700', color: '#D97706' },
+  meta:                { flexDirection: 'row', gap: 14 },
+  metaItem:            { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText:            { fontSize: 12, color: '#9CA3AF' },
+  openBadge:           { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
+  closedBadge:         { backgroundColor: 'rgba(0,0,0,0.5)' },
+  openDot:             { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
+  closedDot:           { backgroundColor: '#9CA3AF' },
+  openText:            { fontSize: 11, fontWeight: '700', color: '#15803D' },
+  closedText:          { color: '#fff' },
+  heartBtn:            { position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' },
+  deliveryOverlay:     { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(34,197,94,0.85)', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 4 },
   deliveryOverlayText: { fontSize: 11, fontWeight: '600', color: '#fff' },
-  hCard: { width: 200, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 },
-  hCoverWrap: { position: 'relative' },
-  hCover: { width: '100%', height: 110, resizeMode: 'cover' },
-  hInfo: { padding: 10, gap: 4 },
-  hName: { fontSize: 14, fontWeight: '700', color: '#111827', flexShrink: 1 },
-  hCategory: { fontSize: 12, color: '#6B7280' },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  ratingText: { fontSize: 11, color: '#6B7280' },
-  deliveryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: '#F0FDF4', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
-  deliveryText:   { fontSize: 11, fontWeight: '600', color: '#22C55E' },
-  distanceBadge:  { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'flex-start' },
-  distanceText:   { fontSize: 11, color: '#6B7280', fontWeight: '500' },
+  hCard:               { width: 200, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6, elevation: 3 },
+  hCoverWrap:          { position: 'relative' },
+  hCover:              { width: '100%', height: 110, resizeMode: 'cover' },
+  hInfo:               { padding: 10, gap: 4 },
+  hName:               { fontSize: 14, fontWeight: '700', color: '#111827', flexShrink: 1 },
+  hCategory:           { fontSize: 12, color: '#6B7280' },
+  ratingRow:           { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  ratingText:          { fontSize: 11, color: '#6B7280' },
+  deliveryBadge:       { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: '#F0FDF4', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2 },
+  deliveryText:        { fontSize: 11, fontWeight: '600', color: '#22C55E' },
+  distanceBadge:       { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'flex-start' },
+  distanceText:        { fontSize: 11, color: '#6B7280', fontWeight: '500' },
 });

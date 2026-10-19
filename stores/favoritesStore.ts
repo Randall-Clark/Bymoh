@@ -1,11 +1,17 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface FavoritesState {
   favoriteIds: string[];
+
+  /** Ajoute ou retire un favori (toggle) */
   toggleFavorite: (businessId: string) => void;
-  isFavorite: (businessId: string) => boolean;
+
+  /** Définit l'état exact d'un favori (sans toggle) — utilisé pour la sync Supabase */
+  setFavorite: (businessId: string, value: boolean) => void;
+
+  isFavorite:    (businessId: string) => boolean;
   clearFavorites: () => void;
 }
 
@@ -21,13 +27,23 @@ export const useFavoritesStore = create<FavoritesState>()(
             : [...state.favoriteIds, businessId],
         })),
 
+      // Déterministe : passe à true ou false sans risque de double-toggle
+      setFavorite: (businessId, value) =>
+        set((state) => ({
+          favoriteIds: value
+            ? state.favoriteIds.includes(businessId)
+              ? state.favoriteIds
+              : [...state.favoriteIds, businessId]
+            : state.favoriteIds.filter((id) => id !== businessId),
+        })),
+
       isFavorite: (businessId) => get().favoriteIds.includes(businessId),
 
       clearFavorites: () => set({ favoriteIds: [] }),
     }),
     {
-      name: 'bymoh-favorites',
+      name:    'favorites-storage',
       storage: createJSONStorage(() => AsyncStorage),
-    },
-  ),
+    }
+  )
 );

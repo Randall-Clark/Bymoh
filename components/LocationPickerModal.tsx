@@ -48,6 +48,7 @@ interface SavedAddr {
   label:       string;
   address:     string;
   city:        string;
+  suburb?:     string;  // ← quartier extrait de Nominatim
   lat:         number;
   lon:         number;
   complement?: string;
@@ -76,7 +77,7 @@ const DEFAULT_LAT   = 6.3654;
 const DEFAULT_LON   = 2.4183;
 
 /* ─── Nominatim helpers ──────────────────────────────────────────── */
-async function reverseGeocode(lat: number, lon: number): Promise<{ address: string; city: string }> {
+async function reverseGeocode(lat: number, lon: number): Promise<{ address: string; city: string; suburb: string }> {
   try {
     const res  = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
@@ -84,14 +85,20 @@ async function reverseGeocode(lat: number, lon: number): Promise<{ address: stri
     );
     const data = await res.json();
     const a    = data.address ?? {};
-    const road    = a.road ?? a.pedestrian ?? a.footway ?? a.neighbourhood ?? '';
-    const number  = a.house_number ?? '';
-    const city    = a.city ?? a.town ?? a.village ?? a.county ?? '';
-    const address = ([number, road].filter(Boolean).join(' ')
-                  || data.display_name?.split(',')[0]) ?? '';
-    return { address: address.trim(), city: city.trim() };
+
+    // Ville : ce que Nominatim retourne (ex: "Godomey", "Cotonou", "Lomé")
+    const city   = (a.city ?? a.town ?? a.village ?? a.county ?? '').trim();
+    // Quartier fin (ex: "Dénou", "Haie-Vive")
+    const suburb = (a.suburb ?? a.quarter ?? a.neighbourhood ?? a.city_district ?? '').trim();
+
+    // Adresse : numéro + rue
+    const road   = a.road ?? a.pedestrian ?? a.footway ?? '';
+    const number = a.house_number ?? '';
+    const street = ([number, road].filter(Boolean).join(' ') || data.display_name?.split(',')[0] || '').trim();
+
+    return { address: street, city, suburb };
   } catch {
-    return { address: `${lat.toFixed(5)}, ${lon.toFixed(5)}`, city: '' };
+    return { address: `${lat.toFixed(5)}, ${lon.toFixed(5)}`, city: '', suburb: '' };
   }
 }
 
@@ -263,9 +270,10 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
   const searchTimer                       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* pin + géocodage (déclenché par "Pin ici") */
-  const [pinning,   setPinning]   = useState(false); // géocodage en cours après Pin ici
-  const [mapAddr,   setMapAddr]   = useState('');
-  const [mapCity,   setMapCity]   = useState('');
+  const [pinning,    setPinning]    = useState(false); // géocodage en cours après Pin ici
+  const [mapAddr,    setMapAddr]    = useState('');
+  const [mapCity,    setMapCity]    = useState('');
+  const [mapSuburb,  setMapSuburb]  = useState('');   // ← nouveau : quartier géocodé
 
   /* formulaire */
   const [label,      setLabel]      = useState('');
@@ -273,6 +281,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
   const [accessCode, setAccessCode] = useState('');
   const [saveLocal,  setSaveLocal]  = useState(true);
   const [saving,     setSaving]     = useState(false);
+  const [editingId,  setEditingId]  = useState<string | null>(null); // ID de l'adresse en cours d'édition
 
   /* GPS watch */
   const [locating, setLocating] = useState(false);
@@ -332,6 +341,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
   const openMap = useCallback(async (initLat?: number, initLon?: number) => {
     setMapAddr('');
     setMapCity('');
+    setMapSuburb('');
     setSearchQuery('');
     setSearchResults([]);
     setShowResults(false);
@@ -379,16 +389,20 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
     setPinning(true);
     setMapAddr('…');
     setMapCity('');
+    setMapSuburb('');
     setStep('form');
-    setLabel('');
-    setComplement('');
-    setAccessCode('');
+    // Pré-remplir les champs si on édite une adresse existante
+    const existing = editingId ? savedAddrs.find(a => a.id === editingId) : null;
+    setLabel(existing?.label ?? '');
+    setComplement(existing?.complement ?? '');
+    setAccessCode(existing?.accessCode ?? '');
     setSaveLocal(true);
-    const { address, city } = await reverseGeocode(lat, lng);
+    const { address, city, suburb } = await reverseGeocode(lat, lng);
     setMapAddr(address);
     setMapCity(city);
+    setMapSuburb(suburb);
     setPinning(false);
-  }, []);
+  }, [editingId, savedAddrs]);
 
   /* ──────────────────────────────────────────────────────────────
      "Pin ici" — demande à la WebView d'envoyer le centre actuel
@@ -437,12 +451,23 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
   }, []);
 
   /* ──────────────────────────────────────────────────────────────
+     Adresse affichée dans l'UI : "Quartier, Ville" ou juste "Ville"
+  ────────────────────────────────────────────────────────────── */
+  const displayAddress = mapSuburb && mapCity
+    ? `${mapSuburb}, ${mapCity}`
+    : mapAddr || mapCity || '';
+
+  /* ──────────────────────────────────────────────────────────────
      Sauvegarder l'adresse
   ────────────────────────────────────────────────────────────── */
   const handleSave = useCallback(async () => {
     const { lat, lon } = currentCenter.current;
-    const finalLabel  = label.trim() || mapAddr || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    const fullAddress = [mapAddr, complement.trim()].filter(Boolean).join(', ');
+    // finalLabel : label choisi > quartier seul > rue seule > coordonnées
+    // (on n'utilise PAS displayAddress ici pour éviter "Quartier, Ville" comme label)
+    const finalLabel  = label.trim() || mapSuburb || mapAddr || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    // fullAddress : quartier + rue + complément
+    const addrParts = [mapSuburb, mapAddr].filter(Boolean).join(', ') || displayAddress;
+    const fullAddress = [addrParts, complement.trim()].filter(Boolean).join(', ');
 
     setSaving(true);
     try {
@@ -454,35 +479,42 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
           delivery_lon:     lon,
         }).eq('id', userId);
       }
-      setLocation(mapCity, fullAddress, lat, lon, userId ?? '', finalLabel);
+      // ✅ On passe suburb en 7e argument
+      setLocation(mapCity, fullAddress, lat, lon, userId ?? '', finalLabel, mapSuburb);
 
       if (saveLocal) {
-        const newAddr: SavedAddr = {
-          id:          Date.now().toString(),
-          label:       finalLabel,
-          address:     fullAddress,
-          city:        mapCity,
+        const updatedAddr: SavedAddr = {
+          id:         editingId ?? Date.now().toString(), // garde l'ID si édition
+          label:      finalLabel,
+          address:    fullAddress,
+          city:       mapCity,
+          suburb:     mapSuburb || undefined,
           lat,
           lon,
-          complement:  complement.trim() || undefined,
-          accessCode:  accessCode.trim() || undefined,
+          complement: complement.trim() || undefined,
+          accessCode: accessCode.trim() || undefined,
         };
-        const updated = [
-          newAddr,
-          ...savedAddrs.filter(a =>
-            Math.abs(a.lat - lat) > 0.0002 || Math.abs(a.lon - lon) > 0.0002
-          ),
-        ].slice(0, 10);
+        const updated = editingId
+          // Édition : remplace l'adresse existante à sa position
+          ? savedAddrs.map(a => a.id === editingId ? updatedAddr : a)
+          // Nouvelle adresse : ajoute en tête (déduplique par position)
+          : [
+              updatedAddr,
+              ...savedAddrs.filter(a =>
+                Math.abs(a.lat - lat) > 0.0002 || Math.abs(a.lon - lon) > 0.0002
+              ),
+            ].slice(0, 10);
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
         setSavedAddrs(updated);
       }
+      setEditingId(null); // reset après sauvegarde
       onClose();
     } catch {
       Alert.alert('Erreur', 'Impossible de sauvegarder l\'adresse.');
     } finally {
       setSaving(false);
     }
-  }, [label, complement, mapAddr, mapCity, saveLocal, savedAddrs, setLocation, userId, onClose]);
+  }, [label, complement, mapAddr, mapCity, mapSuburb, displayAddress, saveLocal, savedAddrs, setLocation, userId, onClose]);
 
   /* ──────────────────────────────────────────────────────────────
      Sélectionner une adresse sauvegardée
@@ -498,7 +530,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
           delivery_lon:     addr.lon,
         }).eq('id', userId);
       }
-      setLocation(addr.city, addr.address, addr.lat, addr.lon, userId ?? '', addr.label);
+      setLocation(addr.city, addr.address, addr.lat, addr.lon, userId ?? '', addr.label, addr.suburb);
       onClose();
     } catch {
       Alert.alert('Erreur', 'Impossible de sélectionner l\'adresse.');
@@ -557,7 +589,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
               keyExtractor={item => item.id}
               contentContainerStyle={s.listContent}
               ListHeaderComponent={
-                <TouchableOpacity style={s.newBtn} onPress={() => openMap()}>
+                <TouchableOpacity style={s.newBtn} onPress={() => { setEditingId(null); openMap(); }}>
                   <View style={s.newBtnIcon}>
                     {locating
                       ? <ActivityIndicator size="small" color={P} />
@@ -605,7 +637,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
                     <Pressable hitSlop={10} style={s.iconBtn} onPress={() => shareAddr(item)}>
                       <Feather name="share-2" size={16} color="#9CA3AF" />
                     </Pressable>
-                    <Pressable hitSlop={10} style={s.iconBtn} onPress={() => openMap(item.lat, item.lon)}>
+                    <Pressable hitSlop={10} style={s.iconBtn} onPress={() => { setEditingId(item.id); openMap(item.lat, item.lon); }}>
                       <Feather name="edit-2" size={16} color="#9CA3AF" />
                     </Pressable>
                     <Pressable
@@ -721,7 +753,7 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
               <Pressable onPress={() => setStep('map')} hitSlop={12}>
                 <Feather name="arrow-left" size={20} color="#374151" />
               </Pressable>
-              <Text style={s.headerTitle}>Confirmer l'adresse</Text>
+              <Text style={s.headerTitle}>{editingId ? 'Modifier l\'adresse' : 'Confirmer l\'adresse'}</Text>
               <View style={{ width: 22 }} />
             </View>
 
@@ -739,15 +771,21 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
                 />
               </View>
 
-              {/* Adresse géocodée */}
+              {/* Adresse géocodée — affiche "Quartier, Ville" */}
               <View style={s.resolvedBox}>
                 {pinning
                   ? <ActivityIndicator color={P} style={{ marginRight: 10 }} />
                   : <Feather name="map-pin" size={16} color={P} style={{ marginRight: 10, marginTop: 2 }} />
                 }
                 <View style={{ flex: 1 }}>
-                  <Text style={s.resolvedAddr}>{mapAddr || '…'}</Text>
-                  {mapCity ? <Text style={s.resolvedCity}>{mapCity}</Text> : null}
+                  {/* Ligne principale : quartier ou rue */}
+                  <Text style={s.resolvedAddr}>
+                    {pinning ? '…' : (mapSuburb || mapAddr || '…')}
+                  </Text>
+                  {/* Ville en dessous */}
+                  {!pinning && mapCity ? (
+                    <Text style={s.resolvedCity}>{mapCity}</Text>
+                  ) : null}
                 </View>
               </View>
 
@@ -834,9 +872,10 @@ export default function LocationPickerModal({ visible, onClose }: Props) {
                 style={s.shareBtn}
                 onPress={() => shareAddr({
                   id: '',
-                  label: label.trim() || mapAddr,
-                  address: [mapAddr, complement.trim()].filter(Boolean).join(', '),
+                  label: label.trim() || displayAddress,
+                  address: [mapSuburb, mapAddr, complement.trim()].filter(Boolean).join(', '),
                   city: mapCity,
+                  suburb: mapSuburb || undefined,
                   lat: currentCenter.current.lat,
                   lon: currentCenter.current.lon,
                   complement: complement.trim() || undefined,

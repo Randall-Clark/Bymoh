@@ -78,6 +78,36 @@ export default function CartScreen() {
     refetchOnMount: 'always',
   });
 
+  // ── Stock réel des articles ──────────────────────────────────────────────
+  const { data: stockMap = {} } = useQuery<Record<string, number>>({
+    queryKey: ['cart-stock', cartServiceIds.join(',')],
+    queryFn: async () => {
+      if (cartServiceIds.length === 0) return {};
+      const { data, error } = await supabase
+        .from('services')
+        .select('id, stock_quantity, stock')
+        .in('id', cartServiceIds);
+      if (error) throw error;
+      const map: Record<string, number> = {};
+      for (const row of (data ?? [])) {
+        const s = (row as any).stock_quantity ?? (row as any).stock;
+        if (s != null) map[(row as any).id] = s;
+      }
+      return map;
+    },
+    enabled: cartServiceIds.length > 0,
+    staleTime: 30_000,
+    refetchOnMount: 'always',
+  });
+
+  const getStock = useCallback(
+    (item: any): number => {
+      const id = item.service_id ?? item.id;
+      return stockMap[id] ?? Infinity;
+    },
+    [stockMap],
+  );
+
   // Un article est "unavailable" si la query a terminé et son id n'y est pas
   const isUnavailable = useCallback(
     (item: any): boolean => {
@@ -116,6 +146,8 @@ export default function CartScreen() {
   }, [cartBusinessId]);
 
   const handleAdd = useCallback((item: any) => {
+    const stock = getStock(item);
+    if (stock !== Infinity && item.quantity >= stock) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     addToCart(
       {
@@ -132,7 +164,7 @@ export default function CartScreen() {
       item.business_id ?? '',
       item.business_name ?? '',
     );
-  }, [addToCart]);
+  }, [addToCart, getStock]);
 
   // Décrémente ; à 1 → ouvre le modal de confirmation
   const handleDecrement = useCallback((item: any) => {
@@ -274,13 +306,20 @@ export default function CartScreen() {
 
                       <Text style={s.stepperCount}>{item.quantity}</Text>
 
-                      <TouchableOpacity
-                        style={s.stepperBtn}
-                        onPress={() => handleAdd(item)}
-                        hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                      >
-                        <Feather name="plus" size={15} color="#111827" />
-                      </TouchableOpacity>
+                      {(() => {
+                        const stock  = getStock(item);
+                        const atMax  = stock !== Infinity && item.quantity >= stock;
+                        return (
+                          <TouchableOpacity
+                            style={s.stepperBtn}
+                            onPress={() => handleAdd(item)}
+                            disabled={atMax}
+                            hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                          >
+                            <Feather name="plus" size={15} color={atMax ? '#D1D5DB' : '#111827'} />
+                          </TouchableOpacity>
+                        );
+                      })()}
                     </View>
                   )}
 

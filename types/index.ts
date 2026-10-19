@@ -39,15 +39,15 @@ export type SecteurId  = typeof SECTEURS[number]['id'];
 
 // ── Villes disponibles ────────────────────────────────────────────────────────
 export const ALL_CITIES = [
-  { id: 'cotonou',  name: 'Cotonou',     flag: '🇧🇯', country: 'Bénin'          },
-  { id: 'lome',     name: 'Lomé',        flag: '🇹🇬', country: 'Togo'           },
-  { id: 'abidjan',  name: 'Abidjan',     flag: '🇨🇮', country: "Côte d'Ivoire"  },
-  { id: 'dakar',    name: 'Dakar',       flag: '🇸🇳', country: 'Sénégal'        },
-  { id: 'accra',    name: 'Accra',       flag: '🇬🇭', country: 'Ghana'          },
-  { id: 'douala',   name: 'Douala',      flag: '🇨🇲', country: 'Cameroun'       },
-  { id: 'bamako',   name: 'Bamako',      flag: '🇲🇱', country: 'Mali'           },
-  { id: 'ouaga',    name: 'Ouagadougou', flag: '🇧🇫', country: 'Burkina Faso'   },
-  { id: 'niamey',   name: 'Niamey',      flag: '🇳🇪', country: 'Niger'          },
+  { id: 'cotonou',  name: 'Cotonou',     flag: '🇧🇯', country: 'Bénin',          lat: 6.3703,  lon: 2.3912   },
+  { id: 'lome',     name: 'Lomé',        flag: '🇹🇬', country: 'Togo',           lat: 6.1375,  lon: 1.2123   },
+  { id: 'abidjan',  name: 'Abidjan',     flag: '🇨🇮', country: "Côte d'Ivoire",  lat: 5.3600,  lon: -4.0083  },
+  { id: 'dakar',    name: 'Dakar',       flag: '🇸🇳', country: 'Sénégal',        lat: 14.7167, lon: -17.4677 },
+  { id: 'accra',    name: 'Accra',       flag: '🇬🇭', country: 'Ghana',          lat: 5.5600,  lon: -0.2057  },
+  { id: 'douala',   name: 'Douala',      flag: '🇨🇲', country: 'Cameroun',       lat: 4.0511,  lon: 9.7679   },
+  { id: 'bamako',   name: 'Bamako',      flag: '🇲🇱', country: 'Mali',           lat: 12.6392, lon: -8.0029  },
+  { id: 'ouaga',    name: 'Ouagadougou', flag: '🇧🇫', country: 'Burkina Faso',   lat: 12.3647, lon: -1.5332  },
+  { id: 'niamey',   name: 'Niamey',      flag: '🇳🇪', country: 'Niger',          lat: 13.5137, lon: 2.1098   },
 ] as const;
 
 export const DAY_LABELS = [

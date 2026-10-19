@@ -8,7 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Animated, Dimensions, FlatList, Image, Modal, Platform, ScrollView,
-  StyleSheet, Text, TouchableOpacity, View,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
@@ -102,7 +102,7 @@ type ZoneInfo = { count: number; firstLabel: string };
 
 // ── Type modal section ─────────────────────────────────────────────────────────
 type SectionModalData =
-  | { kind: 'businesses'; title: string; items: Business[];            userLat?: number|null; userLon?: number|null }
+  | { kind: 'businesses'; title: string; items: Business[]; userLat?: number|null; userLon?: number|null; searchable?: boolean }
   | { kind: 'offers';     title: string; items: ServiceWithBusiness[] }
   | { kind: 'services';   title: string; items: ServiceWithBusiness[] }
   | null;
@@ -322,7 +322,7 @@ function ServiceCard({ item }: { item: ServiceWithBusiness }) {
         <Text style={svc.provider} numberOfLines={1}>{item.business?.name ?? ''}</Text>
         <Text style={svc.price}>
           {item.price
-            ? `Dès ${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}`
+            ? `${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}`
             : 'Sur devis'}
         </Text>
       </View>
@@ -390,8 +390,26 @@ function OfferCardFull({ item }: { item: ServiceWithBusiness }) {
 
 // ── SectionListModal ──────────────────────────────────────────────────────────
 function SectionListModal({ data, onClose, zoneCountMap }: { data: SectionModalData; onClose: () => void; zoneCountMap: Map<string, ZoneInfo> }) {
-  const insets = useSafeAreaInsets();
+  const insets   = useSafeAreaInsets();
+  const [searchQ, setSearchQ] = useState('');
+
+  // Reset search when modal opens on a new section
+  const dataKey = data ? data.title : '';
+  useEffect(() => { setSearchQ(''); }, [dataKey]);
+
   if (!data) return null;
+
+  const searchable = data.kind === 'businesses' && !!data.searchable;
+
+  const bizItems: Business[] = data.kind === 'businesses'
+    ? searchable && searchQ.trim()
+      ? data.items.filter(b =>
+          b.name.toLowerCase().includes(searchQ.toLowerCase()) ||
+          b.city?.toLowerCase().includes(searchQ.toLowerCase()) ||
+          b.category?.toLowerCase().includes(searchQ.toLowerCase())
+        )
+      : data.items
+    : [];
 
   const renderEmpty = () => (
     <View style={slm.empty}>
@@ -412,11 +430,31 @@ function SectionListModal({ data, onClose, zoneCountMap }: { data: SectionModalD
           <View style={{ width: 32 }} />
         </View>
 
+        {/* Barre de recherche (uniquement pour les villes) */}
+        {searchable && (
+          <View style={slm.searchWrap}>
+            <Feather name="search" size={15} color="#9CA3AF" style={{ marginRight: 8 }} />
+            <TextInput
+              style={slm.searchInput}
+              placeholder={`Rechercher dans ${data.title}...`}
+              placeholderTextColor="#9CA3AF"
+              value={searchQ}
+              onChangeText={setSearchQ}
+              autoCorrect={false}
+            />
+            {searchQ.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQ('')} hitSlop={8}>
+                <Feather name="x" size={15} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Contenu */}
         {data.kind === 'businesses' && (
-          data.items.length === 0 ? renderEmpty() : (
+          bizItems.length === 0 ? renderEmpty() : (
             <FlatList
-              data={data.items}
+              data={bizItems}
               keyExtractor={item => item.id}
               contentContainerStyle={slm.list}
               showsVerticalScrollIndicator={false}
@@ -594,6 +632,7 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, [queryClient]));
   const savedCity     = (locationStore as any).city    ?? null;
+  const savedSuburb   = (locationStore as any).suburb  ?? null;   // ← quartier (ex: "Godomey")
   const savedAddress  = (locationStore as any).address ?? null;
   const savedLabel    = (locationStore as any).label   ?? null;
   const userLat       = (locationStore as any).lat     ?? null;
@@ -606,7 +645,6 @@ export default function HomeScreen() {
   const [sectionModal,          setSectionModal]          = useState<SectionModalData>(null);
 
   const cityName   = savedCity ?? null;
-  const cityEntry  = ALL_CITIES.find(c => c.name.toLowerCase() === (cityName ?? '').toLowerCase()) ?? null;
   const hasAddress = !!(savedAddress || savedCity);
   const topPad     = insets.top || (Platform.OS === 'android' ? 24 : 44);
   const fullName   = (profile as any)?.full_name ?? (profile as any)?.name ?? '';
@@ -651,15 +689,107 @@ export default function HomeScreen() {
   }, [userId]);
 
   // ── Businesses ────────────────────────────────────────────────────────────
+  // NOTE: on ne filtre PAS par country_code côté DB car les boutiques existantes
+  // n'ont pas forcément ce champ rempli. Le filtre distance (20 km) gère la localité.
   const countryCode = (profile as any)?.country_code ?? null;
-  const bizFilters  = {
-    ...(countryCode ? { country_code: countryCode } : {}),
-    ...(selCat      ? { category: selCat }          : {}),
+  const baseFilters = {
+    ...(selCat ? { category: selCat } : {}),
   };
-  const { data: businesses = [], isLoading } = useBusinesses(bizFilters);
+
+  // Une seule requête : tout le pays, filtrage côté client
+  const { data: allCountryBiz = [], isLoading } = useBusinesses(baseFilters);
+
+  // Coordonnées de livraison de l'utilisateur (depuis son profil)
+  const deliveryLat = (profile as any)?.delivery_lat ?? userLat ?? null;
+  const deliveryLon = (profile as any)?.delivery_lon ?? userLon ?? null;
+
+  // Résoudre les coordonnées d'une ville à partir de son nom via ALL_CITIES
+  const resolveCityCoords = useCallback((cityName: string): { lat: number; lon: number } | null => {
+    const entry = ALL_CITIES.find(c => c.name.toLowerCase() === cityName.toLowerCase());
+    if (!entry) return null;
+    const lat = (entry as any).lat;
+    const lon = (entry as any).lon;
+    return (lat && lon) ? { lat, lon } : null;
+  }, []);
+
+  // Calculer la distance d'une boutique par rapport à l'utilisateur.
+  // Priorité : coordonnées GPS de la boutique.
+  // Fallback  : coordonnées de la VILLE de la boutique (via ALL_CITIES).
+  const bizDistanceKm = useCallback((b: Business): number | null => {
+    if (!deliveryLat || !deliveryLon) return null;
+    if (b.latitude && b.longitude) {
+      return getDistanceKm(deliveryLat, deliveryLon, b.latitude, b.longitude);
+    }
+    if (b.city) {
+      const cityCoords = resolveCityCoords(b.city);
+      if (cityCoords) return getDistanceKm(deliveryLat, deliveryLon, cityCoords.lat, cityCoords.lon);
+    }
+    return null;
+  }, [deliveryLat, deliveryLon, resolveCityCoords]);
+
+  // Businesses "locaux" :
+  //   1. Distance calculable (GPS boutique ou coords ville via ALL_CITIES) → ≤ 20 km
+  //   2. Distance incalculable (ville inconnue, pas de GPS) :
+  //      → même nom de ville que savedCity
+  //      OU même nom de ville que savedSuburb
+  const businesses = useMemo(() => {
+    if (!savedCity && !savedSuburb && !deliveryLat) return allCountryBiz;
+    return allCountryBiz.filter(b => {
+      const dist = bizDistanceKm(b);
+      if (dist !== null) return dist <= 20;
+      const bCity = b.city?.toLowerCase() ?? '';
+      if (savedCity   && bCity === savedCity.toLowerCase())   return true;
+      if (savedSuburb && bCity === savedSuburb.toLowerCase()) return true;
+      return false;
+    });
+  }, [allCountryBiz, savedCity, savedSuburb, deliveryLat, bizDistanceKm]);
+
+  // Empty state : ville/adresse connue + chargé + aucun résultat local
+  const isEmptyState = !!(savedCity || deliveryLat) && !isLoading && businesses.length === 0;
+
+  // "En dehors de votre zone" — boutiques entre 15 et 30 km
+  const nearbyBizsEmptyState = useMemo(() => {
+    if (!isEmptyState) return [];
+    const nearby = allCountryBiz.filter(b => {
+      const dist = bizDistanceKm(b);
+      if (dist !== null) return dist > 15 && dist <= 30;
+      return false; // sans coords ni ville connue → on ne l'inclut pas ici
+    });
+    if (nearby.length > 0) return nearby.slice(0, 20);
+    // Fallback ultime : boutiques dont la ville ≠ savedCity
+    return allCountryBiz
+      .filter(b => b.city?.toLowerCase() !== savedCity?.toLowerCase())
+      .slice(0, 20);
+  }, [isEmptyState, savedCity, allCountryBiz, bizDistanceKm]);
+
+  // City groups for empty state (cities with 5+ businesses, sorted by count)
+  const cityGroups = useMemo(() => {
+    if (!isEmptyState) return [];
+    const map = new Map<string, Business[]>();
+    for (const b of allCountryBiz) {
+      const city = b.city ?? '';
+      if (!city) continue;
+      // Exclure ce qui est déjà affiché en local ou dans "En dehors de votre zone" (≤ 30 km)
+      const dist = bizDistanceKm(b);
+      if (dist !== null && dist <= 30) continue;
+      if (dist === null && savedCity && city.toLowerCase() === savedCity.toLowerCase()) continue;
+      if (!map.has(city)) map.set(city, []);
+      map.get(city)!.push(b);
+    }
+    const groups: { city: string; preview: Business[]; all: Business[] }[] = [];
+    for (const [city, items] of map.entries()) {
+      if (items.length >= 5) {
+        groups.push({ city, preview: items.slice(0, 6), all: items });
+      }
+    }
+    return groups.sort((a, b) => b.all.length - a.all.length);
+  }, [isEmptyState, savedCity, allCountryBiz]);
 
   // ── Zones de livraison par boutique ──────────────────────────────────────
-  const businessIds = useMemo(() => businesses.map(b => b.id), [businesses]);
+  const businessIds = useMemo(
+    () => allCountryBiz.map(b => b.id),
+    [allCountryBiz],
+  );
   const { data: zoneCountMap = new Map<string, ZoneInfo>() } = useQuery<Map<string, ZoneInfo>>({
     queryKey: ['delivery-zone-counts', businessIds.join(',')],
     queryFn: async () => {
@@ -792,13 +922,11 @@ export default function HomeScreen() {
             <Text style={g.locLabel}>Livraison à</Text>
             <View style={g.locValue}>
               <Text style={g.locCity} numberOfLines={1}>
-                {savedLabel && savedCity
-                  ? `${savedLabel}, ${savedCity}`
-                  : savedLabel
-                    ? savedLabel
-                    : savedCity
-                      ? savedCity
-                      : 'Définir une adresse'}
+                {savedSuburb && savedCity
+                  ? `${savedSuburb}, ${savedCity}`
+                  : savedLabel && savedCity && savedLabel !== savedCity
+                    ? `${savedLabel}, ${savedCity}`
+                    : savedLabel || savedCity || 'Définir une adresse'}
               </Text>
               <Feather name="chevron-down" size={14} color={DARK} />
             </View>
@@ -894,13 +1022,13 @@ export default function HomeScreen() {
           </View>
         ) : (
           <>
-            {heroBanners.length > 0 && (
+            {!isEmptyState && heroBanners.length > 0 && (
               <View style={{ paddingHorizontal: H_PAD }}>
                 <HeroBanner banners={heroBanners} />
               </View>
             )}
 
-            {(nearbyBizs.length > 0 || isLoading) && (
+            {!isEmptyState && (nearbyBizs.length > 0 || isLoading) && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
                   <SecHeader
@@ -929,7 +1057,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {catalogItems.length > 0 && (
+            {!isEmptyState && catalogItems.length > 0 && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
                   <SecHeader
@@ -947,7 +1075,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {popularBizs.length > 0 && (
+            {!isEmptyState && popularBizs.length > 0 && (
               <View style={{ marginBottom: 28 }}>
                 <View style={{ paddingHorizontal: H_PAD }}>
                   <SecHeader
@@ -967,7 +1095,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {discoverBizs.length > 0 && (
+            {!isEmptyState && discoverBizs.length > 0 && (
               <View style={{ paddingHorizontal: H_PAD, marginBottom: 28 }}>
                 <SecHeader
                   title="Cela pourrait vous intéresser"
@@ -985,51 +1113,118 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {!isLoading && businesses.length === 0 && (
-              <View style={g.empty}>
-                <Feather name="search" size={44} color="#D1D5DB" />
-                <Text style={g.emptyTxt}>Aucun commerce dans cette ville</Text>
-              </View>
-            )}
-
-            <View style={{ paddingHorizontal: H_PAD }}>
-              <SellerBanner />
-            </View>
-
-            {bookableServices.length > 0 && (
-              <View style={{ marginBottom: 28 }}>
-                <View style={{ paddingHorizontal: H_PAD }}>
-                  <SecHeader
-                    title="Besoin d'un service ?"
-                    onPress={() => setSectionModal({
-                      kind: 'services',
-                      title: "Besoin d'un service ?",
-                      items: bookableServices,
-                    })}
-                  />
+            {isEmptyState ? (
+              <>
+                {/* Message zone vide */}
+                <View style={{ paddingHorizontal: H_PAD, marginBottom: 28 }}>
+                  <View style={ez.box}>
+                    <Text style={ez.emoji}>🏙️</Text>
+                    <Text style={ez.title}>Aucun commerce encore enregistré dans votre zone</Text>
+                    <Text style={ez.sub}>Soyez le premier à ouvrir votre boutique à {savedCity ?? 'votre ville'} !</Text>
+                  </View>
                 </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, gap: 12 }}>
-                  {bookableServices.slice(0, 6).map(sv => <ServiceCard key={sv.id} item={sv} />)}
-                </ScrollView>
-              </View>
-            )}
 
-            {exploreBizs.length > 0 && (
-              <View style={{ paddingHorizontal: H_PAD, marginBottom: 16 }}>
-                <SecHeader
-                  title="Explorez"
-                  onPress={() => setSectionModal({
-                    kind: 'businesses',
-                    title: 'Explorez',
-                    items: businesses.slice(6),
-                    userLat,
-                    userLon,
-                  })}
-                />
-                {exploreBizs.map(b => (
-                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
+                {/* En dehors de votre zone */}
+                {nearbyBizsEmptyState.length > 0 && (
+                  <View style={{ marginBottom: 28 }}>
+                    <View style={{ paddingHorizontal: H_PAD }}>
+                      <SecHeader
+                        title="En dehors de votre zone"
+                        onPress={() => setSectionModal({
+                          kind: 'businesses',
+                          title: 'En dehors de votre zone',
+                          items: nearbyBizsEmptyState,
+                          userLat,
+                          userLon,
+                        })}
+                      />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
+                      {nearbyBizsEmptyState.slice(0, 6).map((b, i) => (
+                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {/* Seller Banner */}
+                <View style={{ paddingHorizontal: H_PAD, marginBottom: 28 }}>
+                  <SellerBanner />
+                </View>
+
+                {/* Listes par ville (5+ commerces) */}
+                {cityGroups.map(({ city, preview, all }) => (
+                  <View key={city} style={{ marginBottom: 28 }}>
+                    <View style={{ paddingHorizontal: H_PAD }}>
+                      <SecHeader
+                        title={city}
+                        onPress={() => setSectionModal({
+                          kind: 'businesses',
+                          title: city,
+                          items: all,
+                          userLat,
+                          userLon,
+                          searchable: true,
+                        })}
+                      />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
+                      {preview.map((b, i) => (
+                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
+                      ))}
+                    </ScrollView>
+                  </View>
                 ))}
-              </View>
+              </>
+            ) : (
+              <>
+                {!isLoading && businesses.length === 0 && (
+                  <View style={g.empty}>
+                    <Feather name="search" size={44} color="#D1D5DB" />
+                    <Text style={g.emptyTxt}>Aucun commerce dans cette ville</Text>
+                  </View>
+                )}
+
+                <View style={{ paddingHorizontal: H_PAD }}>
+                  <SellerBanner />
+                </View>
+
+                {bookableServices.length > 0 && (
+                  <View style={{ marginBottom: 28 }}>
+                    <View style={{ paddingHorizontal: H_PAD }}>
+                      <SecHeader
+                        title="Besoin d'un service ?"
+                        onPress={() => setSectionModal({
+                          kind: 'services',
+                          title: "Besoin d'un service ?",
+                          items: bookableServices,
+                        })}
+                      />
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, gap: 12 }}>
+                      {bookableServices.slice(0, 6).map(sv => <ServiceCard key={sv.id} item={sv} />)}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {exploreBizs.length > 0 && (
+                  <View style={{ paddingHorizontal: H_PAD, marginBottom: 16 }}>
+                    <SecHeader
+                      title="Explorez"
+                      onPress={() => setSectionModal({
+                        kind: 'businesses',
+                        title: 'Explorez',
+                        items: businesses.slice(6),
+                        userLat,
+                        userLon,
+                      })}
+                    />
+                    {exploreBizs.map(b => (
+                      <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
+                    ))}
+                  </View>
+                )}
+              </>
             )}
           </>
         )}
@@ -1229,15 +1424,24 @@ const dlv = StyleSheet.create({
 });
 
 const slm = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: WHITE },
-  header:  {
+  root:        { flex: 1, backgroundColor: WHITE },
+  header:      {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB',
   },
-  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  title:   { fontSize: 17, fontWeight: '800', color: DARK },
-  list:    { padding: 16, paddingBottom: 40 },
-  empty:   { alignItems: 'center', gap: 12, paddingVertical: 80 },
-  emptyTxt:{ fontSize: 16, color: '#9CA3AF' },
+  backBtn:     { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  title:       { fontSize: 17, fontWeight: '800', color: DARK },
+  list:        { padding: 16, paddingBottom: 40 },
+  empty:       { alignItems: 'center', gap: 12, paddingVertical: 80 },
+  emptyTxt:    { fontSize: 16, color: '#9CA3AF' },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginVertical: 10, backgroundColor: '#F5F5F5', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  searchInput: { flex: 1, fontSize: 14, color: DARK },
+});
+
+const ez = StyleSheet.create({
+  box:   { backgroundColor: '#FFF7ED', borderRadius: 20, padding: 24, alignItems: 'center', gap: 10 },
+  emoji: { fontSize: 44 },
+  title: { fontSize: 17, fontWeight: '800', color: DARK, textAlign: 'center', lineHeight: 24 },
+  sub:   { fontSize: 13, color: GRAY, textAlign: 'center', lineHeight: 19 },
 });
