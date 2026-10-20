@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback } from 'react';
 import {
   ActivityIndicator, FlatList, Image, Platform,
   StyleSheet, Text, TouchableOpacity, View,
@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useFavoritesStore } from '@/stores/favoritesStore';
+import { useEffect, useMemo } from 'react';
 import type { Business } from '@/types';
 
 // ─── Item de la liste favoris ─────────────────────────────────────────────────
@@ -77,7 +78,8 @@ export default function FavoritesScreen() {
   const topPad = Platform.OS === 'web' ? 0 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
-  const { data: businesses = [], isLoading } = useQuery<Business[]>({
+  const favStore = useFavoritesStore();
+  const { data: businesses = [], isLoading, refetch } = useQuery<Business[]>({
     queryKey: ['favorites-supabase'],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -106,6 +108,27 @@ export default function FavoritesScreen() {
     staleTime: 0,
     refetchOnMount: 'always',
   });
+
+  // Refetch chaque fois que l'écran reprend le focus
+  // (tab screen déjà monté → refetchOnMount ne se redéclenche pas)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
+
+  // Clé stable : ne change que si les IDs eux-mêmes changent (pas juste la référence du tableau)
+  const businessIdsKey = useMemo(
+    () => businesses.map((b) => b.id).sort().join(','),
+    [businesses]
+  );
+
+  // Synchronise Zustand avec le résultat Supabase
+  // → les cœurs sur home et boutique reflètent la vraie liste
+  useEffect(() => {
+    favStore.setAllFavorites(businesses.map((b) => b.id));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessIdsKey]);
 
   return (
     <View style={styles.root}>

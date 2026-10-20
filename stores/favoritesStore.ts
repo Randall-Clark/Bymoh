@@ -11,6 +11,9 @@ interface FavoritesState {
   /** Définit l'état exact d'un favori (sans toggle) — utilisé pour la sync Supabase */
   setFavorite: (businessId: string, value: boolean) => void;
 
+  /** Remplace toute la liste — synchronise Zustand avec Supabase */
+  setAllFavorites: (ids: string[]) => void;
+
   isFavorite:    (businessId: string) => boolean;
   clearFavorites: () => void;
 }
@@ -36,6 +39,8 @@ export const useFavoritesStore = create<FavoritesState>()(
               : [...state.favoriteIds, businessId]
             : state.favoriteIds.filter((id) => id !== businessId),
         })),
+
+      setAllFavorites: (ids) => set({ favoriteIds: ids }),
 
       isFavorite: (businessId) => get().favoriteIds.includes(businessId),
 

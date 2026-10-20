@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/stores/authStore';
 import { useCartStore } from '@/stores/cartStore';
+import { useFavoriteToggle } from '@/hooks/useFavoriteToggle';
 import { useLocationStore } from '@/stores/locationStore';
 import { CountryMismatchWarning } from '@/components/WarningBanner';
 import { useBusinesses } from '@/hooks/useBusinesses';
@@ -175,7 +176,7 @@ function DeliveryRow({ zoneInfo }: { zoneInfo?: { count: number; firstLabel: str
 
 // ── NearbyCard ─────────────────────────────────────────────────────────────────
 function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; idx: number; zoneInfo?: { count: number; firstLabel: string } }) {
-  const [fav, setFav] = useState(false);
+  const { isFav: fav, toggle: toggleFav } = useFavoriteToggle(b.id);
   const open  = isBusinessOpen(b.hours, (b as any).timezone);
   const dist  = (userLat && userLon && (b as any).latitude && (b as any).longitude)
     ? formatDistance(getDistanceKm(userLat, userLon, (b as any).latitude, (b as any).longitude))
@@ -189,7 +190,7 @@ function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userL
     >
       <View style={nc.imgWrap}>
         <CoverPhoto uri={b.cover_url} style={nc.img} emoji={b.category_icon} />
-        <TouchableOpacity style={nc.heart} onPress={() => setFav(f => !f)}>
+        <TouchableOpacity style={nc.heart} onPress={(e) => { e.stopPropagation?.(); toggleFav(); }}>
           <Ionicons name={fav ? 'heart' : 'heart-outline'} size={15} color={fav ? ORANGE : '#374151'} />
         </TouchableOpacity>
       </View>
@@ -263,7 +264,7 @@ function PopularCard({ b }: { b: Business }) {
 
 // ── DiscoverCard / ExploreCard ─────────────────────────────────────────────────
 function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; zoneInfo?: { count: number; firstLabel: string } }) {
-  const [fav, setFav] = useState(false);
+  const { isFav: fav, toggle: toggleFav } = useFavoriteToggle(b.id);
   const open = isBusinessOpen(b.hours, (b as any).timezone);
   const dist = (userLat && userLon && (b as any).latitude && (b as any).longitude)
     ? formatDistance(getDistanceKm(userLat, userLon, (b as any).latitude, (b as any).longitude))
@@ -277,7 +278,7 @@ function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?
       <View style={dc.imgWrap}>
         <CoverPhoto uri={b.cover_url} style={dc.img} emoji={b.category_icon} />
         <View style={dc.badge}><Text style={dc.badgeTxt}>{getBadgeLabel(b)}</Text></View>
-        <TouchableOpacity style={dc.heart} onPress={() => setFav(f => !f)}>
+        <TouchableOpacity style={dc.heart} onPress={(e) => { e.stopPropagation?.(); toggleFav(); }}>
           <Ionicons name={fav ? 'heart' : 'heart-outline'} size={15} color={fav ? ORANGE : '#374151'} />
         </TouchableOpacity>
       </View>
