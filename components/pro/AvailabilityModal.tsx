@@ -1,10 +1,9 @@
 // components/pro/AvailabilityModal.tsx
-// Modal de configuration des créneaux — utilisable avant ET après publication
 import { Feather } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Modal, Platform, ScrollView, StyleSheet,
-  Switch, Text, TouchableOpacity, View,
+  Alert, Modal, Platform, ScrollView, StyleSheet,
+  Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TimePicker } from '@/components/TimePicker';
@@ -15,42 +14,27 @@ function timeToMin(t: string): number {
   return h * 60 + m;
 }
 function minToTime(m: number): string {
-  return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`;
+  return `${Math.floor(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}`;
 }
 function addDays(d: Date, n: number): Date {
   const r = new Date(d); r.setDate(r.getDate() + n); return r;
 }
 function toDateStr(d: Date): string { return d.toISOString().slice(0, 10); }
 
-const DAY_FULL  = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
-const DAY_ENUM  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const DAY_ENUM = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// Ordre d'affichage : Lundi → Dimanche
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-// Retourne les heures d'ouverture d'un jour JS (0=dim) depuis business_hours
-function getBizHours(dayJs: number, bh?: BusinessHour[]): { open: string; close: string } | null {
-  if (!bh || bh.length === 0) return null;
-  const dayKey = DAY_ENUM[dayJs];
-  const h = bh.find((d) => d.day_of_week === dayKey);
-  if (!h || h.is_closed) return null;
-  return { open: h.open_time.slice(0,5), close: h.close_time.slice(0,5) };
-}
-
-// Clamp une heure dans la plage d'ouverture
-function clampTime(time: string, bizOpen: string, bizClose: string): string {
-  if (time < bizOpen)  return bizOpen;
-  if (time > bizClose) return bizClose;
-  return time;
-}
-
-type Mode = 'workweek' | 'week' | 'weekend' | 'now' | 'custom';
-
-const MODES: { id: Mode; emoji: string; label: string; desc: string; days: number[] }[] = [
-  { id:'workweek', emoji:'💼', label:'Lun – Ven',       desc:'Du lundi au vendredi', days:[1,2,3,4,5] },
-  { id:'week',     emoji:'📅', label:'Toute la semaine',desc:'Du lundi au dimanche',  days:[0,1,2,3,4,5,6] },
-  { id:'weekend',  emoji:'🎉', label:'Week-end',         desc:'Samedi et dimanche',    days:[0,6] },
-  { id:'now',      emoji:'⚡', label:'Maintenant',       desc:'Un seul créneau aujourd\'hui', days:[] },
-  { id:'custom',   emoji:'⚙️', label:'Personnaliser',    desc:'Configurer jour par jour',    days:[] },
+type RepeatMode = 'none' | 'weekly' | 'monthly';
+const REPEAT_OPTIONS: { id: RepeatMode; label: string }[] = [
+  { id: 'none',    label: 'Ne pas répéter' },
+  { id: 'weekly',  label: 'Chaque semaine' },
+  { id: 'monthly', label: 'Chaque mois' },
 ];
+const REPEAT_WEEKS: Record<RepeatMode, number> = { none: 1, weekly: 4, monthly: 12 };
 
+// ── Types publics ─────────────────────────────────────────────────────────────
 export interface SlotConfig {
   date:       string;
   start_time: string;
@@ -58,6 +42,24 @@ export interface SlotConfig {
   max_slots:  number;
 }
 
+interface BusinessHour {
+  day_of_week: string; // 'Mon','Tue',...
+  open_time:   string;
+  close_time:  string;
+  is_closed:   boolean;
+}
+
+interface Props {
+  visible:                boolean;
+  durationMin?:           number;
+  businessHours?:         BusinessHour[];
+  onClose:                () => void;
+  onConfirm:              (slots: SlotConfig[]) => void;
+  onUpdateBusinessHour?:  (dayKey: string, openTime: string, closeTime: string) => void;
+  existingCount?:         number;
+}
+
+// ── Génération ────────────────────────────────────────────────────────────────
 function generateSlots(params: {
   dates: string[]; openTime: string; closeTime: string;
   durationMin: number; breakMin: number; maxSlots: number;
@@ -76,105 +78,140 @@ function generateSlots(params: {
   return result;
 }
 
-// ── Props ────────────────────────────────────────────────────────────────────
-interface BusinessHour {
-  day_of_week: string; // 'Mon','Tue',...
-  open_time:   string;
-  close_time:  string;
-  is_closed:   boolean;
-}
-
-interface Props {
-  visible:        boolean;
-  durationMin?:   number;
-  businessHours?: BusinessHour[]; // heures d'ouverture de la boutique
-  onClose:        () => void;
-  onConfirm:      (slots: SlotConfig[]) => void;
-  existingCount?: number;
-}
-
-export function AvailabilityModal({ visible, durationMin = 60, businessHours, onClose, onConfirm, existingCount = 0 }: Props) {
+// ── Composant ─────────────────────────────────────────────────────────────────
+export function AvailabilityModal({
+  visible, durationMin = 60, businessHours = [], onClose, onConfirm,
+  onUpdateBusinessHour, existingCount = 0,
+}: Props) {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 16;
+  const hasBizHours = businessHours.length > 0;
 
-  const [mode,       setMode]       = useState<Mode>('workweek');
-  const [openTime,   setOpenTime]   = useState('08:00');
-  const [closeTime,  setCloseTime]  = useState('18:00');
-  const [breakMin,   setBreakMin]   = useState(15);
-  const [maxSlots,   setMaxSlots]   = useState(1);
-  const [weeksAhead, setWeeksAhead] = useState(2);
+  // ── Helpers horaires boutique ─────────────────────────────────────────────
+  const getDayBizHours = (dayIdx: number): { open: string; close: string } | null => {
+    if (!hasBizHours) return null;
+    const bh = businessHours.find(h => h.day_of_week === DAY_ENUM[dayIdx]);
+    if (!bh || bh.is_closed) return null;
+    return { open: bh.open_time.slice(0, 5), close: bh.close_time.slice(0, 5) };
+  };
+  const isDayOpenInBiz = (dayIdx: number): boolean => {
+    if (!hasBizHours) return true; // pas de contrainte
+    const bh = businessHours.find(h => h.day_of_week === DAY_ENUM[dayIdx]);
+    return !!bh && !bh.is_closed;
+  };
 
-  const [customDays, setCustomDays] = useState<Record<number,{enabled:boolean;open:string;close:string}>>({
-    0:{enabled:false,open:'08:00',close:'18:00'},
-    1:{enabled:true, open:'08:00',close:'18:00'},
-    2:{enabled:true, open:'08:00',close:'18:00'},
-    3:{enabled:true, open:'08:00',close:'18:00'},
-    4:{enabled:true, open:'08:00',close:'18:00'},
-    5:{enabled:true, open:'08:00',close:'18:00'},
-    6:{enabled:false,open:'08:00',close:'18:00'},
-  });
+  // ── State ─────────────────────────────────────────────────────────────────
+  const buildInitEnabledDays = (): Record<number, boolean> => {
+    const out: Record<number, boolean> = {};
+    for (let i = 0; i < 7; i++) out[i] = isDayOpenInBiz(i);
+    return out;
+  };
 
-  const [openPicker,   setOpenPicker]   = useState(false);
-  const [closePicker,  setClosePicker]  = useState(false);
-  const [customPicker, setCustomPicker] = useState<{day:number;which:'open'|'close'}|null>(null);
+  const [enabledDays,  setEnabledDays]  = useState<Record<number, boolean>>(buildInitEnabledDays);
+  const [breakInput,   setBreakInput]   = useState('');
+  const [maxSlots,     setMaxSlots]     = useState(1);
+  const [repeatMode,   setRepeatMode]   = useState<RepeatMode>('weekly');
 
-  // ── Génération ──────────────────────────────────────────────────────────
+  // Time pickers pour les jours (si on veut éditer l'horaire d'un jour spécifique)
+  const [timePicker, setTimePicker] = useState<{ day: number; which: 'open' | 'close' } | null>(null);
+  // Horaires overrides (si le pro personnalise les heures d'un jour par rapport à la boutique)
+  const [hoursOverride, setHoursOverride] = useState<Record<number, { open: string; close: string }>>({});
+
+  // Réinitialiser quand le modal s'ouvre
+  useEffect(() => {
+    if (visible) {
+      setEnabledDays(buildInitEnabledDays());
+      setBreakInput('');
+      setMaxSlots(1);
+      setRepeatMode('weekly');
+      setHoursOverride({});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  // ── Toggle d'un jour ─────────────────────────────────────────────────────
+  const handleToggleDay = (dayIdx: number) => {
+    const wasEnabled = enabledDays[dayIdx];
+    if (wasEnabled) {
+      setEnabledDays(p => ({ ...p, [dayIdx]: false }));
+      return;
+    }
+    // Activer → vérifier si le jour est fermé dans les horaires boutique
+    if (hasBizHours && !isDayOpenInBiz(dayIdx)) {
+      Alert.alert(
+        'Jour habituellement fermé',
+        `${DAY_FULL[dayIdx]} n'est pas un jour d'ouverture de votre boutique. Souhaitez-vous l'ajouter à vos jours d'ouverture ?`,
+        [
+          { text: 'Non', style: 'cancel' },
+          {
+            text: 'Oui, ajouter',
+            onPress: () => {
+              const defaultOpen  = '08:00';
+              const defaultClose = '18:00';
+              setEnabledDays(p => ({ ...p, [dayIdx]: true }));
+              setHoursOverride(p => ({ ...p, [dayIdx]: { open: defaultOpen, close: defaultClose } }));
+              onUpdateBusinessHour?.(DAY_ENUM[dayIdx], defaultOpen + ':00', defaultClose + ':00');
+            },
+          },
+        ]
+      );
+    } else {
+      setEnabledDays(p => ({ ...p, [dayIdx]: true }));
+    }
+  };
+
+  // Retourne les heures effectives pour un jour (override > biz hours > défaut)
+  const getEffectiveHours = (dayIdx: number): { open: string; close: string } => {
+    if (hoursOverride[dayIdx]) return hoursOverride[dayIdx];
+    return getDayBizHours(dayIdx) ?? { open: '08:00', close: '18:00' };
+  };
+
+  // ── Génération des créneaux ───────────────────────────────────────────────
   const computeSlots = (): SlotConfig[] => {
-    if (mode === 'now') {
-      const now    = new Date();
-      const curMin = now.getHours() * 60 + now.getMinutes();
-      const start  = minToTime(Math.ceil(curMin / 15) * 15 + 15);
-      return [{ date: toDateStr(now), start_time: start,
-        end_time: minToTime(timeToMin(start) + durationMin), max_slots: maxSlots }];
-    }
-    if (mode === 'custom') {
-      const result: SlotConfig[] = [];
-      const today = new Date();
-      for (const [dn, cfg] of Object.entries(customDays)) {
-        if (!cfg.enabled) continue;
-        const dates: string[] = [];
-        for (let i = 0; i < weeksAhead * 7; i++) {
-          const d = addDays(today, i);
-          if (d.getDay() === parseInt(dn)) dates.push(toDateStr(d));
-        }
-        result.push(...generateSlots({ dates, openTime: cfg.open, closeTime: cfg.close,
-          durationMin, breakMin, maxSlots }));
-      }
-      return result;
-    }
-    const modeObj = MODES.find((m) => m.id === mode)!;
+    const breakMin   = parseInt(breakInput) || 0;
+    const weeksAhead = REPEAT_WEEKS[repeatMode];
     const result: SlotConfig[] = [];
     const today = new Date();
-    for (let i = 0; i < weeksAhead * 7; i++) {
-      const d = addDays(today, i);
-      if (!modeObj.days.includes(d.getDay())) continue;
-      // Restreindre aux heures d'ouverture de la boutique
-      const bh = getBizHours(d.getDay(), businessHours);
-      const effOpen  = bh ? clampTime(openTime,  bh.open, bh.close) : openTime;
-      const effClose = bh ? clampTime(closeTime, bh.open, bh.close) : closeTime;
-      result.push(...generateSlots({ dates:[toDateStr(d)], openTime:effOpen,
-        closeTime:effClose, durationMin, breakMin, maxSlots }));
+    for (const dayIdx of DAY_ORDER) {
+      if (!enabledDays[dayIdx]) continue;
+      const hours = getEffectiveHours(dayIdx);
+      const dates: string[] = [];
+      for (let i = 0; i < weeksAhead * 7; i++) {
+        const d = addDays(today, i);
+        if (d.getDay() === dayIdx) dates.push(toDateStr(d));
+      }
+      result.push(...generateSlots({
+        dates, openTime: hours.open, closeTime: hours.close,
+        durationMin, breakMin, maxSlots,
+      }));
     }
     return result;
   };
 
-  const slots   = computeSlots();
-  const count   = slots.length;
-  const modeObj = MODES.find((m) => m.id === mode)!;
+  const slots = computeSlots();
+  const count = slots.length;
+  const anyDayEnabled = DAY_ORDER.some(d => enabledDays[d]);
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet"
       onRequestClose={onClose}>
       <View style={[s.root, { paddingTop: topPad }]}>
 
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={s.header}>
-          <TouchableOpacity style={s.closeBtn} onPress={onClose}>
-            <Feather name="x" size={20} color="#374151" />
+          <TouchableOpacity style={s.closeBtn} onPress={onClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Feather name="x" size={18} color="#111827" />
           </TouchableOpacity>
-          <Text style={s.title}>Configurer les créneaux</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerTitle}>Configurer les créneaux</Text>
+            <Text style={s.headerSub}>Durée : {durationMin} min par créneau</Text>
+          </View>
           {existingCount > 0 && (
-            <Text style={s.existingBadge}>{existingCount} existants</Text>
+            <View style={s.badge}>
+              <Text style={s.badgeTxt}>{existingCount} existants</Text>
+            </View>
           )}
         </View>
 
@@ -182,246 +219,233 @@ export function AvailabilityModal({ visible, durationMin = 60, businessHours, on
           contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]}
           keyboardShouldPersistTaps="handled">
 
-          {/* Info durée */}
-          <View style={s.durationInfo}>
-            <Feather name="clock" size={14} color="#FF6835" />
-            <Text style={s.durationTxt}>
-              Durée : <Text style={{ fontWeight:'700' }}>{durationMin} min</Text>
-              {' '}· Les créneaux seront dans les heures d'ouverture de la boutique.
-            </Text>
-          </View>
-          {businessHours && businessHours.length > 0 && (
-            <View style={s.bizHoursInfo}>
-              <Feather name="info" size={13} color="#1E3A5F" />
-              <Text style={s.bizHoursInfoTxt}>
-                Les créneaux seront automatiquement restreints aux heures d'ouverture définies pour chaque jour.
-              </Text>
-            </View>
-          )}
-
-          {/* Sélecteur de mode */}
-          <Text style={s.sectionTitle}>Répétition</Text>
-          <View style={s.modeGrid}>
-            {MODES.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                style={[s.modeCard, mode === m.id && s.modeCardActive]}
-                onPress={() => setMode(m.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={s.modeEmoji}>{m.emoji}</Text>
-                <Text style={[s.modeLabel, mode === m.id && {color:'#FF6835',fontWeight:'700'}]}>
-                  {m.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={s.modeDesc}>{modeObj.desc}</Text>
-
-          {/* Horaires globaux */}
-          {mode !== 'custom' && mode !== 'now' && (
-            <View style={s.section}>
-              <Text style={s.sectionTitle}>Plage horaire</Text>
-              <View style={s.timeRow}>
-                <View style={{flex:1}}>
-                  <Text style={s.fieldLabel}>Ouverture</Text>
-                  <TouchableOpacity style={s.timeBtn} onPress={() => setOpenPicker(true)}>
-                    <Feather name="clock" size={14} color="#FF6835" />
-                    <Text style={s.timeTxt}>{openTime}</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={s.timeSep}>→</Text>
-                <View style={{flex:1}}>
-                  <Text style={s.fieldLabel}>Fermeture</Text>
-                  <TouchableOpacity style={s.timeBtn} onPress={() => setClosePicker(true)}>
-                    <Feather name="clock" size={14} color="#FF6835" />
-                    <Text style={s.timeTxt}>{closeTime}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Mode personnalisé */}
-          {mode === 'custom' && (
-            <View style={s.section}>
-              <Text style={s.sectionTitle}>Configuration par jour</Text>
-              {[1,2,3,4,5,6,0].map((dn) => {
-                const cfg = customDays[dn];
+          {/* ─── Jours ─────────────────────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Jours disponibles</Text>
+            <View style={s.card}>
+              {DAY_ORDER.map((dayIdx, i) => {
+                const enabled = enabledDays[dayIdx];
+                const hours   = getEffectiveHours(dayIdx);
+                const isLast  = i === DAY_ORDER.length - 1;
                 return (
-                  <View key={dn} style={[s.dayCard, !cfg.enabled && {opacity:0.45}]}>
-                    <View style={s.dayHeader}>
-                      <Text style={[s.dayName, cfg.enabled && {color:'#111827',fontWeight:'700'}]}>
-                        {DAY_FULL[dn]}
+                  <View key={dayIdx}>
+                    <View style={s.dayRow}>
+                      <Switch
+                        value={enabled}
+                        onValueChange={() => handleToggleDay(dayIdx)}
+                        trackColor={{ false: '#E5E7EB', true: '#111827' }}
+                        thumbColor="#fff"
+                        ios_backgroundColor="#E5E7EB"
+                        style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+                      />
+                      <Text style={[s.dayName, enabled && s.dayNameOn]}>
+                        {DAY_FULL[dayIdx]}
                       </Text>
-                      <Switch value={cfg.enabled}
-                        onValueChange={(v) => setCustomDays(p => ({...p,[dn]:{...p[dn],enabled:v}}))}
-                        trackColor={{false:'#E5E7EB',true:'#FF6835'}} thumbColor="#fff"
-                        style={{transform:[{scaleX:.8},{scaleY:.8}]}}/>
+                      {enabled ? (
+                        <View style={s.dayHoursRow}>
+                          <TouchableOpacity onPress={() => setTimePicker({ day: dayIdx, which: 'open' })}>
+                            <Text style={s.dayHoursTxt}>{hours.open}</Text>
+                          </TouchableOpacity>
+                          <Text style={s.dayHoursDash}> – </Text>
+                          <TouchableOpacity onPress={() => setTimePicker({ day: dayIdx, which: 'close' })}>
+                            <Text style={s.dayHoursTxt}>{hours.close}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <Text style={s.dayClosedTxt}>Fermé</Text>
+                      )}
                     </View>
-                    {cfg.enabled && (
-                      <View style={s.timeRow}>
-                        <TouchableOpacity style={[s.timeBtn,{flex:1}]}
-                          onPress={() => setCustomPicker({day:dn,which:'open'})}>
-                          <Text style={s.timeTxt}>{cfg.open}</Text>
-                        </TouchableOpacity>
-                        <Text style={s.timeSep}>–</Text>
-                        <TouchableOpacity style={[s.timeBtn,{flex:1}]}
-                          onPress={() => setCustomPicker({day:dn,which:'close'})}>
-                          <Text style={s.timeTxt}>{cfg.close}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
+                    {!isLast && <View style={s.rowDiv} />}
                   </View>
                 );
               })}
             </View>
-          )}
+          </View>
 
-          {/* Pause */}
-          {mode !== 'now' && (
-            <View style={s.section}>
-              <Text style={s.sectionTitle}>Pause entre créneaux</Text>
-              <View style={s.chips}>
-                {[0,10,15,20,30].map((min) => (
-                  <TouchableOpacity key={min}
-                    style={[s.chip, breakMin===min && s.chipActive]}
-                    onPress={() => setBreakMin(min)}>
-                    <Text style={[s.chipTxt, breakMin===min && {color:'#FF6835',fontWeight:'700'}]}>
-                      {min === 0 ? 'Aucune' : `${min} min`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+          <View style={s.divider} />
+
+          {/* ─── Pause entre créneaux ──────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Pause entre créneaux</Text>
+            <View style={s.inputRow}>
+              <View style={s.inputWrap}>
+                <TextInput
+                  style={s.numInput}
+                  value={breakInput}
+                  onChangeText={v => setBreakInput(v.replace(/[^0-9]/g, '').slice(0, 3))}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  placeholder="0"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <Text style={s.inputUnit}>min</Text>
               </View>
+              <Text style={s.inputHint}>Entre deux créneaux consécutifs</Text>
             </View>
-          )}
+          </View>
 
-          {/* Durée planification */}
-          {mode !== 'now' && (
-            <View style={s.section}>
-              <Text style={s.sectionTitle}>Planifier sur</Text>
-              <View style={s.chips}>
-                {[1,2,4,8].map((w) => (
-                  <TouchableOpacity key={w}
-                    style={[s.chip, weeksAhead===w && s.chipActive]}
-                    onPress={() => setWeeksAhead(w)}>
-                    <Text style={[s.chipTxt, weeksAhead===w && {color:'#FF6835',fontWeight:'700'}]}>
-                      {w} sem.
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
+          <View style={s.divider} />
 
-          {/* Places par créneau */}
+          {/* ─── Places par créneau ────────────────────────────────────── */}
           <View style={s.section}>
             <Text style={s.sectionTitle}>Places par créneau</Text>
             <View style={s.qtyRow}>
-              <TouchableOpacity style={s.qtyBtn} onPress={() => setMaxSlots(Math.max(1, maxSlots-1))}>
-                <Feather name="minus" size={14} color="#374151"/>
+              <TouchableOpacity
+                style={[s.qtyBtn, maxSlots <= 1 && s.qtyBtnOff]}
+                onPress={() => setMaxSlots(n => Math.max(1, n - 1))}
+                disabled={maxSlots <= 1}
+              >
+                <Feather name="minus" size={14} color={maxSlots <= 1 ? '#D1D5DB' : '#111827'} />
               </TouchableOpacity>
               <Text style={s.qtyVal}>{maxSlots}</Text>
-              <TouchableOpacity style={s.qtyBtn} onPress={() => setMaxSlots(maxSlots+1)}>
-                <Feather name="plus" size={14} color="#374151"/>
+              <TouchableOpacity style={s.qtyBtn} onPress={() => setMaxSlots(n => n + 1)}>
+                <Feather name="plus" size={14} color="#111827" />
               </TouchableOpacity>
-              <Text style={s.qtyHint}>personne{maxSlots>1?'s':''} max par créneau</Text>
+              <Text style={s.qtyHint}>personne{maxSlots > 1 ? 's' : ''} max par créneau</Text>
             </View>
           </View>
 
-          {/* Preview */}
-          <View style={[s.preview, count===0 && {backgroundColor:'#FEE2E2',borderColor:'#FECACA'}]}>
-            <Feather name="calendar" size={16} color={count>0?'#FF6835':'#EF4444'}/>
-            <View style={{flex:1}}>
-              <Text style={[s.previewTitle, count===0 && {color:'#EF4444'}]}>
-                {count > 0
-                  ? `${count} créneau${count>1?'x':''} de ${durationMin} min`
-                  : 'Aucun créneau possible avec ces paramètres'}
-              </Text>
-              {count > 0 && mode !== 'now' && (
-                <Text style={s.previewSub}>
-                  {openTime} → {closeTime} · pause {breakMin} min · {weeksAhead} sem.
-                </Text>
-              )}
+          <View style={s.divider} />
+
+          {/* ─── Répéter ce créneau sur ─────────────────────────────────── */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Répéter ce créneau sur</Text>
+            <View style={s.chipRow}>
+              {REPEAT_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[s.chip, repeatMode === opt.id && s.chipActive]}
+                  onPress={() => setRepeatMode(opt.id)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[s.chipTxt, repeatMode === opt.id && s.chipTxtOn]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
+
+          <View style={s.divider} />
+
+          {/* ─── Récapitulatif ─────────────────────────────────────────── */}
+          <View style={[s.preview, count === 0 && anyDayEnabled && s.previewWarn]}>
+            <View style={[s.previewDot, count === 0 && anyDayEnabled && s.previewDotWarn]} />
+            <Text style={[s.previewTxt, count === 0 && anyDayEnabled && s.previewTxtWarn]}>
+              {!anyDayEnabled
+                ? 'Activez au moins un jour pour générer des créneaux'
+                : count > 0
+                  ? `${count} créneau${count > 1 ? 'x' : ''} de ${durationMin} min`
+                  : 'Aucun créneau possible avec ces paramètres'}
+            </Text>
+          </View>
+
         </ScrollView>
 
-        {/* Footer */}
-        <View style={[s.footer, {paddingBottom: insets.bottom + 8}]}>
-          <TouchableOpacity style={s.cancelBtn} onPress={onClose}>
-            <Text style={s.cancelBtnTxt}>Annuler</Text>
+        {/* ── Footer ── */}
+        <View style={[s.footer, { paddingBottom: insets.bottom + 8 }]}>
+          <TouchableOpacity style={s.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={s.cancelTxt}>Annuler</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[s.confirmBtn, count===0 && {opacity:0.5}]}
+            style={[s.confirmBtn, count === 0 && s.confirmBtnOff]}
             onPress={() => { if (count > 0) { onConfirm(slots); onClose(); } }}
-            disabled={count===0}
+            disabled={count === 0}
+            activeOpacity={0.85}
           >
-            <Feather name="check" size={16} color="#fff"/>
-            <Text style={s.confirmBtnTxt}>Valider {count} créneau{count>1?'x':''}</Text>
+            <Text style={s.confirmTxt}>
+              Valider {count} créneau{count > 1 ? 'x' : ''}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Time pickers */}
-        <TimePicker visible={openPicker}  title="Heure d'ouverture"  value={openTime}
-          onConfirm={(t)=>{setOpenTime(t);setOpenPicker(false);}}  onClose={()=>setOpenPicker(false)}/>
-        <TimePicker visible={closePicker} title="Heure de fermeture" value={closeTime}
-          onConfirm={(t)=>{setCloseTime(t);setClosePicker(false);}} onClose={()=>setClosePicker(false)}/>
-        {customPicker && (
-          <TimePicker visible title={`${DAY_FULL[customPicker.day]} — ${customPicker.which==='open'?'Ouverture':'Fermeture'}`}
-            value={customDays[customPicker.day][customPicker.which]}
-            onConfirm={(t)=>{
-              setCustomDays(p=>({...p,[customPicker.day]:{...p[customPicker.day],[customPicker.which]:t}}));
-              setCustomPicker(null);
+        {/* ── Time picker (édition horaire d'un jour) ── */}
+        {timePicker && (
+          <TimePicker
+            visible
+            title={`${DAY_FULL[timePicker.day]} — ${timePicker.which === 'open' ? 'Début' : 'Fin'}`}
+            value={getEffectiveHours(timePicker.day)[timePicker.which]}
+            onConfirm={(t) => {
+              setHoursOverride(p => ({
+                ...p,
+                [timePicker.day]: {
+                  ...getEffectiveHours(timePicker.day),
+                  [timePicker.which]: t,
+                },
+              }));
+              setTimePicker(null);
             }}
-            onClose={()=>setCustomPicker(null)}/>
+            onClose={() => setTimePicker(null)}
+          />
         )}
       </View>
     </Modal>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  root:         { flex:1, backgroundColor:'#F8F7F4' },
-  header:       { flexDirection:'row', alignItems:'center', gap:12, paddingHorizontal:20, paddingBottom:16, backgroundColor:'#fff', borderBottomWidth:1, borderBottomColor:'#F3F4F6' },
-  closeBtn:     { width:36, height:36, borderRadius:18, backgroundColor:'#F3F4F6', alignItems:'center', justifyContent:'center' },
-  title:        { flex:1, fontSize:18, fontWeight:'800', color:'#111827' },
-  existingBadge:{ backgroundColor:'#F3F4F6', borderRadius:100, paddingHorizontal:10, paddingVertical:4, fontSize:12, fontWeight:'600', color:'#6B7280' },
-  scroll:       { padding:20, gap:20 },
-  durationInfo: { flexDirection:'row', gap:8, backgroundColor:'#FEF2EC', borderRadius:12, padding:12, borderWidth:1, borderColor:'#FDDCCA' },
-  durationTxt:  { flex:1, fontSize:13, color:'#9A3412', lineHeight:18 },
-  bizHoursInfo: { flexDirection:'row', gap:8, backgroundColor:'#EEF2FF', borderRadius:12, padding:12, borderWidth:1, borderColor:'#C7D2FE' },
-  bizHoursInfoTxt: { flex:1, fontSize:12, color:'#1E3A5F', lineHeight:17 },
-  sectionTitle: { fontSize:13, fontWeight:'700', color:'#374151', marginBottom:10 },
-  section:      { gap:10 },
-  modeGrid:     { flexDirection:'row', flexWrap:'wrap', gap:8 },
-  modeCard:     { width:'18%', minWidth:60, borderRadius:12, padding:10, alignItems:'center', gap:5, backgroundColor:'#fff', borderWidth:1.5, borderColor:'#E5E7EB' },
-  modeCardActive:{ borderColor:'#FF6835', backgroundColor:'#FEF2EC' },
-  modeEmoji:    { fontSize:22 },
-  modeLabel:    { fontSize:10, fontWeight:'600', color:'#374151', textAlign:'center' },
-  modeDesc:     { fontSize:12, color:'#9CA3AF', fontStyle:'italic', marginTop:-8 },
-  fieldLabel:   { fontSize:11, fontWeight:'600', color:'#9CA3AF', marginBottom:4 },
-  timeRow:      { flexDirection:'row', alignItems:'center', gap:10 },
-  timeBtn:      { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'#fff', borderRadius:12, paddingHorizontal:14, paddingVertical:11, borderWidth:1.5, borderColor:'#E5E7EB' },
-  timeTxt:      { fontSize:15, fontWeight:'700', color:'#111827' },
-  timeSep:      { fontSize:14, color:'#9CA3AF', fontWeight:'600' },
-  dayCard:      { backgroundColor:'#fff', borderRadius:12, padding:12, gap:8, borderWidth:1, borderColor:'#E5E7EB' },
-  dayHeader:    { flexDirection:'row', alignItems:'center', justifyContent:'space-between' },
-  dayName:      { fontSize:14, fontWeight:'500', color:'#9CA3AF' },
-  chips:        { flexDirection:'row', flexWrap:'wrap', gap:8 },
-  chip:         { paddingHorizontal:14, paddingVertical:8, borderRadius:100, backgroundColor:'#fff', borderWidth:1.5, borderColor:'#E5E7EB' },
-  chipActive:   { borderColor:'#FF6835', backgroundColor:'#FEF2EC' },
-  chipTxt:      { fontSize:13, fontWeight:'600', color:'#6B7280' },
-  qtyRow:       { flexDirection:'row', alignItems:'center', gap:12 },
-  qtyBtn:       { width:36, height:36, borderRadius:18, backgroundColor:'#fff', borderWidth:1.5, borderColor:'#E5E7EB', alignItems:'center', justifyContent:'center' },
-  qtyVal:       { fontSize:20, fontWeight:'800', color:'#111827', minWidth:30, textAlign:'center' },
-  qtyHint:      { fontSize:12, color:'#9CA3AF', flex:1 },
-  preview:      { flexDirection:'row', alignItems:'flex-start', gap:10, backgroundColor:'#FEF2EC', borderRadius:14, padding:14, borderWidth:1, borderColor:'#FDDCCA' },
-  previewTitle: { fontSize:15, fontWeight:'700', color:'#FF6835' },
-  previewSub:   { fontSize:12, color:'#9CA3AF', marginTop:2 },
-  footer:       { flexDirection:'row', gap:10, backgroundColor:'#fff', paddingHorizontal:20, paddingTop:12, borderTopWidth:1, borderTopColor:'#F3F4F6' },
-  cancelBtn:    { flex:1, alignItems:'center', justifyContent:'center', borderWidth:1.5, borderColor:'#E5E7EB', borderRadius:14, paddingVertical:14 },
-  cancelBtnTxt: { fontSize:15, fontWeight:'600', color:'#6B7280' },
-  confirmBtn:   { flex:2, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:'#FF6835', borderRadius:14, paddingVertical:14 },
-  confirmBtnTxt:{ fontSize:15, fontWeight:'700', color:'#fff' },
+  root:    { flex: 1, backgroundColor: '#fff' },
+
+  // Header
+  header:      { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  closeBtn:    { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  headerSub:   { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  badge:       { backgroundColor: '#F3F4F6', borderRadius: 100, paddingHorizontal: 10, paddingVertical: 4 },
+  badgeTxt:    { fontSize: 11, fontWeight: '600', color: '#6B7280' },
+
+  // Scroll / sections
+  scroll:        { paddingTop: 4 },
+  section:       { paddingHorizontal: 20, paddingVertical: 18, gap: 12 },
+  sectionTitle:  { fontSize: 14, fontWeight: '700', color: '#111827' },
+  divider:       { height: 1, backgroundColor: '#F3F4F6' },
+
+  // Card jours (liste avec lignes)
+  card:        { borderWidth: 1, borderColor: '#F3F4F6', borderRadius: 14, overflow: 'hidden' },
+  dayRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
+  rowDiv:      { height: 1, backgroundColor: '#F3F4F6', marginLeft: 60 },
+  dayName:     { flex: 1, fontSize: 14, fontWeight: '500', color: '#9CA3AF' },
+  dayNameOn:   { color: '#111827', fontWeight: '600' },
+  dayHoursRow: { flexDirection: 'row', alignItems: 'center' },
+  dayHoursTxt: { fontSize: 13, fontWeight: '700', color: '#111827', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: '#F3F4F6' },
+  dayHoursDash:{ fontSize: 13, color: '#9CA3AF', paddingHorizontal: 2 },
+  dayClosedTxt:{ fontSize: 12, color: '#D1D5DB', fontWeight: '500' },
+
+  // Champ pause
+  inputRow:    { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  inputWrap:   { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 2, backgroundColor: '#F9FAFB' },
+  numInput:    { width: 52, height: 40, textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#111827' },
+  inputUnit:   { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
+  inputHint:   { fontSize: 13, color: '#9CA3AF', flex: 1 },
+
+  // Places par créneau
+  qtyRow:      { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  qtyBtn:      { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
+  qtyBtnOff:   { borderColor: '#F3F4F6' },
+  qtyVal:      { fontSize: 20, fontWeight: '800', color: '#111827', minWidth: 28, textAlign: 'center' },
+  qtyHint:     { fontSize: 13, color: '#9CA3AF' },
+
+  // Repeat chips
+  chipRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip:         { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 100, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#fff' },
+  chipActive:   { backgroundColor: '#111827', borderColor: '#111827' },
+  chipTxt:      { fontSize: 13, fontWeight: '600', color: '#374151' },
+  chipTxtOn:    { color: '#fff' },
+
+  // Preview
+  preview:         { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 20, marginBottom: 8, backgroundColor: '#F3F4F6', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  previewWarn:     { backgroundColor: '#FEF2F2' },
+  previewDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: '#111827' },
+  previewDotWarn:  { backgroundColor: '#EF4444' },
+  previewTxt:      { fontSize: 13, fontWeight: '600', color: '#374151', flex: 1 },
+  previewTxtWarn:  { color: '#EF4444' },
+
+  // Footer
+  footer:       { flexDirection: 'row', gap: 10, backgroundColor: '#fff', paddingHorizontal: 20, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  cancelBtn:    { flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, paddingVertical: 15 },
+  cancelTxt:    { fontSize: 14, fontWeight: '600', color: '#6B7280' },
+  confirmBtn:   { flex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111827', borderRadius: 12, paddingVertical: 15 },
+  confirmBtnOff:{ opacity: 0.35 },
+  confirmTxt:   { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

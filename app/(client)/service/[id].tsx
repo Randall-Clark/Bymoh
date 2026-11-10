@@ -1,16 +1,27 @@
 // app/(client)/service/[id].tsx
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Dimensions, Image, Platform, ScrollView,
+  ActivityIndicator, Alert, Dimensions, Image, Platform, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 
 const { width: W } = Dimensions.get('window');
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SlotRow {
+  id: string;
+  date: string;          // 'YYYY-MM-DD'
+  start_time: string;    // 'HH:MM:SS'
+  end_time: string;
+  max_slots: number;
+  booked_slots: number;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,15 +71,18 @@ function getNextDays(n = 7) {
 export default function ServiceDetailPage() {
   const insets = useSafeAreaInsets();
   const { id, businessId } = useLocalSearchParams<{ id: string; businessId: string }>();
+  const queryClient = useQueryClient();
 
   const topOverlay  = (Platform.OS === 'ios' ? insets.top : 0) + 50;
-  // Tab bar height: 49pt standard + safe area bottom (home indicator iPhone / nav bar Android)
   const tabBarHeight = 49 + insets.bottom;
 
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
-  const [selectedSlot,   setSelectedSlot]   = useState<string | null>(null);
+  // selectedSlot stocke l'ID du slot (pas start_time) — requis pour anti-double-booking
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [qty,            setQty]            = useState(1);
+  const [booking,        setBooking]        = useState(false);
 
+  const channelRef = useRef<any>(null);
   const days = getNextDays(7);
 
   // ── Requête service ───────────────────────────────────────────────────────
@@ -92,20 +106,45 @@ export default function ServiceDetailPage() {
     ? selectedDate.toISOString().split('T')[0]
     : '';
 
-  const { data: slots = [], isLoading: slotsLoading } = useQuery({
+  const { data: slots = [], isLoading: slotsLoading, refetch: refetchSlots } = useQuery<SlotRow[]>({
     queryKey: ['service-slots', id, dateStr],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('service_slots')
-        .select('*')
+        .from('service_availability')           // ✅ table correcte
+        .select('id, date, start_time, end_time, max_slots, booked_slots')
         .eq('service_id', id!)
-        .eq('slot_date', dateStr)
+        .eq('date', dateStr)                    // ✅ colonne correcte
+        .eq('is_blocked', false)
         .order('start_time', { ascending: true });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as SlotRow[];
     },
     enabled: !!id && !!dateStr,
   });
+
+  // ── Realtime subscription ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!id) return;
+    // Nettoyage canal précédent
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+    const ch = supabase
+      .channel(`service-slots-${id}-${dateStr}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'service_availability',
+        filter: `service_id=eq.${id}`,
+      }, () => {
+        refetchSlots();
+      })
+      .subscribe();
+    channelRef.current = ch;
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [id, dateStr]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (svcLoading || !service) {
@@ -115,35 +154,86 @@ export default function ServiceDetailPage() {
   const imgUrl    = safeFirstUrl(service.image_url) ?? (service as any).business?.cover_url;
   const bizName   = (service as any).business?.name ?? '';
   const duration  = (service as any).duration_minutes ?? (service as any).duration ?? null;
-  const maxPlaces = (service as any).max_per_slot ?? (service as any).places_per_slot ?? 1;
 
-  // Slot sélectionné → places dispo
-  const selectedSlotData = slots.find((sl: any) => sl.start_time === selectedSlot);
+  // Slot sélectionné
+  const selectedSlotData = slots.find(sl => sl.id === selectedSlotId) ?? null;
   const placesLeft = selectedSlotData
-    ? ((selectedSlotData as any).capacity ?? maxPlaces) - ((selectedSlotData as any).booked_count ?? 0)
-    : maxPlaces;
+    ? selectedSlotData.max_slots - selectedSlotData.booked_slots  // ✅ colonnes correctes
+    : 0;
 
-  const canContinue = !!selectedSlot && qty >= 1 && qty <= placesLeft;
+  const canContinue = !!selectedSlotId && qty >= 1 && placesLeft > 0 && qty <= placesLeft && !booking;
 
-  const handleContinue = () => {
-    if (!canContinue) return;
-    router.push({
-      pathname: '/(client)/booking/confirm' as any,
-      params: {
-        serviceId: id,
-        businessId,
-        slotDate: dateStr,
-        slotTime: selectedSlot!,
-        qty: String(qty),
-      },
-    });
+  // ── Anti double-booking ───────────────────────────────────────────────────
+  const handleContinue = async () => {
+    if (!canContinue || !selectedSlotData) return;
+    setBooking(true);
+    try {
+      // 1. Lire l'état frais depuis Supabase
+      const { data: fresh, error: freshErr } = await supabase
+        .from('service_availability')
+        .select('booked_slots, max_slots')
+        .eq('id', selectedSlotData.id)
+        .single();
+
+      if (freshErr || !fresh) {
+        Alert.alert('Erreur', 'Impossible de vérifier la disponibilité.');
+        refetchSlots();
+        return;
+      }
+
+      // 2. Vérifier la disponibilité
+      if (fresh.booked_slots + qty > fresh.max_slots) {
+        Alert.alert(
+          'Créneau complet',
+          `Il ne reste que ${fresh.max_slots - fresh.booked_slots} place(s) pour ce créneau.`,
+          [{ text: 'OK' }]
+        );
+        refetchSlots();
+        return;
+      }
+
+      // 3. Réserver avec contrôle de concurrence optimiste
+      //    (mise à jour uniquement si booked_slots n'a pas changé entre-temps)
+      const { data: updated, error: updateErr } = await supabase
+        .from('service_availability')
+        .update({ booked_slots: fresh.booked_slots + qty })
+        .eq('id', selectedSlotData.id)
+        .eq('booked_slots', fresh.booked_slots)   // ← garde optimiste
+        .select('id')
+        .maybeSingle();
+
+      if (updateErr || !updated) {
+        Alert.alert(
+          'Créneau pris',
+          'Ce créneau vient d\'être modifié. Veuillez choisir un autre créneau.',
+          [{ text: 'OK' }]
+        );
+        refetchSlots();
+        return;
+      }
+
+      // 4. Naviguer vers la confirmation
+      router.push({
+        pathname: '/(client)/booking/confirmation' as any,  // ✅ chemin correct
+        params: {
+          serviceId:  id,
+          businessId,
+          slotId:     selectedSlotData.id,
+          slotDate:   dateStr,
+          slotTime:   selectedSlotData.start_time,
+          qty:        String(qty),
+        },
+      });
+    } finally {
+      setBooking(false);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
 
-      {/* ══ IMAGE COVER pleine largeur (même style page boutique) ══ */}
+      {/* ══ IMAGE COVER pleine largeur ══ */}
       <View style={s.coverWrap}>
         {imgUrl
           ? <Image source={{ uri: imgUrl }} style={s.cover} />
@@ -179,12 +269,12 @@ export default function ServiceDetailPage() {
           {/* 2. Boutique */}
           {bizName ? <Text style={s.bizName}>par {bizName}</Text> : null}
 
-          {/* 4. Durée */}
+          {/* 3. Durée */}
           {duration ? (
             <Text style={s.durationLine}>Durée : {duration} min</Text>
           ) : null}
 
-          {/* 5. Description */}
+          {/* 4. Description */}
           {service.description ? (
             <View style={s.descBlock}>
               <Text style={s.descLabel}>Description</Text>
@@ -203,7 +293,7 @@ export default function ServiceDetailPage() {
               <TouchableOpacity
                 key={i}
                 style={[s.datePill, selectedDayIdx === i && s.datePillActive]}
-                onPress={() => { setSelectedDayIdx(i); setSelectedSlot(null); setQty(1); }}
+                onPress={() => { setSelectedDayIdx(i); setSelectedSlotId(null); setQty(1); }}
                 activeOpacity={0.8}
               >
                 <Text style={[s.datePillTxt, selectedDayIdx === i && s.datePillTxtActive]}>
@@ -221,24 +311,22 @@ export default function ServiceDetailPage() {
             : slots.length === 0
               ? <Text style={s.noSlots}>Aucun créneau disponible pour cette date.</Text>
               : <View style={s.slotsGrid}>
-                  {slots.map((sl: any) => {
-                    const cap    = (sl.capacity ?? maxPlaces);
-                    const booked = (sl.booked_count ?? 0);
-                    const left   = cap - booked;
+                  {slots.map((sl) => {
+                    const left   = sl.max_slots - sl.booked_slots;  // ✅
                     const full   = left <= 0;
-                    const active = selectedSlot === sl.start_time;
+                    const active = selectedSlotId === sl.id;
                     return (
                       <TouchableOpacity
-                        key={sl.id ?? sl.start_time}
+                        key={sl.id}
                         style={[s.slotPill, active && s.slotPillActive, full && s.slotPillFull]}
-                        onPress={() => { if (!full) { setSelectedSlot(sl.start_time); setQty(1); } }}
+                        onPress={() => { if (!full) { setSelectedSlotId(sl.id); setQty(1); } }}
                         activeOpacity={full ? 1 : 0.8}
                         disabled={full}
                       >
                         <Text style={[s.slotTime, active && s.slotTimeActive, full && s.slotTimeFull]}>
                           {sl.start_time?.slice(0, 5).replace(':', 'h')}
                         </Text>
-                        {cap > 1 && (
+                        {sl.max_slots > 1 && (
                           <Text style={[s.slotPlaces, active && { color: '#FF6835' }, full && { color: '#D1D5DB' }]}>
                             {full ? 'Complet' : `${left} place${left > 1 ? 's' : ''}`}
                           </Text>
@@ -250,7 +338,7 @@ export default function ServiceDetailPage() {
           }
 
           {/* ── Nombre de personnes (si places > 1 et créneau sélectionné) ── */}
-          {selectedSlot && placesLeft > 1 && (
+          {selectedSlotId && placesLeft > 1 && (
             <View style={s.qtySection}>
               <Text style={s.qtyLabel}>Nombre de personnes</Text>
               <View style={s.qtyRow}>
@@ -292,8 +380,13 @@ export default function ServiceDetailPage() {
           disabled={!canContinue}
         >
           <View style={s.ctaInner}>
-            <Text style={s.ctaTxt}>Confirmer la réservation</Text>
-            <Text style={s.ctaPrice}>{fmtPrice(service.price, service.billing_type, service.unit)}</Text>
+            {booking
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <>
+                  <Text style={s.ctaTxt}>Confirmer la réservation</Text>
+                  <Text style={s.ctaPrice}>{fmtPrice(service.price, service.billing_type, service.unit)}</Text>
+                </>
+            }
           </View>
         </TouchableOpacity>
       </View>
@@ -325,13 +418,13 @@ const s = StyleSheet.create({
 
   sectionLabel:     { fontSize: 16, fontWeight: '800', color: '#111827', marginTop: 24, marginBottom: 12 },
 
-  // Date pills — rectangulaires (faible border radius)
+  // Date pills
   datePill:         { borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB' },
   datePillActive:   { backgroundColor: '#111827', borderColor: '#111827' },
   datePillTxt:      { fontSize: 14, fontWeight: '600', color: '#374151' },
   datePillTxtActive:{ color: '#fff' },
 
-  // Slots — rectangulaires
+  // Slots — grille 2 colonnes
   slotsGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   slotPill:         { width: (W - 40 - 10) / 2, borderRadius: 8, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#fff', paddingVertical: 14, alignItems: 'center', gap: 3 },
   slotPillActive:   { borderColor: '#FF6835', backgroundColor: '#FEF2EC' },

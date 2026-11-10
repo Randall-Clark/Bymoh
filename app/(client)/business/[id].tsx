@@ -75,6 +75,28 @@ function fmtPrice(price: number, billing: string, unit?: string) {
   return `${p} FCFA`;
 }
 
+/** Calcule le prix final après promo et le label du badge */
+function calcPromo(item: any): { finalPrice: number | null; badge: string | null } {
+  if (!item.promo_active) return { finalPrice: null, badge: null };
+  const price = item.price ?? 0;
+  const type  = item.promo_type;
+  const val   = item.promo_value ?? 0;
+  if (type === 'percentage' && val > 0) {
+    return { finalPrice: Math.round(price * (1 - val / 100)), badge: `-${val}%` };
+  }
+  if (type === 'fixed_amount' && val > 0) {
+    return { finalPrice: Math.max(0, price - val), badge: `-${val.toLocaleString('fr-FR')} FCFA` };
+  }
+  if (type === 'x_plus_y') {
+    const buy = item.promo_buy_qty ?? 1;
+    const get = item.promo_get_qty ?? 1;
+    return { finalPrice: null, badge: `${buy}+${get} offert` };
+  }
+  if (type === 'first_free') return { finalPrice: null, badge: '1ère gratuite' };
+  if (type === 'promo_code' && item.promo_code) return { finalPrice: null, badge: `Code: ${item.promo_code}` };
+  return { finalPrice: null, badge: 'Promo' };
+}
+
 const DAY_FR: Record<string, string> = {
   Mon: 'Lundi', Tue: 'Mardi', Wed: 'Mercredi',
   Thu: 'Jeudi', Fri: 'Vendredi', Sat: 'Samedi', Sun: 'Dimanche',
@@ -150,9 +172,15 @@ export default function ClientBusinessPage() {
     ), [catalog, q]);
 
   const articles = useMemo(() =>
-    catalog.filter((i: any) => i.kind !== 'prestation' &&
-      (!q || i.title?.toLowerCase().includes(q) || i.description?.toLowerCase().includes(q))
-    ), [catalog, q]);
+    catalog.filter((i: any) => {
+      if (i.kind === 'prestation') return false;
+      if (q && !i.title?.toLowerCase().includes(q) && !i.description?.toLowerCase().includes(q)) return false;
+      // fulfillment_type: null / 'both' → visible dans les deux modes
+      const ff = (i.fulfillment_type as string | null) ?? 'both';
+      if (deliveryMode === 'pickup')   return ff !== 'delivery_only';
+      if (deliveryMode === 'delivery') return ff !== 'pickup_only';
+      return true;
+    }), [catalog, q, deliveryMode]);
 
   if (isLoading || !business) {
     return <View style={s.center}><ActivityIndicator color="#FF6835" size="large" /></View>;
@@ -214,7 +242,9 @@ export default function ClientBusinessPage() {
             : <View style={[s.gridImg, s.gridImgPh]}><Text style={{ fontSize: 32 }}>📦</Text></View>
           }
           {item.promo_active && (
-            <View style={s.gridPromoTag}><Text style={s.gridPromoTxt}>Promo</Text></View>
+            <View style={s.gridPromoTag}>
+              <Text style={s.gridPromoTxt}>{calcPromo(item).badge ?? 'Promo'}</Text>
+            </View>
           )}
           {outOfStock
             ? <View style={[s.gridAddBtn, { backgroundColor: '#E5E7EB' }]}>
@@ -222,7 +252,14 @@ export default function ClientBusinessPage() {
               </View>
             : qty === 0
               ? <TouchableOpacity style={s.gridAddBtn}
-                  onPress={(e) => { e.stopPropagation?.(); handleAdd(item); }} activeOpacity={0.8}>
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    if ((item as any).is_customizable) {
+                      router.push({ pathname: '/(client)/article/[id]' as any, params: { id: item.id, businessId: id } });
+                    } else {
+                      handleAdd(item);
+                    }
+                  }} activeOpacity={0.8}>
                   <Feather name="plus" size={16} color="#fff" />
                 </TouchableOpacity>
               : <View style={s.gridQtyOverlay}>
@@ -242,7 +279,16 @@ export default function ClientBusinessPage() {
         </View>
         <View style={s.gridBody}>
           <Text style={s.gridTitle} numberOfLines={2}>{item.title}</Text>
-          <Text style={s.gridPrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>
+          {(() => {
+            const { finalPrice } = calcPromo(item);
+            if (finalPrice !== null) return (
+              <View style={s.gridPriceRow}>
+                <Text style={s.gridPromoPrice}>{fmtPrice(finalPrice, item.billing_type, item.unit)}</Text>
+                <Text style={s.gridOldPrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>
+              </View>
+            );
+            return <Text style={s.gridPrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>;
+          })()}
         </View>
       </TouchableOpacity>
     );
@@ -264,10 +310,23 @@ export default function ClientBusinessPage() {
         <View style={s.serviceBody}>
           <View style={s.serviceTopRow}>
             <Text style={s.serviceTitle} numberOfLines={1}>{item.title}</Text>
-            {item.promo_active && <Text style={s.servicePromo}>Promo</Text>}
+            {item.promo_active && (
+              <View style={s.servicePromoBadge}>
+                <Text style={s.servicePromoTxt}>{calcPromo(item).badge ?? 'Promo'}</Text>
+              </View>
+            )}
           </View>
           <View style={s.serviceBottomRow}>
-            <Text style={s.servicePrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>
+            {(() => {
+              const { finalPrice } = calcPromo(item);
+              if (finalPrice !== null) return (
+                <View style={s.servicePriceRow}>
+                  <Text style={s.servicePromoPrice}>{fmtPrice(finalPrice, item.billing_type, item.unit)}</Text>
+                  <Text style={s.serviceOldPrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>
+                </View>
+              );
+              return <Text style={s.servicePrice}>{fmtPrice(item.price, item.billing_type, item.unit)}</Text>;
+            })()}
             <TouchableOpacity style={s.serviceReserveBtn} activeOpacity={0.8}
               onPress={() => router.push({
                 pathname: '/(client)/service/[id]' as any,
@@ -545,6 +604,11 @@ const s = StyleSheet.create({
   serviceTopRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   serviceTitle:     { fontSize: 14, fontWeight: '700', color: '#111827', flex: 1 },
   servicePromo:     { fontSize: 11, fontWeight: '700', color: '#EF4444' },
+  servicePromoBadge:{ backgroundColor: '#FEF2F2', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  servicePromoTxt:  { fontSize: 11, fontWeight: '700', color: '#EF4444' },
+  servicePriceRow:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  servicePromoPrice:{ fontSize: 13, fontWeight: '700', color: '#EF4444' },
+  serviceOldPrice:  { fontSize: 12, fontWeight: '500', color: '#9CA3AF', textDecorationLine: 'line-through' },
   serviceBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   servicePrice:     { fontSize: 13, fontWeight: '700', color: '#FF6835' },
   serviceReserveBtn:{ borderWidth: 1.5, borderColor: '#FF6835', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 5 },
@@ -564,6 +628,9 @@ const s = StyleSheet.create({
   gridBody:         { padding: 10, gap: 3 },
   gridTitle:        { fontSize: 13, fontWeight: '600', color: '#111827', lineHeight: 18 },
   gridPrice:        { fontSize: 13, fontWeight: '700', color: '#FF6835' },
+  gridPriceRow:     { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
+  gridPromoPrice:   { fontSize: 13, fontWeight: '700', color: '#EF4444' },
+  gridOldPrice:     { fontSize: 11, fontWeight: '500', color: '#9CA3AF', textDecorationLine: 'line-through' },
   empty:            { alignItems: 'center', gap: 10, paddingVertical: 60 },
   emptyTxt:         { fontSize: 15, color: '#9CA3AF', textAlign: 'center', paddingHorizontal: 32 },
   modalBg:          { flex: 1, backgroundColor: 'transparent' },

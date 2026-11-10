@@ -3,8 +3,8 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator, Platform, ScrollView,
-  StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Image, Platform, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +24,7 @@ const STATUS_INFO: Record<string, { label:string; color:string; bg:string; dot:s
   confirmed:   { label:'Confirmée',   color:'#3B82F6', bg:'#EFF6FF', dot:'#3B82F6' },
   in_progress: { label:'En cours',    color:'#6366F1', bg:'#EEF2FF', dot:'#6366F1' },
   delivered:   { label:'Livrée',      color:'#22C55E', bg:'#F0FDF4', dot:'#22C55E' },
+  completed:   { label:'Terminée',    color:'#22C55E', bg:'#F0FDF4', dot:'#22C55E' },
   cancelled:   { label:'Annulée',     color:'#9CA3AF', bg:'#F3F4F6', dot:'#9CA3AF' },
 };
 
@@ -34,7 +35,7 @@ const ORDER_FILTERS: [Filter, string][] = [
 
 const BOOKING_FILTERS: [string, string][] = [
   ['all','Toutes'], ['pending','En attente'], ['confirmed','Confirmées'],
-  ['cancelled','Annulées'],
+  ['completed','Terminées'], ['cancelled','Annulées'],
 ];
 
 const AVATAR_COLORS = [
@@ -70,14 +71,13 @@ export default function OrdersTab() {
 
   const [activeTab,    setActiveTab]    = useState<Tab>('orders');
   const [bizDropOpen,  setBizDropOpen]  = useState(false);
-  // null = toutes les boutiques
   const [selectedBiz,  setSelectedBiz]  = useState<string | null>(null);
   const [filter,       setFilter]       = useState<Filter>('all');
   const [bookFilter,   setBookFilter]   = useState('all');
+  const [search,       setSearch]       = useState('');
 
   const { data: businesses = [] } = useMyBusinesses(profile?.id ?? '');
   const allBizIds = (businesses as any[]).map(b => b.id);
-  // Si une boutique est sélectionnée → filtrer, sinon toutes
   const activeBizIds = selectedBiz ? [selectedBiz] : allBizIds;
   const selectedBizName = selectedBiz
     ? (businesses as any[]).find(b => b.id === selectedBiz)?.name ?? 'Boutique'
@@ -92,7 +92,7 @@ export default function OrdersTab() {
       if (!activeBizIds.length) return [];
       const { data } = await supabase
         .from('orders')
-        .select('*, items:order_items(*, service:services(title, kind))')
+        .select('*, user:users(id, name, phone), items:order_items(id, title, quantity, unit_price, service_id)')
         .in('business_id', activeBizIds)
         .order('created_at', { ascending: false });
       return data ?? [];
@@ -107,7 +107,7 @@ export default function OrdersTab() {
       if (!activeBizIds.length) return [];
       const { data } = await supabase
         .from('bookings')
-        .select('*, service:services(title)')
+        .select('*, user:users(id, name, phone), service:services(id, title)')
         .in('business_id', activeBizIds)
         .order('created_at', { ascending: false });
       return data ?? [];
@@ -120,19 +120,25 @@ export default function OrdersTab() {
   const pendingBookings = bookings.filter((b:any) => b.status === 'pending').length;
   const totalPending    = pendingOrders + pendingBookings;
 
-  const delivered = orders.filter((o:any) => o.status === 'delivered').length;
-  const revenue   = orders
-    .filter((o:any) => o.status === 'delivered')
-    .reduce((s:number, o:any) => s + (o.total_amount ?? 0), 0);
-  const thisMonth = orders.filter((o:any) => {
-    const d = new Date(o.created_at), n = new Date();
-    return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear();
-  }).length;
+  const q = search.toLowerCase().trim();
 
-  const filteredOrders = filter === 'all'
-    ? orders : orders.filter((o:any) => o.status === filter);
-  const filteredBookings = bookFilter === 'all'
-    ? bookings : bookings.filter((b:any) => b.status === bookFilter);
+  const filteredOrders = orders
+    .filter((o:any) => filter === 'all' || o.status === filter)
+    .filter((o:any) => {
+      if (!q) return true;
+      const name  = (o.user?.name ?? '').toLowerCase();
+      const items = (o.items ?? []).map((i:any) => (i.title ?? '').toLowerCase()).join(' ');
+      return name.includes(q) || items.includes(q);
+    });
+
+  const filteredBookings = bookings
+    .filter((b:any) => bookFilter === 'all' || b.status === bookFilter)
+    .filter((b:any) => {
+      if (!q) return true;
+      const name    = (b.user?.name ?? '').toLowerCase();
+      const service = (b.service?.title ?? '').toLowerCase();
+      return name.includes(q) || service.includes(q);
+    });
 
   const currentFilters   = activeTab === 'orders' ? ORDER_FILTERS : BOOKING_FILTERS;
   const currentFilterVal = activeTab === 'orders' ? filter : bookFilter;
@@ -146,26 +152,19 @@ export default function OrdersTab() {
       {/* ══ Header ══════════════════════════════════════════════════════════════ */}
       <View style={[s.hero, { paddingTop: topPad }]}>
 
-        {/* ── Ligne 1 : boutique sélecteur | Commandes | badge ── */}
+        {/* Ligne 1 : sélecteur | titre | badge */}
         <View style={s.topBar}>
-
-          {/* Sélecteur boutique — même niveau que le titre */}
           <TouchableOpacity
             style={s.bizBtn}
             onPress={() => setBizDropOpen(v => !v)}
             activeOpacity={0.8}
           >
             <Text style={s.bizBtnTxt} numberOfLines={1}>{selectedBizName}</Text>
-            <Feather
-              name={bizDropOpen ? 'chevron-up' : 'chevron-down'}
-              size={12} color="rgba(255,255,255,0.7)"
-            />
+            <Feather name={bizDropOpen ? 'chevron-up' : 'chevron-down'} size={12} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
 
-          {/* Titre — centré entre les deux éléments */}
           <Text style={s.topTitle}>Commandes</Text>
 
-          {/* Badge notifications */}
           {totalPending > 0 ? (
             <View style={s.notifBadge}>
               <View style={s.notifDot} />
@@ -176,10 +175,9 @@ export default function OrdersTab() {
           )}
         </View>
 
-        {/* ── Dropdown boutiques ── */}
+        {/* Dropdown boutiques */}
         {bizDropOpen && (
           <View style={s.bizDropdown}>
-            {/* Option "Toutes les boutiques" */}
             <TouchableOpacity
               style={[s.bizOption, selectedBiz === null && s.bizOptionActive]}
               onPress={() => { setSelectedBiz(null); setBizDropOpen(false); }}
@@ -188,7 +186,6 @@ export default function OrdersTab() {
               <Text style={s.bizOptionTxt}>Toutes les boutiques</Text>
               {selectedBiz === null && <Feather name="check" size={14} color={ORANGE} />}
             </TouchableOpacity>
-
             {(businesses as any[]).map((b:any) => (
               <TouchableOpacity
                 key={b.id}
@@ -203,21 +200,21 @@ export default function OrdersTab() {
           </View>
         )}
 
-        {/* ── Ligne 2 : onglets Commandes / Réservations ── */}
+        {/* Onglets Commandes / Réservations */}
         <View style={s.tabRow}>
           <TouchableOpacity
             style={[s.tabBtn, activeTab === 'orders' && s.tabBtnActive]}
             onPress={() => setActiveTab('orders')}
             activeOpacity={0.85}
           >
-            <Text style={s.tabEmoji}>📦</Text>
-            <Text style={[s.tabTxt, activeTab === 'orders' && s.tabTxtActive]}>
-              Commandes
-            </Text>
+            <Image
+              source={require('@/assets/images/orders_icon.png')}
+              style={[s.tabIcon, { tintColor: activeTab === 'orders' ? DARK : 'rgba(255,255,255,0.6)' }]}
+              resizeMode="contain"
+            />
+            <Text style={[s.tabTxt, activeTab === 'orders' && s.tabTxtActive]}>Commandes</Text>
             {pendingOrders > 0 && (
-              <View style={s.tabBadge}>
-                <Text style={s.tabBadgeTxt}>{pendingOrders}</Text>
-              </View>
+              <View style={s.tabBadge}><Text style={s.tabBadgeTxt}>{pendingOrders}</Text></View>
             )}
           </TouchableOpacity>
 
@@ -226,19 +223,19 @@ export default function OrdersTab() {
             onPress={() => setActiveTab('bookings')}
             activeOpacity={0.85}
           >
-            <Text style={s.tabEmoji}>📅</Text>
-            <Text style={[s.tabTxt, activeTab === 'bookings' && s.tabTxtActive]}>
-              Réservations
-            </Text>
+            <Image
+              source={require('@/assets/images/reservations_icon.png')}
+              style={[s.tabIcon, { tintColor: activeTab === 'bookings' ? DARK : 'rgba(255,255,255,0.6)' }]}
+              resizeMode="contain"
+            />
+            <Text style={[s.tabTxt, activeTab === 'bookings' && s.tabTxtActive]}>Réservations</Text>
             {pendingBookings > 0 && (
-              <View style={s.tabBadge}>
-                <Text style={s.tabBadgeTxt}>{pendingBookings}</Text>
-              </View>
+              <View style={s.tabBadge}><Text style={s.tabBadgeTxt}>{pendingBookings}</Text></View>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* ── Ligne 3 : filtres pills ── */}
+        {/* Filtres pills */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap:8, paddingBottom:14, paddingTop:2 }}>
           {currentFilters.map(([f, l]) => {
@@ -263,26 +260,24 @@ export default function OrdersTab() {
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding:16, gap:14, paddingBottom:90 }}>
 
-        {/* ── Stats (commandes seulement) ── */}
-        {activeTab === 'orders' && (
-          <View style={s.statsRow}>
-            <View style={[s.statCard, { backgroundColor:'#fff' }]}>
-              <Text style={[s.statValue, { color:DARK }]}>{thisMonth}</Text>
-              <Text style={s.statLabel}>Ce mois</Text>
-              <Text style={s.statSub}>commandes</Text>
-            </View>
-            <View style={[s.statCard, { backgroundColor:'#F0FDF4' }]}>
-              <Text style={[s.statValue, { color:'#22C55E' }]}>{delivered}</Text>
-              <Text style={[s.statLabel, { color:'#22C55E' }]}>Livrées</Text>
-              <Text style={[s.statSub, { color:'#86EFAC' }]}>validées</Text>
-            </View>
-            <View style={[s.statCard, { backgroundColor:'#EEF2FF' }]}>
-              <Text style={[s.statValue, { color:'#6366F1' }]}>{fmtAmount(revenue)}</Text>
-              <Text style={[s.statLabel, { color:'#6366F1' }]}>Revenus</Text>
-              <Text style={[s.statSub, { color:'#A5B4FC' }]}>FCFA livrés</Text>
-            </View>
-          </View>
-        )}
+        {/* Barre de recherche */}
+        <View style={s.searchBar}>
+          <Feather name="search" size={16} color="#9CA3AF" />
+          <TextInput
+            style={s.searchInput}
+            placeholder={activeTab === 'orders' ? 'Chercher une commande, client…' : 'Chercher une réservation, client…'}
+            placeholderTextColor="#9CA3AF"
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top:8, bottom:8, left:8, right:8 }}>
+              <Feather name="x" size={15} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* ── Liste commandes ── */}
         {activeTab === 'orders' && (
@@ -290,20 +285,17 @@ export default function OrdersTab() {
             <ActivityIndicator color={ORANGE} style={{ padding:40 }} />
           ) : filteredOrders.length === 0 ? (
             <View style={s.emptyWrap}>
-              <View style={s.emptyIcon}>
-                <Feather name="shopping-bag" size={32} color="#D1D5DB" />
-              </View>
+              <View style={s.emptyIcon}><Feather name="shopping-bag" size={32} color="#D1D5DB" /></View>
               <Text style={s.emptyTxt}>Aucune commande pour l'instant</Text>
             </View>
           ) : filteredOrders.map((order:any) => {
             const st       = STATUS_INFO[order.status] ?? STATUS_INFO['pending'];
-            const name     = order.customer_name ?? order.client_name ?? 'Client';
+            const name     = order.user?.name ?? 'Client';
             const initials = getInitials(name);
             const avatarBg = getAvatarColor(name);
             const items    = (order.items ?? []) as any[];
-            const itemsLine = items.slice(0, 2).map((i:any) => {
-              const emoji = i.service?.kind === 'prestation' ? '🛎️' : '📦';
-              return `${emoji} ${i.service?.title ?? 'Article'}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`;
+            const itemsLine = items.slice(0, 2).map((item:any) => {
+              return `📦 ${item.title}${item.quantity > 1 ? ` ×${item.quantity}` : ''}`;
             }).join(' · ') + (items.length > 2 ? ` +${items.length - 2}` : '');
 
             return (
@@ -327,8 +319,10 @@ export default function OrdersTab() {
                     <Text style={s.itemsLine} numberOfLines={1}>{itemsLine}</Text>
                   )}
                   <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-                    <Text style={s.amount}>{(order.total_amount ?? 0).toLocaleString('fr-FR')} FCFA</Text>
-                    <Text style={s.dot}>·</Text>
+                    <Text style={s.idTag}>#{order.id.slice(-6).toUpperCase()}</Text>
+                    <Text style={s.dotSep}>·</Text>
+                    <Text style={s.amount}>{(order.total_amount ?? order.total ?? 0).toLocaleString('fr-FR')} FCFA</Text>
+                    <Text style={s.dotSep}>·</Text>
                     <Text style={s.dateStr}>{fmtDate(order.created_at)}</Text>
                   </View>
                 </View>
@@ -344,18 +338,23 @@ export default function OrdersTab() {
             <ActivityIndicator color={ORANGE} style={{ padding:40 }} />
           ) : filteredBookings.length === 0 ? (
             <View style={s.emptyWrap}>
-              <View style={s.emptyIcon}>
-                <Feather name="calendar" size={32} color="#D1D5DB" />
-              </View>
+              <View style={s.emptyIcon}><Feather name="calendar" size={32} color="#D1D5DB" /></View>
               <Text style={s.emptyTxt}>Aucune réservation pour l'instant</Text>
             </View>
           ) : filteredBookings.map((book:any) => {
             const st       = STATUS_INFO[book.status] ?? STATUS_INFO['pending'];
-            const name     = book.customer_name ?? book.client_name ?? 'Client';
+            const name     = book.user?.name ?? 'Client';
             const initials = getInitials(name);
             const avatarBg = getAvatarColor(name);
-            const dateSlot = book.date
-              ? `${new Date(book.date).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })}${book.time_slot ? ` · ${book.time_slot}` : ''}`
+            // Affichage de la date/heure du créneau
+            const bookingDate = book.booking_date
+              ? new Date(book.booking_date).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+              : book.date
+                ? new Date(book.date).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })
+                : null;
+            const bookingTime = book.start_time ?? book.time ?? null;
+            const dateSlot = bookingDate
+              ? `${bookingDate}${bookingTime ? ` · ${bookingTime.slice(0,5)}` : ''}`
               : fmtDate(book.created_at);
 
             return (
@@ -379,6 +378,14 @@ export default function OrdersTab() {
                     <Text style={s.itemsLine} numberOfLines={1}>🛎️ {book.service.title}</Text>
                   )}
                   <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
+                    <Text style={s.idTag}>#{book.id.slice(-6).toUpperCase()}</Text>
+                    <Text style={s.dotSep}>·</Text>
+                    {book.total_amount ? (
+                      <>
+                        <Text style={s.amount}>{Number(book.total_amount).toLocaleString('fr-FR')} FCFA</Text>
+                        <Text style={s.dotSep}>·</Text>
+                      </>
+                    ) : null}
                     <Feather name="clock" size={11} color="#9CA3AF" />
                     <Text style={s.dateStr}>{dateSlot}</Text>
                   </View>
@@ -400,15 +407,13 @@ const s = StyleSheet.create({
     paddingBottom: 0,
   },
 
-  // ── Ligne 1 : sélecteur | titre | badge ─────────────────────────────────
+  // ── Ligne 1 ───────────────────────────────────────────────────────────────
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: 14,
   },
-
-  // Sélecteur boutique (gauche)
   bizBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -417,9 +422,7 @@ const s = StyleSheet.create({
     borderRadius: 100,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    // flex:1 avec maxWidth pour équilibrer avec le badge à droite
-    flex: 1,
-    maxWidth: 140,
+    alignSelf: 'flex-start',
   },
   bizBtnTxt: {
     fontSize: 13,
@@ -427,8 +430,6 @@ const s = StyleSheet.create({
     color: '#fff',
     flexShrink: 1,
   },
-
-  // Titre "Commandes" (centre — même ligne, même alignItems:'center')
   topTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -436,8 +437,6 @@ const s = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-
-  // Badge notifications (droite)
   notifBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -446,39 +445,20 @@ const s = StyleSheet.create({
     borderRadius: 100,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    flex: 1,
-    maxWidth: 140,
-    justifyContent: 'flex-end',
-    // aligne visuellement avec la gauche
     alignSelf: 'center',
   },
-  notifPlaceholder: {
-    flex: 1,
-    maxWidth: 140,
-  },
-  notifDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#F59E0B',
-  },
-  notifCount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#F59E0B',
-  },
+  notifPlaceholder: { width: 40 },
+  notifDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#F59E0B' },
+  notifCount: { fontSize: 12, fontWeight: '700', color: '#F59E0B' },
 
-  // ── Dropdown boutiques ────────────────────────────────────────────────────
+  // ── Dropdown ──────────────────────────────────────────────────────────────
   bizDropdown: {
     backgroundColor: '#fff',
     borderRadius: 14,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width:0, height:4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
   bizOption: {
     flexDirection: 'row',
@@ -489,21 +469,11 @@ const s = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F3F4F6',
   },
-  bizOptionActive: {
-    backgroundColor: '#FEF2EC',
-  },
-  bizOptionTxt: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: DARK,
-  },
+  bizOptionActive: { backgroundColor: '#FEF2EC' },
+  bizOptionTxt: { fontSize: 14, fontWeight: '600', color: DARK },
 
   // ── Onglets ───────────────────────────────────────────────────────────────
-  tabRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   tabBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -514,19 +484,10 @@ const s = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
-  tabBtnActive: {
-    backgroundColor: '#fff',
-  },
-  tabEmoji: { fontSize: 14 },
-  tabTxt: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.6)',
-  },
-  tabTxtActive: {
-    color: DARK,
-    fontWeight: '700',
-  },
+  tabBtnActive: { backgroundColor: '#fff' },
+  tabIcon: { width: 18, height: 18 },
+  tabTxt: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
+  tabTxtActive: { color: DARK, fontWeight: '700' },
   tabBadge: {
     backgroundColor: ORANGE,
     borderRadius: 100,
@@ -536,13 +497,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 5,
   },
-  tabBadgeTxt: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#fff',
-  },
+  tabBadgeTxt: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
-  // ── Pills filtres ─────────────────────────────────────────────────────────
+  // ── Pills ─────────────────────────────────────────────────────────────────
   pill: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -553,16 +510,24 @@ const s = StyleSheet.create({
   pillTxt:       { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
   pillTxtActive: { color: DARK, fontWeight: '700' },
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
-  statsRow: { flexDirection:'row', gap:10 },
-  statCard: {
-    flex:1, borderRadius:16, padding:14, gap:2,
-    shadowColor:'#000', shadowOffset:{width:0,height:1},
-    shadowOpacity:0.05, shadowRadius:3, elevation:1,
+  // ── Recherche ─────────────────────────────────────────────────────────────
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
-  statValue: { fontSize:24, fontWeight:'900' },
-  statLabel: { fontSize:12, fontWeight:'700', color:'#9CA3AF' },
-  statSub:   { fontSize:11, color:'#D1D5DB' },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: DARK,
+    paddingVertical: 0,
+  },
 
   // ── Empty state ───────────────────────────────────────────────────────────
   emptyWrap: { alignItems:'center', paddingVertical:60, gap:12 },
@@ -577,8 +542,7 @@ const s = StyleSheet.create({
   card: {
     flexDirection:'row', alignItems:'center', gap:14,
     backgroundColor:'#fff', borderRadius:18, padding:16,
-    shadowColor:'#000', shadowOffset:{width:0,height:1},
-    shadowOpacity:0.04, shadowRadius:4, elevation:1,
+    borderWidth: 1, borderColor: '#F0F0F0',
   },
   avatar: {
     width:46, height:46, borderRadius:23,
@@ -593,8 +557,8 @@ const s = StyleSheet.create({
   statusDot:  { width:6, height:6, borderRadius:3 },
   statusTxt:  { fontSize:11, fontWeight:'700' },
   itemsLine:  { fontSize:12, color:'#9CA3AF' },
+  idTag:      { fontSize:11, fontWeight:'700', color:'#C4B5FD', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   amount:     { fontSize:14, fontWeight:'800', color:DARK },
-  dot:        { fontSize:12, color:'#D1D5DB' },
+  dotSep:     { fontSize:12, color:'#D1D5DB' },
   dateStr:    { fontSize:12, color:'#9CA3AF' },
 });
- 

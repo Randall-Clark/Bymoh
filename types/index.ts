@@ -138,6 +138,31 @@ export interface Business {
   updated_at?:    string;
 }
 
+// ── Personnalisation / Variantes ──────────────────────────────────────────────
+/** Une option dans un groupe (ex: Taille 42, Couleur Bleu) */
+export interface CustomizationOption {
+  id:    string;   // uuid local
+  label: string;   // "42", "Bleu", "Sans oignon"
+  price: number;   // 0 si pas d'impact prix
+}
+
+/** Un groupe d'options (ex: Taille, Couleur) */
+export interface CustomizationGroup {
+  id:       string;              // uuid local
+  name:     string;              // "Taille", "Couleur"
+  required: boolean;             // true = le client doit choisir
+  options:  CustomizationOption[];
+}
+
+/** Option sélectionnée par le client dans le panier */
+export interface SelectedOption {
+  groupId:   string;
+  groupName: string;
+  optionId:  string;
+  optionLabel: string;
+  optionPrice: number;
+}
+
 // ── Services / Catalogue ──────────────────────────────────────────────────────
 export interface Service {
   id:                 string;
@@ -156,6 +181,16 @@ export interface Service {
   stock_qty?:         number;
   show_stock?:        boolean;
   created_at?:        string;
+  // Champs promotion
+  promo_active?:      boolean;
+  promo_type?:        'percentage' | 'fixed_amount' | 'x_plus_y' | 'first_free' | 'promo_code';
+  promo_value?:       number;
+  promo_code?:        string;
+  promo_buy_qty?:     number;
+  promo_get_qty?:     number;
+  // Personnalisation
+  is_customizable?:   boolean;
+  customizations?:    CustomizationGroup[];
 }
 
 // Alias
@@ -244,12 +279,16 @@ export type DeliveryMethod =
 
 // ── Type panier ────────────────────────────────────────────────────────────
 export interface CartItem {
-  id?:           string;
-  service_id?:   string;
-  title:         string;
-  price:         number;
-  quantity:      number;
-  business_id:   string;
-  business_name: string;
-  image_url?:    string;
+  id?:             string;
+  service_id?:     string;
+  cartKey:         string;   // service_id + hash(selectedOptions) — clé unique par ligne panier
+  title:           string;
+  price:           number;
+  quantity:        number;
+  business_id:     string;
+  business_name:   string;
+  image_url?:      string;
+  // Personnalisation
+  selectedOptions?: SelectedOption[];
+  customPrice?:     number;  // somme des prix d'options si personnalisable
 }

@@ -1,19 +1,25 @@
 import { useCartStore } from '@/stores/cartStore';
-import type { CatalogItem } from '@/types';
+import type { CatalogItem, SelectedOption } from '@/types';
 
 export function useCart() {
   const store = useCartStore();
 
-  const addToCart = (item: CatalogItem, businessId: string, businessName: string) => {
-    store.addItem(item, businessId, businessName);
+  const addToCart = (
+    item: CatalogItem,
+    businessId: string,
+    businessName: string,
+    selectedOptions?: SelectedOption[],
+    customPrice?: number,
+  ) => {
+    store.addItem(item, businessId, businessName, selectedOptions, customPrice);
   };
 
-  const removeFromCart = (serviceId: string) => {
-    store.removeItem(serviceId);
+  const removeFromCart = (cartKey: string) => {
+    store.removeItem(cartKey);
   };
 
-  const updateQuantity = (serviceId: string, quantity: number) => {
-    store.updateQuantity(serviceId, quantity);
+  const updateQuantity = (cartKey: string, quantity: number) => {
+    store.updateQuantity(cartKey, quantity);
   };
 
   return {

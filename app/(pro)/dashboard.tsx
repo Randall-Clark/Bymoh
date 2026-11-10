@@ -1,6 +1,6 @@
 // app/(pro)/dashboard.tsx
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator, Alert, Dimensions, Image, Modal, Platform,
@@ -12,11 +12,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useMyBusinesses } from '@/hooks/useBusinesses';
 import { supabase } from '@/lib/supabase';
+import { OnboardingChecklistModal } from '@/components/OnboardingChecklistModal';
 
 const { width: W } = Dimensions.get('window');
 const ORANGE  = '#FF6835';
 const DARK    = '#1A1025';
-const CARD3_W = (W - 52) / 2 + 16; // 2 cartes + aperçu 16px de la 3e
+const CARD3_W = (W - 52) / 2 + 16;
 
 type Period   = 'week' | 'month' | 'year';
 interface Business { id: string; name: string; }
@@ -60,12 +61,22 @@ function KpiCard({ icon, label, sub, value, pctVal, color, bg }: {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { profile } = useAuthStore();
+  const { newBusinessId } = useLocalSearchParams<{ newBusinessId?: string }>();
+
   const [period, setPeriod] = useState<Period>('month');
   const [filterBiz, setFilterBiz] = useState<string | null>(null);
   const [bizPickerOpen, setBizPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const { data: businesses = [], isLoading: bizLoading } = useMyBusinesses(profile?.id ?? '');
+
+  /* ── Focus automatique sur la boutique nouvellement créée ── */
+  useEffect(() => {
+    if (newBusinessId && businesses.length > 0) {
+      const exists = businesses.some((b: Business) => b.id === newBusinessId);
+      if (exists) setFilterBiz(newBusinessId);
+    }
+  }, [newBusinessId, businesses]);
 
   // ── Si aucune boutique enregistrée → page d'accueil marchand ────────────
   useEffect(() => {
@@ -76,7 +87,6 @@ export default function DashboardScreen() {
 
   if (!bizLoading && businesses.length === 0) return null;
 
-  // ── Si encore en chargement ───────────────────────────────────────────────
   if (bizLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#F2F2F7', alignItems: 'center', justifyContent: 'center' }}>
@@ -124,84 +134,121 @@ function DashboardContent({
   );
   const { from, prevFrom, prevTo } = getRange(period);
 
+  // ── Données période en cours ──────────────────────────────────────────────
   const { data: curr, isLoading } = useQuery({
     queryKey: ['dash-curr', bizIds.join(','), period],
     queryFn: async () => {
       if (!bizIds.length) return null;
-      const [orders, bookings, reviews] = await Promise.all([
-        supabase.from('orders').select('id,total_amount,created_at')
+      const [orders, bookings, reviews, visits] = await Promise.all([
+        supabase.from('orders').select('id,total_amount,created_at,user_id')
           .in('business_id', bizIds).gte('created_at', from.toISOString()).neq('status', 'cancelled'),
         supabase.from('bookings').select('id,created_at')
           .in('business_id', bizIds).gte('created_at', from.toISOString()),
         supabase.from('reviews').select('id,rating,created_at')
           .in('business_id', bizIds).gte('created_at', from.toISOString()),
+        supabase.from('shop_visits').select('id,visited_at')
+          .in('business_id', bizIds).gte('visited_at', from.toISOString()),
       ]);
       const ol = orders.data ?? [];
       const bl = bookings.data ?? [];
       const rl = reviews.data ?? [];
+      const vl = visits.data ?? [];
       const revenue = ol.reduce((acc: number, o: any) => acc + (o.total_amount ?? 0), 0);
+      const uniqueClients = new Set(ol.map((o: any) => o.user_id).filter(Boolean)).size;
       const dayMap: Record<string, number> = {};
       ol.forEach((o: any) => {
         const d = o.created_at?.slice(0, 10) ?? '';
         dayMap[d] = (dayMap[d] ?? 0) + (o.total_amount ?? 0);
       });
-      return { revenue, orders: ol.length, bookings: bl.length, reviews: rl.length, views: 0, dayMap };
+      return { revenue, orders: ol.length, bookings: bl.length, reviews: rl.length, trafic: vl.length, uniqueClients, dayMap };
     },
     staleTime: 60_000, enabled: bizIds.length > 0,
   });
 
+  // ── Données période précédente (comparaison) ──────────────────────────────
   const { data: prev } = useQuery({
     queryKey: ['dash-prev', bizIds.join(','), period],
     queryFn: async () => {
       if (!bizIds.length) return null;
-      const [orders, bookings, reviews] = await Promise.all([
-        supabase.from('orders').select('id,total_amount').in('business_id', bizIds)
+      const [orders, bookings, reviews, visits] = await Promise.all([
+        supabase.from('orders').select('id,total_amount,user_id').in('business_id', bizIds)
           .gte('created_at', prevFrom.toISOString()).lt('created_at', prevTo.toISOString()).neq('status', 'cancelled'),
         supabase.from('bookings').select('id').in('business_id', bizIds)
           .gte('created_at', prevFrom.toISOString()).lt('created_at', prevTo.toISOString()),
         supabase.from('reviews').select('id').in('business_id', bizIds)
           .gte('created_at', prevFrom.toISOString()).lt('created_at', prevTo.toISOString()),
+        supabase.from('shop_visits').select('id').in('business_id', bizIds)
+          .gte('visited_at', prevFrom.toISOString()).lt('visited_at', prevTo.toISOString()),
       ]);
+      const ol = orders.data ?? [];
       return {
-        revenue: (orders.data ?? []).reduce((acc: number, o: any) => acc + (o.total_amount ?? 0), 0),
-        orders: orders.data?.length ?? 0,
+        revenue: ol.reduce((acc: number, o: any) => acc + (o.total_amount ?? 0), 0),
+        orders: ol.length,
         bookings: bookings.data?.length ?? 0,
         reviews: reviews.data?.length ?? 0,
+        trafic: visits.data?.length ?? 0,
+        uniqueClients: new Set(ol.map((o: any) => o.user_id).filter(Boolean)).size,
       };
     },
     staleTime: 60_000, enabled: bizIds.length > 0,
   });
 
+  // ── Activité récente (commandes + réservations + avis) ────────────────────
   const { data: activity = [] } = useQuery({
     queryKey: ['activity', bizIds.join(',')],
     queryFn: async () => {
       if (!bizIds.length) return [];
-      const [orders, bookings] = await Promise.all([
+      const [orders, bookings, reviews] = await Promise.all([
         supabase.from('orders').select('id,status,created_at,total_amount')
-          .in('business_id', bizIds).order('created_at', { ascending: false }).limit(3),
+          .in('business_id', bizIds).order('created_at', { ascending: false }).limit(4),
         supabase.from('bookings').select('id,status,created_at')
+          .in('business_id', bizIds).order('created_at', { ascending: false }).limit(4),
+        supabase.from('reviews').select('id,rating,comment,created_at')
           .in('business_id', bizIds).order('created_at', { ascending: false }).limit(3),
       ]);
+      const stars = (n: number) => '★'.repeat(Math.max(0, Math.min(5, n)));
       return [
-        ...(orders.data ?? []).map((o: any) => ({ icon: 'shopping-bag', label: `Commande #${o.id.slice(-4)}`, sub: o.status, ts: o.created_at })),
-        ...(bookings.data ?? []).map((b: any) => ({ icon: 'calendar', label: `Réservation #${b.id.slice(-4)}`, sub: b.status, ts: b.created_at })),
-      ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).slice(0, 5);
+        ...(orders.data ?? []).map((o: any) => ({
+          icon: 'shopping-bag',
+          label: `Commande #${o.id.slice(-4)}`,
+          sub: o.status,
+          ts: o.created_at,
+        })),
+        ...(bookings.data ?? []).map((b: any) => ({
+          icon: 'calendar',
+          label: `Réservation #${b.id.slice(-4)}`,
+          sub: b.status,
+          ts: b.created_at,
+        })),
+        ...(reviews.data ?? []).map((r: any) => ({
+          icon: 'star',
+          label: `Nouvel avis ${stars(r.rating ?? 0)}`,
+          sub: r.comment ? (r.comment as string).slice(0, 55) : '',
+          ts: r.created_at,
+        })),
+      ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()).slice(0, 7);
     },
     staleTime: 60_000, enabled: bizIds.length > 0,
   });
 
-  const revenue  = curr?.revenue ?? 0;
-  const tRev     = pct(revenue, prev?.revenue ?? 0);
-  const orders   = curr?.orders ?? 0;
-  const tOrd     = pct(orders, prev?.orders ?? 0);
-  const bookings = curr?.bookings ?? 0;
-  const tBook    = pct(bookings, prev?.bookings ?? 0);
-  const reviews  = curr?.reviews ?? 0;
-  const tRev2    = pct(reviews, prev?.reviews ?? 0);
-  const views    = curr?.views ?? 0;
-  const periodLabel = period === 'week' ? 'semaine' : period === 'month' ? 'mois' : 'année';
-  const filterLabel = filterBiz ? businesses.find((b: Business) => b.id === filterBiz)?.name ?? 'Boutique' : 'Toutes les boutiques';
-  const initials = profile?.name
+  // ── Valeurs calculées ─────────────────────────────────────────────────────
+  const revenue       = curr?.revenue       ?? 0;
+  const tRev          = pct(revenue,             prev?.revenue       ?? 0);
+  const orders        = curr?.orders        ?? 0;
+  const tOrd          = pct(orders,              prev?.orders        ?? 0);
+  const bookings      = curr?.bookings      ?? 0;
+  const tBook         = pct(bookings,            prev?.bookings      ?? 0);
+  const reviews       = curr?.reviews       ?? 0;
+  const tReview       = pct(reviews,             prev?.reviews       ?? 0);
+  const trafic        = curr?.trafic        ?? 0;
+  const tTrafic       = pct(trafic,              prev?.trafic        ?? 0);
+  const uniqueClients = curr?.uniqueClients ?? 0;
+  const tClients      = pct(uniqueClients,        prev?.uniqueClients ?? 0);
+
+  const periodLabel  = period === 'week' ? 'semaine' : period === 'month' ? 'mois' : 'année';
+  const filterLabel  = filterBiz ? businesses.find((b: Business) => b.id === filterBiz)?.name ?? 'Boutique' : 'Toutes les boutiques';
+  const activeBiz    = filterBiz ? businesses.find((b: Business) => b.id === filterBiz) : null;
+  const initials     = profile?.name
     ? profile.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
     : 'SA';
 
@@ -221,12 +268,9 @@ function DashboardContent({
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F2F2F7' }}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}>
 
-        {/* ── Hero sombre ── */}
-        <View style={[s.hero, { paddingTop: (Platform.OS === 'ios' ? insets.top : insets.top) + 12 }]}>
+      {/* ── Hero sombre ── */}
+      <View style={[s.hero, { paddingTop: (Platform.OS === 'ios' ? insets.top : insets.top) + 12 }]}>
           <View style={s.heroNav}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               {profile?.avatar_url
@@ -270,11 +314,11 @@ function DashboardContent({
           </View>
         </View>
 
-        {/* ── Carte filtre & période ── */}
-        <View style={s.floatingCard}>
+      {/* ── Carte filtre & période ── */}
+      <View style={s.floatingCard}>
           <TouchableOpacity style={s.bizPicker} onPress={() => setBizPickerOpen(!bizPickerOpen)}>
             <View style={[s.bizPickerIcon, { backgroundColor: '#FEF2EC' }]}>
-              <Feather name="shopping-bag" size={16} color={ORANGE} />
+              <Image source={require('@/assets/images/shop_icon.png')} style={{ width: 20, height: 20 }} resizeMode="contain" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.bizPickerSup}>VUE ACTUELLE</Text>
@@ -308,9 +352,10 @@ function DashboardContent({
               );
             })}
           </View>
-        </View>
+      </View>
 
-        {/* ── Contenu ── */}
+      {/* ── Contenu défilable ── */}
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={{ gap: 20, paddingTop: 20 }}>
           {/* Section KPI */}
           <View style={{ paddingHorizontal: 20, gap: 6 }}>
@@ -325,16 +370,16 @@ function DashboardContent({
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingHorizontal: 20, paddingBottom: 6 }}
               snapToInterval={CARD3_W + 12} decelerationRate="fast">
-              <KpiCard icon="shopping-bag" label="Commandes" sub="Total période" value={orders} pctVal={tOrd} color="#FF6835" bg="#FEF2EC" />
-              <KpiCard icon="users" label="Clients" sub="Clients uniques" value={0} pctVal={0} color="#7C3AED" bg="#F5F3FF" />
-              <KpiCard icon="star" label="Avis clients" sub="Avis reçus" value={reviews} pctVal={tRev2} color="#F59E0B" bg="#FFFBEB" />
+              <KpiCard icon="shopping-bag" label="Commandes"      sub="Total période"   value={orders}        pctVal={tOrd}     color="#FF6835" bg="#FEF2EC" />
+              <KpiCard icon="users"        label="Clients"        sub="Clients uniques" value={uniqueClients} pctVal={tClients} color="#7C3AED" bg="#F5F3FF" />
+              <KpiCard icon="star"         label="Avis clients"   sub="Avis reçus"      value={reviews}       pctVal={tReview}  color="#F59E0B" bg="#FFFBEB" />
             </ScrollView>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingHorizontal: 20, paddingBottom: 6 }}
               snapToInterval={CARD3_W + 12} decelerationRate="fast">
-              <KpiCard icon="trending-up" label="Ventes total" sub="Ce mois-ci" value={orders} pctVal={tOrd} color="#059669" bg="#F0FDF4" />
-              <KpiCard icon="calendar" label="Réservations total" sub="Total période" value={bookings} pctVal={tBook} color="#3B82F6" bg="#EFF6FF" />
-              <KpiCard icon="eye" label="Trafic boutique" sub="Vues totales" value={views} pctVal={0} color="#8B5CF6" bg="#F5F3FF" />
+              <KpiCard icon="trending-up" label="Ventes totales"  sub="Cmd + réserv."  value={orders + bookings} pctVal={pct(orders + bookings, (prev?.orders ?? 0) + (prev?.bookings ?? 0))} color="#059669" bg="#F0FDF4" />
+              <KpiCard icon="calendar"    label="Réservations"    sub="Total période"  value={bookings}          pctVal={tBook}    color="#3B82F6" bg="#EFF6FF" />
+              <KpiCard icon="eye"         label="Trafic boutique" sub="Vues de la page" value={trafic}           pctVal={tTrafic}  color="#8B5CF6" bg="#F5F3FF" />
             </ScrollView>
           </>)}
 
@@ -366,10 +411,7 @@ function DashboardContent({
 
           {/* Activité récente */}
           <View style={{ paddingHorizontal: 20, gap: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={s.sectionTitle}>Activité récente</Text>
-              <TouchableOpacity><Text style={{ fontSize: 14, fontWeight: '600', color: ORANGE }}>Tout voir</Text></TouchableOpacity>
-            </View>
+            <Text style={s.sectionTitle}>Activité récente</Text>
             {activity.length === 0 ? (
               <View style={s.emptyCard}>
                 <View style={s.emptyIcon}><Feather name="file-text" size={20} color="#D1D5DB" /></View>
@@ -383,7 +425,7 @@ function DashboardContent({
                 <View style={s.actIcon}><Feather name={item.icon} size={16} color="#6B7280" /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: '600', color: '#111827' }}>{item.label}</Text>
-                  <Text style={{ fontSize: 12, color: '#9CA3AF' }}>{item.sub}</Text>
+                  {!!item.sub && <Text style={{ fontSize: 12, color: '#9CA3AF' }} numberOfLines={1}>{item.sub}</Text>}
                 </View>
                 <Text style={{ fontSize: 11, color: '#9CA3AF' }}>{new Date(item.ts).toLocaleDateString('fr-FR')}</Text>
               </View>
@@ -435,6 +477,15 @@ function DashboardContent({
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* ── Checklist d'intégration (s'affiche si tâches incomplètes) ── */}
+      {activeBiz && (
+        <OnboardingChecklistModal
+          key={activeBiz.id}
+          businessId={activeBiz.id}
+          businessName={activeBiz.name}
+        />
+      )}
     </View>
   );
 }
@@ -455,7 +506,7 @@ const s = StyleSheet.create({
   pctBadgeTxt:    { fontSize: 12, fontWeight: '700', color: '#fff' },
   miniChart:      { flexDirection: 'row', alignItems: 'flex-end', gap: 5, paddingBottom: 4 },
   miniBar:        { width: 10, borderRadius: 3 },
-  floatingCard:   { marginHorizontal: 16, marginTop: -52, backgroundColor: '#fff', borderRadius: 24, padding: 16, gap: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.10, shadowRadius: 20, elevation: 12 },
+  floatingCard:   { marginHorizontal: 16, marginTop: -44, backgroundColor: '#fff', borderRadius: 24, padding: 16, gap: 14, borderWidth: 1, borderColor: '#F0F0F0', zIndex: 10 },
   bizPicker:      { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#F9FAFB', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E5E7EB' },
   bizPickerIcon:  { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   bizPickerSup:   { fontSize: 10, fontWeight: '700', color: '#9CA3AF', letterSpacing: 1 },
@@ -466,17 +517,17 @@ const s = StyleSheet.create({
   bizOptionTxt:   { fontSize: 14, color: '#374151' },
   periodRow:      { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 14, padding: 4 },
   periodBtn:      { flex: 1, paddingVertical: 10, borderRadius: 11, alignItems: 'center' },
-  periodBtnActive:{ backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
+  periodBtnActive:{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB' },
   periodTxt:      { fontSize: 14, fontWeight: '600', color: '#9CA3AF' },
   sectionSup:     { fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 1.2 },
   sectionTitle:   { fontSize: 20, fontWeight: '800', color: '#111827' },
-  kpiCard:        { backgroundColor: '#fff', borderRadius: 20, padding: 16, paddingBottom: 18, gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
+  kpiCard:        { backgroundColor: '#fff', borderRadius: 20, padding: 16, paddingBottom: 18, gap: 6, borderWidth: 1, borderColor: '#F0F0F0' },
   kpiIcon:        { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   kpiPct:         { fontSize: 13, fontWeight: '700' },
   kpiVal:         { fontSize: 26, fontWeight: '900', color: '#111827', marginTop: 4 },
   kpiLabel:       { fontSize: 14, fontWeight: '700', color: '#374151' },
   kpiSub:         { fontSize: 12, color: '#9CA3AF' },
-  chartCard:      { backgroundColor: '#fff', borderRadius: 20, padding: 18, gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  chartCard:      { backgroundColor: '#fff', borderRadius: 20, padding: 18, gap: 6, borderWidth: 1, borderColor: '#F0F0F0' },
   chartTitle:     { fontSize: 18, fontWeight: '800', color: '#111827' },
   chartSub:       { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
   realtimeBadge:  { backgroundColor: '#F0FDF4', borderRadius: 100, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#BBF7D0' },
@@ -485,7 +536,7 @@ const s = StyleSheet.create({
   emptyIcon:      { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   emptyTitle:     { fontSize: 14, fontWeight: '700', color: '#374151' },
   emptySub:       { fontSize: 12, color: '#9CA3AF', marginTop: 1 },
-  actRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 16, padding: 14 },
+  actRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#F0F0F0' },
   actIcon:        { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   createBizBtn:   { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: '#FEF2EC', borderRadius: 18, padding: 16, marginHorizontal: 20, borderWidth: 1, borderColor: '#FDDCCA' },
   createBizIcon:  { width: 44, height: 44, borderRadius: 14, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -496,4 +547,3 @@ const s = StyleSheet.create({
   menuLabel:      { fontSize: 15, fontWeight: '700', color: '#111827' },
   menuSub:        { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
 });
-

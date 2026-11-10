@@ -8,6 +8,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -39,12 +40,51 @@ const EMERGENCY_FRACTION     = 0.75;
 const EMERGENCY_FEE_PCT      = 8;
 
 const PROVIDERS = [
-  { id: "mtn",    label: "MTN Mobile Money", abbr: "MTN",  color: "#FFC107" },
-  { id: "moov",   label: "Moov Money",        abbr: "MOOV", color: "#0056A2" },
-  { id: "wave",   label: "Wave",              abbr: "WAV",  color: "#00B9AE" },
-  { id: "orange", label: "Orange Money",      abbr: "OM",   color: "#FF6600" },
+  { id: "mtn",      label: "MTN Mobile Money", abbr: "MTN",  color: "#FFC107" },
+  { id: "moov",     label: "Moov Money",        abbr: "MOOV", color: "#0056A2" },
+  { id: "wave",     label: "Wave",              abbr: "WAV",  color: "#00B9AE" },
+  { id: "orange",   label: "Orange Money",      abbr: "OM",   color: "#FF6600" },
+  { id: "free",     label: "Free Money",        abbr: "FREE", color: "#E01C24" },
+  { id: "tmoney",   label: "T-Money",           abbr: "TM",   color: "#0099D6" },
+  { id: "airtel",   label: "Airtel Money",      abbr: "AIR",  color: "#E4001C" },
+  { id: "vodafone", label: "Vodafone Cash",     abbr: "VOD",  color: "#E60000" },
 ];
 const BANK_PROVIDER = { id: "bank", label: "Compte bancaire", abbr: "BNK", color: INDIGO };
+
+const PROVIDERS_BY_COUNTRY: Record<string, string[]> = {
+  BJ: ["mtn", "moov"],
+  TG: ["mtn", "moov", "tmoney"],
+  SN: ["wave", "orange", "free"],
+  CI: ["mtn", "moov", "orange", "wave"],
+  ML: ["orange", "moov"],
+  BF: ["moov", "orange"],
+  GN: ["mtn", "orange"],
+  NE: ["moov"],
+  CM: ["mtn", "orange"],
+  GA: ["airtel", "moov"],
+  CG: ["airtel", "mtn"],
+  NG: ["mtn", "airtel"],
+  GH: ["mtn", "vodafone", "airtel"],
+  CD: ["airtel", "orange"],
+};
+
+function getProvidersForCountry(countryCode?: string | null) {
+  if (!countryCode) return PROVIDERS.slice(0, 4);
+  const ids = PROVIDERS_BY_COUNTRY[countryCode.trim().toUpperCase()];
+  if (!ids) return PROVIDERS.slice(0, 4);
+  return ids.map((id) => PROVIDERS.find((p) => p.id === id)!).filter(Boolean);
+}
+
+const IBAN_COUNTRIES = new Set([
+  "BJ","SN","CI","ML","BF","TG","GN","NE",
+  "FR","BE","DE","ES","IT","PT","NL","AT","CH","LU","IE","GR","FI",
+  "SE","DK","NO","PL","CZ","HU","RO","BG","HR","EE","LV","LT","SK","SI","CY","MT",
+  "GB","MA","TN","DZ","MU","RE","GP","MQ","TR",
+]);
+
+function bankFormat(code: string): "iban" | "account" {
+  return IBAN_COUNTRIES.has(code.toUpperCase()) ? "iban" : "account";
+}
 
 type Tab    = "compte" | "historique" | "versements";
 type Period = "jour" | "3j" | "5j" | "sem" | "mois" | "3m" | "6m" | "1an";
@@ -94,7 +134,20 @@ function validateIban(raw: string): string | null {
 
 // ── Avatars ──────────────────────────────────────────────────────────────────
 
+const PROVIDER_LOGOS: Partial<Record<string, any>> = {
+  mtn:  require('@/assets/images/mtn-logo_icon.png'),
+  moov: require('@/assets/images/moov-logo_icon.png'),
+};
+
 function ProviderAvatar({ prov, size = 44 }: { prov: typeof PROVIDERS[0]; size?: number }) {
+  const logo = PROVIDER_LOGOS[prov.id];
+  if (logo) {
+    return (
+      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+        <Image source={logo} style={{ width: size, height: size }} resizeMode="contain" />
+      </View>
+    );
+  }
   const fontSize =
     prov.abbr.length <= 2 ? size * 0.34 : prov.abbr.length === 3 ? size * 0.28 : size * 0.22;
   return (
@@ -127,8 +180,15 @@ function accountLabel(acc: any): string {
 
 function accountSub(acc: any): string {
   if (acc.type === "bank") {
-    const iban = acc.iban ?? "";
-    return iban.length > 8 ? `${iban.slice(0, 4)} •••• ${iban.slice(-4)}` : iban;
+    if (acc.iban) {
+      const iban = acc.iban as string;
+      return iban.length > 8 ? `${iban.slice(0, 4)} •••• ${iban.slice(-4)}` : iban;
+    }
+    if (acc.account_number) {
+      const an = acc.account_number as string;
+      return an.length > 4 ? `•••• ${an.slice(-4)}` : an;
+    }
+    return acc.bank_name ?? "";
   }
   return acc.phone ?? "";
 }
@@ -170,17 +230,21 @@ export default function BusinessWalletScreen({
   const [withdrawOpen, setWithdrawOpen]                 = useState(false);
 
   // ── Wallet config state ──────────────────────────────────────────────
-  type CfgStep = "main" | "pick-account" | "add-type" | "add-mobile" | "add-bank";
+  type CfgStep = "main" | "pick-account" | "add-type" | "add-mobile" | "add-bank-country" | "add-bank";
   const [cfgStep, setCfgStep]               = useState<CfgStep>("main");
   const [wMode, setWMode]                   = useState<"normal" | "emergency">("normal");
   const [selAccountId, setSelAccountId]     = useState<string | null>(null);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [newMobileProv, setNewMobileProv]   = useState("mtn");
   const [newMobilePhone, setNewMobilePhone] = useState("");
-  const [newBankName, setNewBankName]       = useState("");
-  const [newIban, setNewIban]               = useState("");
-  const [phoneError, setPhoneError]         = useState<string | null>(null);
-  const [ibanError, setIbanError]           = useState<string | null>(null);
+  const [newBankName, setNewBankName]             = useState("");
+  const [newIban, setNewIban]                     = useState("");
+  const [newBankCountry, setNewBankCountry]       = useState("");
+  const [newBankSwift, setNewBankSwift]           = useState("");
+  const [newBankAccountNumber, setNewBankAccountNumber] = useState("");
+  const [phoneError, setPhoneError]               = useState<string | null>(null);
+  const [ibanError, setIbanError]                 = useState<string | null>(null);
+  const [bankAccountError, setBankAccountError]   = useState<string | null>(null);
   const [accPickOpen, setAccPickOpen]       = useState(false);
   const [longPressedAccId, setLongPressedAccId] = useState<string | null>(null);
   const [savingW, setSavingW]               = useState(false);
@@ -306,6 +370,9 @@ export default function BusinessWalletScreen({
     if (acc.type === "bank") {
       setNewBankName(acc.bank_name ?? "");
       setNewIban(acc.iban ?? "");
+      setNewBankCountry(acc.bank_country ?? "");
+      setNewBankSwift(acc.swift ?? "");
+      setNewBankAccountNumber(acc.account_number ?? "");
       setCfgStep("add-bank");
     } else {
       setNewMobileProv(acc.provider ?? "mtn");
@@ -358,25 +425,44 @@ export default function BusinessWalletScreen({
   };
 
   const saveNewBank = async () => {
-    if (!newBankName.trim()) { Alert.alert("Erreur", "Nom de la banque requis."); return; }
-    const err = validateIban(newIban);
-    if (err) { setIbanError(err); return; }
+    const fmt = bankFormat(newBankCountry || "BJ");
     setIbanError(null);
-    const normalizedIban = newIban.replace(/\s/g, "").toUpperCase();
+    setBankAccountError(null);
+
+    if (!newBankName.trim()) { Alert.alert("Erreur", "Le nom de la banque est obligatoire."); return; }
+    if (!newBankCountry) { Alert.alert("Erreur", "Veuillez sélectionner le pays de la banque."); return; }
+
+    if (fmt === "iban") {
+      const err = validateIban(newIban);
+      if (err) { setIbanError(err); return; }
+    } else {
+      if (!newBankAccountNumber.trim()) { setBankAccountError("Le numéro de compte est obligatoire."); return; }
+      if (!newBankSwift.trim()) { Alert.alert("Erreur", "Le code SWIFT/BIC est obligatoire."); return; }
+      if (!/^[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/i.test(newBankSwift.trim())) {
+        Alert.alert("Erreur", "Code SWIFT invalide. Exemple : ECOCBENIXXXX");
+        return;
+      }
+    }
+
+    const normalizedIban = fmt === "iban" ? newIban.replace(/\s/g, "").toUpperCase() : null;
     setSavingW(true);
     try {
+      const payload: any = {
+        bank_name: newBankName.trim(),
+        bank_country: newBankCountry,
+        iban: normalizedIban,
+        swift: fmt === "account" ? newBankSwift.trim().toUpperCase() : null,
+        account_number: fmt === "account" ? newBankAccountNumber.trim() : null,
+      };
       if (editingAccountId) {
-        await supabase.from("wallet_accounts")
-          .update({ bank_name: newBankName.trim(), iban: normalizedIban })
-          .eq("id", editingAccountId);
+        await supabase.from("wallet_accounts").update(payload).eq("id", editingAccountId);
       } else {
-        await supabase.from("wallet_accounts").insert({
-          business_id: bizId, type: "bank",
-          bank_name: newBankName.trim(), iban: normalizedIban,
-        });
+        await supabase.from("wallet_accounts").insert({ business_id: bizId, type: "bank", ...payload });
       }
       await qc.invalidateQueries({ queryKey: ["wallet-accounts", bizId] });
-      setNewIban(""); setNewBankName(""); setEditingAccountId(null);
+      setNewIban(""); setNewBankName(""); setNewBankCountry("");
+      setNewBankSwift(""); setNewBankAccountNumber("");
+      setEditingAccountId(null);
       setCfgStep("main");
     } catch (e: any) { Alert.alert("Erreur", e.message); }
     finally { setSavingW(false); }
@@ -558,10 +644,12 @@ export default function BusinessWalletScreen({
             {balHidden ? "••••" : balance.toLocaleString("fr-FR")}{" "}
             <Text style={s.soldeCur}>FCFA</Text>
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN }} />
-            <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>Compte actif et sécurisé</Text>
-          </View>
+          {hasBizW && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN }} />
+              <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>Compte actif et sécurisé</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -891,123 +979,232 @@ export default function BusinessWalletScreen({
               </>)}
 
               {/* ── STEP: add-type ──────────────────────────────────────── */}
-              {cfgStep === "add-type" && (<>
-                <View style={s.cfgHeader}>
-                  <TouchableOpacity style={s.cfgNavBtn} onPress={() => setCfgStep("main")}>
-                    <Feather name="chevron-left" size={22} color="#374151" />
-                  </TouchableOpacity>
-                  <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={s.cfgTitle}>Type de compte</Text>
+              {cfgStep === "add-type" && (() => {
+                const bizCountry = biz?.country ?? biz?.country_code ?? null;
+                const availProviders = getProvidersForCountry(bizCountry);
+                const mobileSub = availProviders.slice(0, 3).map(p => p.label.split(" ")[0]).join(", ") + "…";
+                return (<>
+                  <View style={s.cfgHeader}>
+                    <TouchableOpacity style={s.cfgNavBtn} onPress={() => setCfgStep("main")}>
+                      <Feather name="chevron-left" size={22} color="#374151" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1, alignItems: "center" }}>
+                      <Text style={s.cfgTitle}>Type de compte</Text>
+                    </View>
+                    <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
+                      <Feather name="x" size={20} color="#374151" />
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
-                    <Feather name="x" size={20} color="#374151" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ gap: 10, marginTop: 16 }}>
-                  <TouchableOpacity style={s.addAccountRow} onPress={() => { setNewMobilePhone(""); setCfgStep("add-mobile"); }} activeOpacity={0.75}>
-                    <View style={[s.settingsIconWrap, { backgroundColor: ORANGE + "22", borderRadius: 12 }]}>
-                      <Feather name="smartphone" size={20} color={ORANGE} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>Mobile Money</Text>
-                      <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>MTN, Moov, Wave, Orange…</Text>
-                    </View>
-                    <Feather name="chevron-right" size={16} color="#9CA3AF" />
-                  </TouchableOpacity>
-                  <View style={s.settingsDivider} />
-                  <TouchableOpacity style={s.addAccountRow} onPress={() => { setNewIban(""); setNewBankName(""); setCfgStep("add-bank"); }} activeOpacity={0.75}>
-                    <View style={[s.settingsIconWrap, { backgroundColor: INDIGO + "22", borderRadius: 12 }]}>
-                      <FontAwesome6 name="building-columns" size={18} color={INDIGO} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>Compte bancaire</Text>
-                      <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>Virement via IBAN</Text>
-                    </View>
-                    <Feather name="chevron-right" size={16} color="#9CA3AF" />
-                  </TouchableOpacity>
-                </View>
-              </>)}
+                  <View style={{ gap: 10, marginTop: 16 }}>
+                    <TouchableOpacity style={s.addAccountRow} onPress={() => { setNewMobilePhone(""); setCfgStep("add-mobile"); }} activeOpacity={0.75}>
+                      <View style={[s.settingsIconWrap, { backgroundColor: ORANGE + "22", borderRadius: 12 }]}>
+                        <Feather name="smartphone" size={20} color={ORANGE} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>Mobile Money</Text>
+                        <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>{mobileSub}</Text>
+                      </View>
+                      <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+                    <View style={s.settingsDivider} />
+                    <TouchableOpacity style={s.addAccountRow}
+                      onPress={() => { setNewIban(""); setNewBankName(""); setNewBankCountry(""); setNewBankSwift(""); setNewBankAccountNumber(""); setCfgStep("add-bank-country"); }}
+                      activeOpacity={0.75}>
+                      <View style={[s.settingsIconWrap, { backgroundColor: INDIGO + "22", borderRadius: 12 }]}>
+                        <Image source={require('@/assets/images/bank_icon.png')} style={{ width: 24, height: 24 }} resizeMode="contain" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>Compte bancaire</Text>
+                        <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>IBAN, SWIFT ou numéro de compte</Text>
+                      </View>
+                      <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+                  </View>
+                </>);
+              })()}
 
               {/* ── STEP: add-mobile ────────────────────────────────────── */}
-              {cfgStep === "add-mobile" && (<>
+              {cfgStep === "add-mobile" && (() => {
+                const bizCountry = biz?.country ?? biz?.country_code ?? null;
+                const availProviders = getProvidersForCountry(bizCountry);
+                const validProv = availProviders.find(p => p.id === newMobileProv)
+                  ? newMobileProv : (availProviders[0]?.id ?? "mtn");
+                return (<>
+                  <View style={s.cfgHeader}>
+                    <TouchableOpacity style={s.cfgNavBtn}
+                      onPress={() => { setPhoneError(null); setCfgStep(editingAccountId ? "main" : "add-type"); }}>
+                      <Feather name="chevron-left" size={22} color="#374151" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1, alignItems: "center" }}>
+                      <Text style={s.cfgTitle}>{editingAccountId ? "Modifier" : "Nouveau"} Mobile Money</Text>
+                    </View>
+                    <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
+                      <Feather name="x" size={20} color="#374151" />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ gap: 10, marginTop: 16 }}>
+                    {availProviders.map((p) => {
+                      const selected = validProv === p.id;
+                      return (
+                        <TouchableOpacity key={p.id}
+                          style={[s.provRow, selected && { borderColor: ORANGE, backgroundColor: "#FFF5F2" }]}
+                          onPress={() => setNewMobileProv(p.id)} activeOpacity={0.75}>
+                          <ProviderAvatar prov={p} size={40} />
+                          <Text style={[s.provRowLabel, selected && { color: "#111827" }]}>{p.label}</Text>
+                          <View style={[s.radioOuter, selected && { borderColor: ORANGE, borderWidth: 2 }]}>
+                            {selected && <View style={[s.radioInner, { backgroundColor: ORANGE, width: 12, height: 12, borderRadius: 6 }]} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={{ gap: 6, marginTop: 12 }}>
+                    <Text style={s.inputLabel}>Numéro de téléphone <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                    <TextInput style={[s.input, phoneError && { borderColor: "#EF4444" }]}
+                      value={newMobilePhone} onChangeText={(t) => { setNewMobilePhone(t); setPhoneError(null); }}
+                      placeholder="229 01 23 45 67" placeholderTextColor="#9CA3AF" keyboardType="phone-pad" />
+                    {phoneError && <Text style={s.fieldError}>{phoneError}</Text>}
+                  </View>
+                  <TouchableOpacity style={[s.confirmBtn, { marginTop: 16 }, savingW && { opacity: 0.7 }]}
+                    onPress={saveNewMobile} disabled={savingW}>
+                    {savingW ? <ActivityIndicator color="#fff" /> : <Text style={s.confirmBtnTxt}>Enregistrer</Text>}
+                  </TouchableOpacity>
+                </>);
+              })()}
+
+              {/* ── STEP: add-bank-country ──────────────────────────────── */}
+              {cfgStep === "add-bank-country" && (<>
                 <View style={s.cfgHeader}>
-                  <TouchableOpacity style={s.cfgNavBtn}
-                    onPress={() => { setPhoneError(null); setCfgStep(editingAccountId ? "main" : "add-type"); }}>
+                  <TouchableOpacity style={s.cfgNavBtn} onPress={() => setCfgStep("add-type")}>
                     <Feather name="chevron-left" size={22} color="#374151" />
                   </TouchableOpacity>
                   <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={s.cfgTitle}>{editingAccountId ? "Modifier" : "Nouveau"} Mobile Money</Text>
+                    <Text style={s.cfgTitle}>Pays de la banque</Text>
+                    <Text style={s.cfgSubtitle}>Détermine le format de compte</Text>
                   </View>
                   <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
                     <Feather name="x" size={20} color="#374151" />
                   </TouchableOpacity>
                 </View>
-                <View style={{ gap: 10, marginTop: 16 }}>
-                  {PROVIDERS.map((p) => {
-                    const selected = newMobileProv === p.id;
+                <ScrollView style={{ maxHeight: 340, marginTop: 16 }} showsVerticalScrollIndicator={false}>
+                  {[
+                    { code: "BJ", flag: "🇧🇯", name: "Bénin" },
+                    { code: "SN", flag: "🇸🇳", name: "Sénégal" },
+                    { code: "CI", flag: "🇨🇮", name: "Côte d'Ivoire" },
+                    { code: "TG", flag: "🇹🇬", name: "Togo" },
+                    { code: "ML", flag: "🇲🇱", name: "Mali" },
+                    { code: "BF", flag: "🇧🇫", name: "Burkina Faso" },
+                    { code: "GN", flag: "🇬🇳", name: "Guinée" },
+                    { code: "NE", flag: "🇳🇪", name: "Niger" },
+                    { code: "CM", flag: "🇨🇲", name: "Cameroun" },
+                    { code: "GA", flag: "🇬🇦", name: "Gabon" },
+                    { code: "CG", flag: "🇨🇬", name: "Congo" },
+                    { code: "NG", flag: "🇳🇬", name: "Nigeria" },
+                    { code: "GH", flag: "🇬🇭", name: "Ghana" },
+                    { code: "CD", flag: "🇨🇩", name: "RD Congo" },
+                    { code: "FR", flag: "🇫🇷", name: "France" },
+                    { code: "BE", flag: "🇧🇪", name: "Belgique" },
+                    { code: "DE", flag: "🇩🇪", name: "Allemagne" },
+                    { code: "GB", flag: "🇬🇧", name: "Royaume-Uni" },
+                    { code: "MA", flag: "🇲🇦", name: "Maroc" },
+                    { code: "TN", flag: "🇹🇳", name: "Tunisie" },
+                    { code: "CA", flag: "🇨🇦", name: "Canada" },
+                  ].map(({ code, flag, name }) => {
+                    const fmt2 = bankFormat(code);
+                    const selected = newBankCountry === code;
                     return (
-                      <TouchableOpacity key={p.id}
-                        style={[s.provRow, selected && { borderColor: ORANGE, backgroundColor: "#FFF5F2" }]}
-                        onPress={() => setNewMobileProv(p.id)} activeOpacity={0.75}>
-                        <ProviderAvatar prov={p} size={40} />
-                        <Text style={[s.provRowLabel, selected && { color: "#111827" }]}>{p.label}</Text>
+                      <TouchableOpacity key={code}
+                        style={[s.provRow, { marginBottom: 8 }, selected && { borderColor: ORANGE, backgroundColor: "#FFF5F2" }]}
+                        onPress={() => { setNewBankCountry(code); setCfgStep("add-bank"); }}
+                        activeOpacity={0.75}>
+                        <Text style={{ fontSize: 26 }}>{flag}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.provRowLabel, selected && { color: "#111827" }]}>{name}</Text>
+                          <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
+                            {fmt2 === "iban" ? "Format IBAN + BIC" : "Numéro de compte + SWIFT"}
+                          </Text>
+                        </View>
                         <View style={[s.radioOuter, selected && { borderColor: ORANGE, borderWidth: 2 }]}>
                           {selected && <View style={[s.radioInner, { backgroundColor: ORANGE, width: 12, height: 12, borderRadius: 6 }]} />}
                         </View>
                       </TouchableOpacity>
                     );
                   })}
-                </View>
-                <View style={{ gap: 6, marginTop: 12 }}>
-                  <Text style={s.inputLabel}>Numéro de téléphone</Text>
-                  <TextInput style={[s.input, phoneError && { borderColor: "#EF4444" }]}
-                    value={newMobilePhone} onChangeText={(t) => { setNewMobilePhone(t); setPhoneError(null); }}
-                    placeholder="229 01 23 45 67" placeholderTextColor="#9CA3AF" keyboardType="phone-pad" />
-                  {phoneError && <Text style={s.fieldError}>{phoneError}</Text>}
-                </View>
-                <TouchableOpacity style={[s.confirmBtn, { marginTop: 16 }, savingW && { opacity: 0.7 }]}
-                  onPress={saveNewMobile} disabled={savingW}>
-                  {savingW ? <ActivityIndicator color="#fff" /> : <Text style={s.confirmBtnTxt}>Enregistrer</Text>}
-                </TouchableOpacity>
+                </ScrollView>
               </>)}
 
               {/* ── STEP: add-bank ──────────────────────────────────────── */}
-              {cfgStep === "add-bank" && (<>
-                <View style={s.cfgHeader}>
-                  <TouchableOpacity style={s.cfgNavBtn}
-                    onPress={() => { setIbanError(null); setCfgStep(editingAccountId ? "main" : "add-type"); }}>
-                    <Feather name="chevron-left" size={22} color="#374151" />
+              {cfgStep === "add-bank" && (() => {
+                const fmt2 = bankFormat(newBankCountry || "BJ");
+                return (<>
+                  <View style={s.cfgHeader}>
+                    <TouchableOpacity style={s.cfgNavBtn}
+                      onPress={() => { setIbanError(null); setBankAccountError(null); setCfgStep(editingAccountId ? "main" : "add-bank-country"); }}>
+                      <Feather name="chevron-left" size={22} color="#374151" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1, alignItems: "center" }}>
+                      <Text style={s.cfgTitle}>{editingAccountId ? "Modifier" : "Nouveau"} compte bancaire</Text>
+                      {newBankCountry ? <Text style={s.cfgSubtitle}>Format {fmt2 === "iban" ? "IBAN" : "international"}</Text> : null}
+                    </View>
+                    <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
+                      <Feather name="x" size={20} color="#374151" />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ gap: 12, marginTop: 16 }}>
+                    {/* Nom de la banque — toujours obligatoire */}
+                    <View style={{ gap: 6 }}>
+                      <Text style={s.inputLabel}>Nom de la banque <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                      <TextInput style={s.input} value={newBankName} onChangeText={setNewBankName}
+                        placeholder="Ex: Ecobank, UBA, BNP…" placeholderTextColor="#9CA3AF" />
+                    </View>
+
+                    {fmt2 === "iban" ? (<>
+                      {/* IBAN — obligatoire */}
+                      <View style={{ gap: 6 }}>
+                        <Text style={s.inputLabel}>IBAN <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                        <TextInput style={[s.input, ibanError && { borderColor: "#EF4444" }]}
+                          value={newIban} onChangeText={(t) => { setNewIban(t); setIbanError(null); }}
+                          placeholder="BJ66 BJ011 0100400271101160" placeholderTextColor="#9CA3AF"
+                          autoCapitalize="characters" autoCorrect={false} />
+                        {ibanError && <Text style={s.fieldError}>{ibanError}</Text>}
+                        <Text style={{ fontSize: 11, color: "#9CA3AF" }}>Vérifié automatiquement (mod-97).</Text>
+                      </View>
+                      {/* BIC/SWIFT — optionnel pour IBAN */}
+                      <View style={{ gap: 6 }}>
+                        <Text style={s.inputLabel}>BIC / SWIFT <Text style={{ color: "#9CA3AF", fontSize: 10 }}>(optionnel)</Text></Text>
+                        <TextInput style={s.input} value={newBankSwift}
+                          onChangeText={(t) => setNewBankSwift(t.toUpperCase())}
+                          placeholder="Ex: ECOCBENIXXXX" placeholderTextColor="#9CA3AF"
+                          autoCapitalize="characters" autoCorrect={false} />
+                      </View>
+                    </>) : (<>
+                      {/* Numéro de compte — obligatoire */}
+                      <View style={{ gap: 6 }}>
+                        <Text style={s.inputLabel}>Numéro de compte <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                        <TextInput style={[s.input, bankAccountError && { borderColor: "#EF4444" }]}
+                          value={newBankAccountNumber}
+                          onChangeText={(t) => { setNewBankAccountNumber(t); setBankAccountError(null); }}
+                          placeholder="Ex: 0123456789" placeholderTextColor="#9CA3AF"
+                          keyboardType="default" autoCorrect={false} />
+                        {bankAccountError && <Text style={s.fieldError}>{bankAccountError}</Text>}
+                      </View>
+                      {/* SWIFT — obligatoire si pas IBAN */}
+                      <View style={{ gap: 6 }}>
+                        <Text style={s.inputLabel}>Code SWIFT / BIC <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                        <TextInput style={s.input} value={newBankSwift}
+                          onChangeText={(t) => setNewBankSwift(t.toUpperCase())}
+                          placeholder="Ex: ECOCNGLAXXX" placeholderTextColor="#9CA3AF"
+                          autoCapitalize="characters" autoCorrect={false} />
+                        <Text style={{ fontSize: 11, color: "#9CA3AF" }}>8 ou 11 caractères. Requis pour les virements internationaux.</Text>
+                      </View>
+                    </>)}
+                  </View>
+                  <TouchableOpacity style={[s.confirmBtn, { marginTop: 16 }, savingW && { opacity: 0.7 }]}
+                    onPress={saveNewBank} disabled={savingW}>
+                    {savingW ? <ActivityIndicator color="#fff" /> : <Text style={s.confirmBtnTxt}>Enregistrer</Text>}
                   </TouchableOpacity>
-                  <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={s.cfgTitle}>{editingAccountId ? "Modifier" : "Nouveau"} compte bancaire</Text>
-                  </View>
-                  <TouchableOpacity style={s.cfgNavBtn} onPress={() => setConfigOpen(false)}>
-                    <Feather name="x" size={20} color="#374151" />
-                  </TouchableOpacity>
-                </View>
-                <View style={{ gap: 12, marginTop: 16 }}>
-                  <View style={{ gap: 6 }}>
-                    <Text style={s.inputLabel}>Nom de la banque</Text>
-                    <TextInput style={s.input} value={newBankName} onChangeText={setNewBankName}
-                      placeholder="Ex: Ecobank, UBA…" placeholderTextColor="#9CA3AF" />
-                  </View>
-                  <View style={{ gap: 6 }}>
-                    <Text style={s.inputLabel}>IBAN</Text>
-                    <TextInput style={[s.input, ibanError && { borderColor: "#EF4444" }]}
-                      value={newIban} onChangeText={(t) => { setNewIban(t); setIbanError(null); }}
-                      placeholder="BJ66 BJ011 0100400271101160" placeholderTextColor="#9CA3AF"
-                      autoCapitalize="characters" autoCorrect={false} />
-                    {ibanError && <Text style={s.fieldError}>{ibanError}</Text>}
-                    <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
-                      L'IBAN sera vérifié automatiquement (algorithme mod-97).
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={[s.confirmBtn, { marginTop: 16 }, savingW && { opacity: 0.7 }]}
-                  onPress={saveNewBank} disabled={savingW}>
-                  {savingW ? <ActivityIndicator color="#fff" /> : <Text style={s.confirmBtnTxt}>Enregistrer</Text>}
-                </TouchableOpacity>
-              </>)}
+                </>);
+              })()}
 
             </View>
           </TouchableOpacity>
@@ -1053,7 +1250,7 @@ export default function BusinessWalletScreen({
                     <Text style={s.wsCurrentKey}>Mode</Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <Feather name={autoMode ? "zap" : "user"} size={13} color="rgba(255,255,255,0.7)" />
-                      <Text style={s.wsCurrentVal}>{autoMode ? "Automatique" : "Manuel"}{" — seuil "}{fmt(threshold)}</Text>
+                      <Text style={s.wsCurrentVal}>{autoMode ? "Automatique" : "Manuel"}</Text>
                     </View>
                   </View>
                   <View style={[s.wsCurrentRow, { borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.07)", marginTop: 10, paddingTop: 10 }]}>
@@ -1063,7 +1260,7 @@ export default function BusinessWalletScreen({
                 </View>
 
                 {/* Compte de réception */}
-                <TouchableOpacity style={s.wsNavCard} activeOpacity={0.78}
+                <TouchableOpacity style={[s.wsNavCard, { shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: "#F0F0F0" }]} activeOpacity={0.78}
                   onPress={() => {
                     if (!hasBizW) { setWithdrawSettingsOpen(false); setTimeout(openConfig, 200); }
                     else setWsStep("pick-account");
@@ -1083,7 +1280,7 @@ export default function BusinessWalletScreen({
                 </TouchableOpacity>
 
                 {/* Type de versement */}
-                <TouchableOpacity style={s.wsNavCard} onPress={() => setWsStep("pick-mode")} activeOpacity={0.78}>
+                <TouchableOpacity style={[s.wsNavCard, { shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: "#F0F0F0" }]} onPress={() => setWsStep("pick-mode")} activeOpacity={0.78}>
                   <View style={[s.settingsIconWrap, { backgroundColor: INDIGO + "22" }]}>
                     <Feather name="sliders" size={20} color={INDIGO} />
                   </View>
@@ -1094,19 +1291,6 @@ export default function BusinessWalletScreen({
                   <Feather name="chevron-right" size={18} color="#9CA3AF" />
                 </TouchableOpacity>
 
-                {/* Info seuil */}
-                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10,
-                  backgroundColor: INDIGO + "11", borderRadius: 14, padding: 14, borderWidth: 1, borderColor: INDIGO + "22" }}>
-                  <Feather name="info" size={16} color={INDIGO} style={{ marginTop: 1 }} />
-                  <Text style={{ flex: 1, fontSize: 12, color: INDIGO, lineHeight: 18 }}>
-                    Le seuil minimal est fixé par Bimoh à{" "}
-                    <Text style={{ fontWeight: "800" }}>{fmt(threshold)}</Text>{" "}
-                    pour un compte {isBankProvider ? "bancaire" : "mobile money"}.
-                    {isBankProvider
-                      ? " Des frais s'appliquent sur chaque versement bancaire."
-                      : " Aucun frais sur les versements mobile money."}
-                  </Text>
-                </View>
               </ScrollView>
 
               <View style={{ position: "absolute", bottom: insets.bottom + 20, left: 20, right: 20 }}>
@@ -1344,7 +1528,7 @@ const s = StyleSheet.create({
   floatingCard: {
     marginHorizontal: 16, marginTop: -52, backgroundColor: "#fff", borderRadius: 24,
     paddingTop: 18, paddingHorizontal: 16, paddingBottom: 0,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 12,
+    borderWidth: 1, borderColor: "#F0F0F0",
   },
   withdrawBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
     backgroundColor: SALMON, borderRadius: 16, paddingVertical: 17, marginBottom: 18 },
@@ -1362,7 +1546,7 @@ const s = StyleSheet.create({
   tabIconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   tabLabel: { fontSize: 12, fontWeight: "600", color: "#9CA3AF" },
   card: { backgroundColor: "#fff", borderRadius: 20, padding: 18, gap: 14,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+    borderWidth: 1, borderColor: "#F0F0F0" },
   emptyCard: { alignItems: "center", gap: 8, paddingVertical: 28, backgroundColor: "#FAFAFA",
     borderRadius: 14, borderWidth: 1.5, borderColor: "#F3F4F6" },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" },

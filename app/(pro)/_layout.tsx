@@ -2,23 +2,27 @@
 import { Feather } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ORANGE = '#FF6835';
 const MUTED  = '#9CA3AF';
 
 function TabIcon({
-  name, label, focused,
+  name, label, focused, customIcon,
 }: {
-  name: React.ComponentProps<typeof Feather>['name'];
+  name?: React.ComponentProps<typeof Feather>['name'];
   label: string;
   focused: boolean;
+  customIcon?: any;
 }) {
   return (
     <View style={s.tabItem}>
       {focused && <View style={s.indicator}/>}
-      <Feather name={name} size={22} color={focused ? ORANGE : MUTED}/>
+      {customIcon
+        ? <Image source={customIcon} style={{ width:22, height:22, tintColor: focused ? ORANGE : MUTED }} resizeMode="contain"/>
+        : <Feather name={name!} size={22} color={focused ? ORANGE : MUTED}/>
+      }
       <Text style={[s.tabLabel, focused && s.tabLabelActive]}>{label}</Text>
     </View>
   );
@@ -74,21 +78,27 @@ export default function ProLayout() {
         name="boutique"
         options={{
           tabBarIcon: ({ focused }) =>
-            <TabIcon name="shopping-bag" label="Boutique" focused={focused}/>,
+            <TabIcon
+              label="Boutique"
+              focused={focused}
+              customIcon={require('@/assets/images/shop_icon.png')}
+            />,
         }}/>
 
       {/* ── Écrans cachés de la tab bar ── */}
-      <Tabs.Screen name="merchant-welcome" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
-      <Tabs.Screen name="orders/[id]"   options={{ href: null }}/>
-      <Tabs.Screen name="notifications"  options={{ href: null }}/>
-      <Tabs.Screen name="bookings"         options={{ href: null }}/>
-      <Tabs.Screen name="hours"            options={{ href: null }}/>
-      <Tabs.Screen name="profile"          options={{ href: null }}/>
-      <Tabs.Screen name="business/[id]"    options={{ href: null }}/>
+      <Tabs.Screen name="merchant-welcome"  options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+      <Tabs.Screen name="orders/[id]"       options={{ href: null }}/>
+      <Tabs.Screen name="bookings/[id]"     options={{ href: null }}/>
+      <Tabs.Screen name="notifications"     options={{ href: null }}/>
+      <Tabs.Screen name="bookings"          options={{ href: null }}/>
+      <Tabs.Screen name="hours"             options={{ href: null }}/>
+      <Tabs.Screen name="profile"           options={{ href: null }}/>
+      <Tabs.Screen name="business/[id]"     options={{ href: null }}/>
       <Tabs.Screen name="business/settings" options={{ href: null }}/>
-      <Tabs.Screen name="business/wallet"  options={{ href: null }}/>
-      <Tabs.Screen name="catalog/edit"     options={{ href: null }}/>
-      <Tabs.Screen name="catalog/index"    options={{ href: null }}/>
+      <Tabs.Screen name="business/wallet"   options={{ href: null }}/>
+      <Tabs.Screen name="catalog/edit"      options={{ href: null }}/>
+      <Tabs.Screen name="catalog/slots"     options={{ href: null }}/>
+      <Tabs.Screen name="catalog/index"     options={{ href: null }}/>
       <Tabs.Screen name="register"          options={{ href: null, tabBarStyle: { display: 'none' } }}/>
 
     </Tabs>

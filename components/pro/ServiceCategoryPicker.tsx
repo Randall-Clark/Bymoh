@@ -1,29 +1,31 @@
 // components/pro/ServiceCategoryPicker.tsx
 import { Feather } from '@expo/vector-icons';
-import React from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Animated, Image, Modal, StyleSheet, Text, TouchableOpacity, View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type ServiceCategory = 'at_merchant' | 'at_client' | 'hybrid';
 
 interface CatInfo {
-  id: ServiceCategory; emoji: string; label: string;
+  id: ServiceCategory; icon: any; label: string;
   desc: string; examples: string; color: string; bg: string;
 }
 
 export const SERVICE_CATEGORIES: CatInfo[] = [
   {
     id:       'at_merchant',
-    emoji:    '🏪',
+    icon:     require('@/assets/images/pick-up_icon.png'),
     label:    'Chez le marchand',
     desc:     'Le client se deplace dans votre boutique ou local',
     examples: 'Coiffure, restaurant, couture, reparation...',
-    color:    '#1E3A5F',
-    bg:       '#EEF2FF',
+    color:    '#FF6835',
+    bg:       '#FEF2EC',
   },
   {
     id:       'at_client',
-    emoji:    '🏠',
+    icon:     require('@/assets/images/delivery_icon.png'),
     label:    'Chez le client',
     desc:     'Vous vous deplacez chez le client',
     examples: 'Massage, plomberie, electricite, menage...',
@@ -32,7 +34,7 @@ export const SERVICE_CATEGORIES: CatInfo[] = [
   },
   {
     id:       'hybrid',
-    emoji:    '🔄',
+    icon:     require('@/assets/images/pick-del_icon.png'),
     label:    'Hybride',
     desc:     'Disponible en boutique ou a domicile',
     examples: 'Coaching, consultation, cours particuliers...',
@@ -50,16 +52,51 @@ interface Props {
 export function ServiceCategoryPicker({ visible, onClose, onSelect }: Props) {
   const insets = useSafeAreaInsets();
 
+  const [mounted, setMounted] = useState(false);
+  const overlayOpacity  = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(500)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      Animated.parallel([
+        Animated.timing(overlayOpacity,  { toValue:1, duration:220, useNativeDriver:true }),
+        Animated.spring(sheetTranslateY, { toValue:0, useNativeDriver:true, damping:22, stiffness:220 }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(overlayOpacity,  { toValue:0, duration:180, useNativeDriver:true }),
+        Animated.timing(sheetTranslateY, { toValue:500, duration:200, useNativeDriver:true }),
+      ]).start(() => setMounted(false));
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity,  { toValue:0, duration:180, useNativeDriver:true }),
+      Animated.timing(sheetTranslateY, { toValue:500, duration:200, useNativeDriver:true }),
+    ]).start(() => { setMounted(false); onClose(); });
+  };
+
+  const handleSelect = (cat: ServiceCategory) => {
+    Animated.parallel([
+      Animated.timing(overlayOpacity,  { toValue:0, duration:180, useNativeDriver:true }),
+      Animated.timing(sheetTranslateY, { toValue:500, duration:200, useNativeDriver:true }),
+    ]).start(() => { setMounted(false); onSelect(cat); onClose(); });
+  };
+
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose} />
-      <View style={[s.sheet, { paddingBottom: insets.bottom + 20 }]}>
-        <View style={s.handle} />
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={handleClose}>
+      {/* Fond — fondu doux */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { backgroundColor:'rgba(0,0,0,0.55)' }, { opacity: overlayOpacity }]}
+        pointerEvents="box-none">
+        <TouchableOpacity style={{ flex:1 }} activeOpacity={1} onPress={handleClose}/>
+      </Animated.View>
+
+      {/* Sheet — glisse depuis le bas */}
+      <Animated.View style={[s.sheet, { paddingBottom: insets.bottom + 20 }, { transform:[{ translateY: sheetTranslateY }] }]}>
+        <View style={s.handle}/>
         <Text style={s.title}>Quel type de service ?</Text>
         <Text style={s.sub}>Choisissez la categorie pour adapter le formulaire</Text>
 
@@ -67,27 +104,25 @@ export function ServiceCategoryPicker({ visible, onClose, onSelect }: Props) {
           <TouchableOpacity
             key={cat.id}
             style={[s.card, { borderColor: cat.color + '40' }]}
-            onPress={() => { onSelect(cat.id); onClose(); }}
-            activeOpacity={0.85}
-          >
+            onPress={() => handleSelect(cat.id)}
+            activeOpacity={0.85}>
             <View style={[s.iconWrap, { backgroundColor: cat.bg }]}>
-              <Text style={{ fontSize: 26 }}>{cat.emoji}</Text>
+              <Image source={cat.icon} style={{ width:30, height:30 }} resizeMode="contain"/>
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex:1 }}>
               <Text style={[s.cardLabel, { color: cat.color }]}>{cat.label}</Text>
               <Text style={s.cardDesc}>{cat.desc}</Text>
               <Text style={s.cardExamples}>{cat.examples}</Text>
             </View>
-            <Feather name="chevron-right" size={18} color={cat.color} />
+            <Feather name="chevron-right" size={18} color={cat.color}/>
           </TouchableOpacity>
         ))}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop:     { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.55)' },
   sheet:        { position:'absolute', bottom:0, left:0, right:0, backgroundColor:'#fff', borderTopLeftRadius:24, borderTopRightRadius:24, padding:20, gap:12 },
   handle:       { width:40, height:4, borderRadius:2, backgroundColor:'#E5E7EB', alignSelf:'center', marginBottom:4 },
   title:        { fontSize:20, fontWeight:'800', color:'#111827' },

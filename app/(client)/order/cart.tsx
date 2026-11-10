@@ -153,7 +153,7 @@ export default function CartScreen() {
       {
         id:             item.service_id ?? item.id,
         title:          item.title,
-        price:          item.price,
+        price:          item.customPrice ?? item.price,
         image_url:      item.image_url,
         allows_booking: false,
         is_available:   true,
@@ -163,6 +163,8 @@ export default function CartScreen() {
       } as any,
       item.business_id ?? '',
       item.business_name ?? '',
+      item.selectedOptions ?? undefined,
+      item.customPrice ?? undefined,
     );
   }, [addToCart, getStock]);
 
@@ -172,14 +174,14 @@ export default function CartScreen() {
       setPendingDelete(item);
     } else {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      updateQuantity((item.service_id ?? item.id) as string, item.quantity - 1);
+      updateQuantity((item.cartKey ?? item.service_id ?? item.id) as string, item.quantity - 1);
     }
   }, [updateQuantity]);
 
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    removeFromCart((pendingDelete.service_id ?? pendingDelete.id) as string);
+    removeFromCart((pendingDelete.cartKey ?? pendingDelete.service_id ?? pendingDelete.id) as string);
     setPendingDelete(null);
   }, [pendingDelete, removeFromCart]);
 
@@ -246,7 +248,7 @@ export default function CartScreen() {
           {items.map((item: any, index) => {
             const unavailable = isUnavailable(item);
             return (
-              <View key={item.service_id ?? item.id ?? String(index)}>
+              <View key={item.cartKey ?? item.service_id ?? item.id ?? String(index)}>
                 {index > 0 && <View style={s.divider} />}
                 <View style={[s.itemRow, unavailable && s.itemRowUnavailable]}>
 
@@ -277,9 +279,14 @@ export default function CartScreen() {
                     <Text style={[s.itemTitle, unavailable && s.textUnavailable]} numberOfLines={2}>
                       {item.title}
                     </Text>
+                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                      <Text style={s.itemOptions} numberOfLines={2}>
+                        {item.selectedOptions.map((o: any) => o.optionLabel).join(' · ')}
+                      </Text>
+                    )}
                     {unavailable
                       ? <Text style={s.unavailableLabel}>Plus disponible</Text>
-                      : <Text style={s.itemPrice}>{formatPrice(item.price)}</Text>
+                      : <Text style={s.itemPrice}>{formatPrice(item.customPrice ?? item.price)}</Text>
                     }
                   </View>
 
@@ -289,7 +296,7 @@ export default function CartScreen() {
                       style={s.removeBtn}
                       onPress={() => {
                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        removeFromCart((item.service_id ?? item.id) as string);
+                        removeFromCart((item.cartKey ?? item.service_id ?? item.id) as string);
                       }}
                     >
                       <Feather name="trash-2" size={15} color="#EF4444" />
@@ -459,6 +466,7 @@ const s = StyleSheet.create({
   textUnavailable:    { color: '#9CA3AF', textDecorationLine: 'line-through' },
   itemPrice:          { fontSize: 14, fontWeight: '700', color: '#111827' },
   unavailableLabel:   { fontSize: 12, fontWeight: '600', color: '#EF4444' },
+  itemOptions:        { fontSize: 11, color: '#9CA3AF', fontWeight: '500', marginTop: 1 },
 
   // ── Remove button (unavailable) ──
   removeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },

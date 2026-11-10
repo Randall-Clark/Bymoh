@@ -109,14 +109,69 @@ type SectionModalData =
   | null;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Calcule le prix final après promo et le label du badge */
+function calcPromo(item: any): { finalPrice: number | null; badge: string | null } {
+  if (!item?.promo_active) return { finalPrice: null, badge: null };
+  const price = item.price ?? 0;
+  const type  = item.promo_type;
+  const val   = item.promo_value ?? 0;
+  if (type === 'percentage' && val > 0)
+    return { finalPrice: Math.round(price * (1 - val / 100)), badge: `-${val}%` };
+  if (type === 'fixed_amount' && val > 0)
+    return { finalPrice: Math.max(0, price - val), badge: `-${val.toLocaleString('fr-FR')} FCFA` };
+  if (type === 'x_plus_y') {
+    const buy = item.promo_buy_qty ?? 1; const get = item.promo_get_qty ?? 1;
+    return { finalPrice: null, badge: `${buy}+${get} offert` };
+  }
+  if (type === 'first_free') return { finalPrice: null, badge: '1ère gratuite' };
+  if (type === 'promo_code' && item.promo_code) return { finalPrice: null, badge: `Code: ${item.promo_code}` };
+  return { finalPrice: null, badge: 'Promo' };
+}
+
 function getBadgeLabel(b: Business): string {
+  if ((b as any).is_sponsored)                              return 'Sponsorisé';
   if ((b.rating ?? 0) >= 4.8)                              return 'Très apprécié';
   if (b.category?.toLowerCase().includes('artisan'))        return 'Créateur local';
   if (Date.now() - new Date(b.created_at).getTime() < 30 * 24 * 3600 * 1000) return 'Nouveau';
   return b.city ? `Populaire à ${b.city}` : 'À découvrir';
 }
 
+/** Tri prioritaire :
+ *  1. Sponsorisés (les plus proches en premier)
+ *  2. Très appréciés (note ≥ 4,8) les plus proches
+ *  3. Nouveaux (< 30 j) les plus proches
+ *  4. Reste — par distance
+ */
+function sortBusinessesByPriority(
+  list: Business[],
+  userLat?: number | null,
+  userLon?: number | null,
+): Business[] {
+  const now       = Date.now();
+  const THIRTY    = 30 * 24 * 3600 * 1000;
+  const distOf    = (b: Business): number => {
+    if (userLat && userLon && (b as any).latitude && (b as any).longitude)
+      return getDistanceKm(userLat, userLon, (b as any).latitude, (b as any).longitude);
+    return 9999;
+  };
+  const tierOf    = (b: Business): number => {
+    if ((b as any).is_sponsored)                                        return 4;
+    if ((b.rating ?? 0) >= 4.8)                                        return 3;
+    if (now - new Date(b.created_at).getTime() < THIRTY)               return 2;
+    return 1;
+  };
+  return [...list].sort((a, b) => {
+    const dt = tierOf(b) - tierOf(a);
+    if (dt !== 0) return dt;           // tier le plus haut en premier
+    return distOf(a) - distOf(b);      // à tier égal : le plus proche en premier
+  });
+}
+
 function getCatalogBadge(item: ServiceWithBusiness): string | null {
+  // Promo badge prioritaire
+  const { badge } = calcPromo(item as any);
+  if (badge) return badge;
   if (item.created_at && Date.now() - new Date(item.created_at).getTime() < 30 * 24 * 3600 * 1000) return 'Nouveau';
   if (item.billing_type === 'hourly') return '/h';
   if (item.billing_type === 'quote')  return 'Devis';
@@ -175,7 +230,7 @@ function DeliveryRow({ zoneInfo }: { zoneInfo?: { count: number; firstLabel: str
 }
 
 // ── NearbyCard ─────────────────────────────────────────────────────────────────
-function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; idx: number; zoneInfo?: { count: number; firstLabel: string } }) {
+function NearbyCard({ b, userLat, userLon, idx, zoneInfo, hasPromo }: { b: Business; userLat?: number|null; userLon?: number|null; idx: number; zoneInfo?: { count: number; firstLabel: string }; hasPromo?: boolean }) {
   const { isFav: fav, toggle: toggleFav } = useFavoriteToggle(b.id);
   const open  = isBusinessOpen(b.hours, (b as any).timezone);
   const dist  = (userLat && userLon && (b as any).latitude && (b as any).longitude)
@@ -205,8 +260,15 @@ function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userL
         {b.category && (
           <Text style={nc.category} numberOfLines={1}>{b.category}</Text>
         )}
-        {/* Livraison sous la catégorie */}
-        <DeliveryRow zoneInfo={zoneInfo} />
+        {/* Livraison + badge Promo en cours sur la même ligne */}
+        <View style={nc.deliveryPromoRow}>
+          <DeliveryRow zoneInfo={zoneInfo} />
+          {hasPromo && (
+            <View style={nc.promoBadge}>
+              <Text style={nc.promoBadgeTxt}>Promo en cours</Text>
+            </View>
+          )}
+        </View>
         <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} promo={(b as any).current_promotion ?? (b as any).promotion_label ?? null} />
       </View>
     </TouchableOpacity>
@@ -215,25 +277,43 @@ function NearbyCard({ b, userLat, userLon, idx, zoneInfo }: { b: Business; userL
 
 // ── OfferCard (catalogue DB) ───────────────────────────────────────────────────
 function OfferCard({ item }: { item: ServiceWithBusiness }) {
-  const badge = getCatalogBadge(item);
+  const nonPromoBadge = (item as any).promo_active ? null : getCatalogBadge(item); // badge image seulement si pas promo
   const image = item.image_url ?? item.business?.cover_url ?? null;
   const emoji = item.business?.category_icon ?? '🛍️';
+  const { finalPrice, badge: promoBadge } = calcPromo(item as any);
+  const isPromo = (item as any).promo_active && finalPrice !== null;
   return (
     <TouchableOpacity
       style={oc.card}
-      onPress={() => router.push({ pathname: '/(client)/business/[id]' as any, params: { id: item.business_id } })}
+      onPress={() => router.push({ pathname: '/(client)/article/[id]' as any, params: { id: item.id, businessId: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={oc.imgWrap}>
         <CoverPhoto uri={image} style={oc.img} emoji={emoji} />
-        {badge && <View style={oc.badge}><Text style={oc.badgeTxt}>{badge}</Text></View>}
+        {/* Badge "Nouveau" etc. sur l'image uniquement si pas de promo */}
+        {nonPromoBadge && (
+          <View style={oc.badge}><Text style={oc.badgeTxt}>{nonPromoBadge}</Text></View>
+        )}
       </View>
-      <Text style={oc.name} numberOfLines={2}>{item.title}</Text>
+      {/* Nom + badge promo à droite */}
+      <View style={oc.nameRow}>
+        <Text style={oc.name} numberOfLines={2}>{item.title}</Text>
+        {promoBadge && (
+          <View style={oc.promoBadge}><Text style={oc.promoBadgeTxt}>{promoBadge}</Text></View>
+        )}
+      </View>
       <Text style={oc.shop} numberOfLines={1}>{item.business?.name ?? ''}</Text>
       <View style={oc.priceRow}>
-        <Text style={oc.price}>
-          {item.price ? `${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}` : 'Sur devis'}
-        </Text>
+        {isPromo ? (
+          <>
+            <Text style={oc.promoPrice}>{finalPrice!.toLocaleString('fr-FR')} {item.currency ?? 'FCFA'}</Text>
+            <Text style={oc.oldPrice}>{item.price!.toLocaleString('fr-FR')} {item.currency ?? 'FCFA'}</Text>
+          </>
+        ) : (
+          <Text style={oc.price}>
+            {item.price ? `${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}` : 'Sur devis'}
+          </Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -263,7 +343,7 @@ function PopularCard({ b }: { b: Business }) {
 }
 
 // ── DiscoverCard / ExploreCard ─────────────────────────────────────────────────
-function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?: number|null; userLon?: number|null; zoneInfo?: { count: number; firstLabel: string } }) {
+function DiscoverCard({ b, userLat, userLon, zoneInfo, hasPromo }: { b: Business; userLat?: number|null; userLon?: number|null; zoneInfo?: { count: number; firstLabel: string }; hasPromo?: boolean }) {
   const { isFav: fav, toggle: toggleFav } = useFavoriteToggle(b.id);
   const open = isBusinessOpen(b.hours, (b as any).timezone);
   const dist = (userLat && userLon && (b as any).latitude && (b as any).longitude)
@@ -277,7 +357,7 @@ function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?
     >
       <View style={dc.imgWrap}>
         <CoverPhoto uri={b.cover_url} style={dc.img} emoji={b.category_icon} />
-        <View style={dc.badge}><Text style={dc.badgeTxt}>{getBadgeLabel(b)}</Text></View>
+        <View style={[dc.badge, (b as any).is_sponsored && dc.badgeSponsored]}><Text style={dc.badgeTxt}>{getBadgeLabel(b)}</Text></View>
         <TouchableOpacity style={dc.heart} onPress={(e) => { e.stopPropagation?.(); toggleFav(); }}>
           <Ionicons name={fav ? 'heart' : 'heart-outline'} size={15} color={fav ? ORANGE : '#374151'} />
         </TouchableOpacity>
@@ -291,8 +371,15 @@ function DiscoverCard({ b, userLat, userLon, zoneInfo }: { b: Business; userLat?
           </View>
         </View>
         {b.category && <Text style={dc.category} numberOfLines={1}>{b.category}</Text>}
-        {/* Livraison sous la catégorie */}
-        <DeliveryRow zoneInfo={zoneInfo} />
+        {/* Livraison + badge Promo en cours sur la même ligne */}
+        <View style={dc.deliveryPromoRow}>
+          <DeliveryRow zoneInfo={zoneInfo} />
+          {hasPromo && (
+            <View style={dc.promoBadge}>
+              <Text style={dc.promoBadgeTxt}>Promo en cours</Text>
+            </View>
+          )}
+        </View>
         <StatusRow open={open} time={dist ?? undefined} reviews={b.review_count} promo={(b as any).current_promotion ?? (b as any).promotion_label ?? null} />
       </View>
     </TouchableOpacity>
@@ -365,32 +452,44 @@ function ServiceCardFull({ item }: { item: ServiceWithBusiness }) {
 
 // ── OfferCardFull (version plein-largeur pour la liste modale) ────────────────
 function OfferCardFull({ item }: { item: ServiceWithBusiness }) {
-  const badge = getCatalogBadge(item);
+  const nonPromoBadge = (item as any).promo_active ? null : getCatalogBadge(item);
   const image = item.image_url ?? item.business?.cover_url ?? null;
   const emoji = item.business?.category_icon ?? '🛍️';
+  const { finalPrice, badge: promoBadge } = calcPromo(item as any);
+  const isPromo = (item as any).promo_active && finalPrice !== null;
   return (
     <TouchableOpacity
       style={off.card}
-      onPress={() => router.push({ pathname: '/(client)/business/[id]', params: { id: item.business_id } })}
+      onPress={() => router.push({ pathname: '/(client)/article/[id]' as any, params: { id: item.id, businessId: item.business_id } })}
       activeOpacity={0.88}
     >
       <View style={off.imgWrap}>
         <CoverPhoto uri={image} style={off.img} emoji={emoji} />
-        {badge && <View style={oc.badge}><Text style={oc.badgeTxt}>{badge}</Text></View>}
+        {nonPromoBadge && <View style={oc.badge}><Text style={oc.badgeTxt}>{nonPromoBadge}</Text></View>}
       </View>
       <View style={off.body}>
-        <Text style={off.name} numberOfLines={2}>{item.title}</Text>
+        <View style={off.nameRow}>
+          <Text style={off.name} numberOfLines={2}>{item.title}</Text>
+          {promoBadge && <View style={off.promoBadge}><Text style={off.promoBadgeTxt}>{promoBadge}</Text></View>}
+        </View>
         <Text style={off.shop} numberOfLines={1}>{item.business?.name ?? ''}</Text>
-        <Text style={off.price}>
-          {item.price ? `${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}` : 'Sur devis'}
-        </Text>
+        {isPromo ? (
+          <View style={off.priceRow}>
+            <Text style={off.promoPrice}>{finalPrice!.toLocaleString('fr-FR')} {item.currency ?? 'FCFA'}</Text>
+            <Text style={off.oldPrice}>{item.price!.toLocaleString('fr-FR')} {item.currency ?? 'FCFA'}</Text>
+          </View>
+        ) : (
+          <Text style={off.price}>
+            {item.price ? `${item.price.toLocaleString('fr-FR')} ${item.currency ?? 'FCFA'}` : 'Sur devis'}
+          </Text>
+        )}
       </View>
     </TouchableOpacity>
   );
 }
 
 // ── SectionListModal ──────────────────────────────────────────────────────────
-function SectionListModal({ data, onClose, zoneCountMap }: { data: SectionModalData; onClose: () => void; zoneCountMap: Map<string, ZoneInfo> }) {
+function SectionListModal({ data, onClose, zoneCountMap, promoBusinessIds }: { data: SectionModalData; onClose: () => void; zoneCountMap: Map<string, ZoneInfo>; promoBusinessIds: Set<string> }) {
   const insets   = useSafeAreaInsets();
   const [searchQ, setSearchQ] = useState('');
 
@@ -460,7 +559,7 @@ function SectionListModal({ data, onClose, zoneCountMap }: { data: SectionModalD
               contentContainerStyle={slm.list}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
-                <DiscoverCard b={item} userLat={data.userLat} userLon={data.userLon} zoneInfo={zoneCountMap.get(item.id)} />
+                <DiscoverCard b={item} userLat={data.userLat} userLon={data.userLon} zoneInfo={zoneCountMap.get(item.id)} hasPromo={promoBusinessIds.has(item.id)} />
               )}
             />
           )
@@ -694,7 +793,8 @@ export default function HomeScreen() {
   // n'ont pas forcément ce champ rempli. Le filtre distance (20 km) gère la localité.
   const countryCode = (profile as any)?.country_code ?? null;
   const baseFilters = {
-    ...(selCat ? { category: selCat } : {}),
+    // 'offres' n'est pas une vraie catégorie DB — filtrage côté client via promoBusinessIds
+    ...(selCat && selCat !== 'offres' ? { category: selCat } : {}),
   };
 
   // Une seule requête : tout le pays, filtrage côté client
@@ -816,9 +916,29 @@ export default function HomeScreen() {
     staleTime: 60_000,
   });
 
-  const nearbyBizs    = businesses.slice(0, 6);
-  const discoverBizs  = businesses.slice(2, 6);
-  const exploreBizs   = businesses.length >= 10 ? businesses.slice(6, 10) : [];
+  // ── Business IDs avec au moins une promo active ──────────────────────────
+  const { data: promoBusinessIds = new Set<string>() } = useQuery<Set<string>>({
+    queryKey: ['promo-business-ids'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('services')
+        .select('business_id')
+        .eq('promo_active', true);
+      if (error) throw error;
+      return new Set((data ?? []).map((r: any) => r.business_id as string));
+    },
+    staleTime: 60_000,
+  });
+
+  // Tri prioritaire appliqué à toutes les sections
+  const sortedBizs = useMemo(
+    () => sortBusinessesByPriority(businesses, userLat, userLon),
+    [businesses, userLat, userLon],
+  );
+
+  const nearbyBizs    = sortedBizs.slice(0, 6);
+  const discoverBizs  = sortedBizs.slice(2, 6);
+  const exploreBizs   = sortedBizs.length >= 10 ? sortedBizs.slice(6, 10) : [];
   const popularBizs   = [...businesses]
     .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
     .slice(0, 6);
@@ -830,20 +950,15 @@ export default function HomeScreen() {
 
   const filteredBizs = useMemo(() => {
     if (!selCat) return [];
-    const score = (b: Business): number => {
-      const rating = Math.max(1, b.rating ?? 1);
-      const distKm = (userLat && userLon && (b as any).latitude && (b as any).longitude)
-        ? getDistanceKm(userLat, userLon, (b as any).latitude, (b as any).longitude)
-        : 50;
-      return rating / (1 + distKm);
-    };
-    return [...businesses].sort((a, b) => {
-      const aS = (a as any).is_sponsored ? 1 : 0;
-      const bS = (b as any).is_sponsored ? 1 : 0;
-      if (bS !== aS) return bS - aS;
-      return score(b) - score(a);
-    });
-  }, [businesses, selCat, userLat, userLon]);
+    // Catégorie spéciale "offres" : boutiques avec au moins 1 promo active (tout le pays)
+    if (selCat === 'offres') {
+      return sortBusinessesByPriority(
+        allCountryBiz.filter(b => promoBusinessIds.has(b.id)),
+        userLat, userLon,
+      );
+    }
+    return sortBusinessesByPriority(businesses, userLat, userLon);
+  }, [businesses, allCountryBiz, selCat, userLat, userLon, promoBusinessIds]);
 
   const { data: heroBanners = ALL_HERO_BANNERS } = useQuery({
     queryKey: ['hero-banner-counts', cityName],
@@ -885,7 +1000,7 @@ export default function HomeScreen() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('services')
-        .select('*, business:businesses(name, cover_url, category_icon)')
+        .select('*, business:businesses(name, cover_url, category_icon), promo_active, promo_type, promo_value, promo_code, promo_buy_qty, promo_get_qty')
         .eq('is_available', true)
         .not('price', 'is', null)
         .order('created_at', { ascending: false })
@@ -1012,7 +1127,7 @@ export default function HomeScreen() {
               </View>
             ) : filteredBizs.length > 0 ? (
               filteredBizs.map(b => (
-                <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
+                <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
               ))
             ) : (
               <View style={g.empty}>
@@ -1038,7 +1153,7 @@ export default function HomeScreen() {
                     onPress={() => setSectionModal({
                       kind: 'businesses',
                       title: 'Près de Chez vous',
-                      items: businesses,
+                      items: sortedBizs,
                       userLat,
                       userLon,
                     })}
@@ -1051,7 +1166,7 @@ export default function HomeScreen() {
                 ) : (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
                     {nearbyBizs.map((b, i) => (
-                      <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
+                      <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
                     ))}
                   </ScrollView>
                 )}
@@ -1103,13 +1218,13 @@ export default function HomeScreen() {
                   onPress={() => setSectionModal({
                     kind: 'businesses',
                     title: 'Cela pourrait vous intéresser',
-                    items: businesses.slice(2),
+                    items: sortedBizs.slice(2),
                     userLat,
                     userLon,
                   })}
                 />
                 {discoverBizs.map(b => (
-                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
+                  <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
                 ))}
               </View>
             )}
@@ -1142,7 +1257,7 @@ export default function HomeScreen() {
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
                       {nearbyBizsEmptyState.slice(0, 6).map((b, i) => (
-                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
+                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
                       ))}
                     </ScrollView>
                   </View>
@@ -1171,7 +1286,7 @@ export default function HomeScreen() {
                     </View>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: H_PAD, paddingVertical: 8, gap: 12 }}>
                       {preview.map((b, i) => (
-                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} />
+                        <NearbyCard key={b.id} b={b} userLat={userLat} userLon={userLon} idx={i} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
                       ))}
                     </ScrollView>
                   </View>
@@ -1215,13 +1330,13 @@ export default function HomeScreen() {
                       onPress={() => setSectionModal({
                         kind: 'businesses',
                         title: 'Explorez',
-                        items: businesses.slice(6),
+                        items: sortedBizs.slice(6),
                         userLat,
                         userLon,
                       })}
                     />
                     {exploreBizs.map(b => (
-                      <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} />
+                      <DiscoverCard key={b.id} b={b} userLat={userLat} userLon={userLon} zoneInfo={zoneCountMap.get(b.id)} hasPromo={promoBusinessIds.has(b.id)} />
                     ))}
                   </View>
                 )}
@@ -1233,7 +1348,7 @@ export default function HomeScreen() {
 
       {/* ── Modals ── */}
       <LocationPickerModal visible={locationPickerVisible} onClose={() => setLocationPickerVisible(false)} />
-      <SectionListModal data={sectionModal} onClose={() => setSectionModal(null)} zoneCountMap={zoneCountMap} />
+      <SectionListModal data={sectionModal} onClose={() => setSectionModal(null)} zoneCountMap={zoneCountMap} promoBusinessIds={promoBusinessIds} />
 
       <Modal visible={addrPopup && !hasAddress} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
         <View style={g.popupBg}>
@@ -1308,31 +1423,40 @@ const hb = StyleSheet.create({
 });
 
 const nc = StyleSheet.create({
-  card:     { width: W * 0.72, backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8' },
-  imgWrap:  { position: 'relative' },
-  img:      { width: '100%', height: 142 },
-  badge:    { position: 'absolute', top: 10, left: 10, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 9, paddingVertical: 4 },
-  badgeTxt: { fontSize: 10, fontWeight: '800', color: WHITE },
-  heart:    { position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
-  body:        { padding: 10, gap: 3 },
-  nameRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  name:        { fontSize: 13, fontWeight: '700', color: DARK, flex: 1, marginRight: 6 },
-  ratingRow:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  rating:      { fontSize: 12, fontWeight: '700', color: DARK },
-  reviewCount: { fontSize: 11, fontWeight: '500', color: GRAY },
-  category:    { fontSize: 11, fontWeight: '500', color: GRAY, textTransform: 'capitalize' },
+  card:             { width: W * 0.72, backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECE8' },
+  imgWrap:          { position: 'relative' },
+  img:              { width: '100%', height: 142 },
+  badge:            { position: 'absolute', top: 10, left: 10, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 9, paddingVertical: 4 },
+  badgeTxt:         { fontSize: 10, fontWeight: '800', color: WHITE },
+  heart:            { position: 'absolute', top: 10, right: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
+  body:             { padding: 10, gap: 3 },
+  nameRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  name:             { fontSize: 13, fontWeight: '700', color: DARK, flex: 1, marginRight: 6 },
+  ratingRow:        { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  rating:           { fontSize: 12, fontWeight: '700', color: DARK },
+  reviewCount:      { fontSize: 11, fontWeight: '500', color: GRAY },
+  category:         { fontSize: 11, fontWeight: '500', color: GRAY, textTransform: 'capitalize' },
+  deliveryPromoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  promoBadge:       { backgroundColor: '#EF4444', borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3, flexShrink: 0 },
+  promoBadgeTxt:    { fontSize: 9, fontWeight: '800', color: WHITE },
 });
 
 const oc = StyleSheet.create({
-  card:     { width: 164, backgroundColor: WHITE, borderRadius: 20, overflow: 'hidden' },
-  imgWrap:  { position: 'relative' },
-  img:      { width: '100%', height: 154 },
-  badge:    { position: 'absolute', top: 8, left: 8, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3 },
-  badgeTxt: { fontSize: 9, fontWeight: '800', color: WHITE },
-  name:     { fontSize: 12, fontWeight: '800', color: DARK, marginTop: 10, marginHorizontal: 4 },
-  shop:     { fontSize: 9, fontWeight: '600', color: '#9A9A94', marginTop: 4, marginHorizontal: 4 },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 4, marginTop: 7, marginBottom: 10 },
-  price:    { fontSize: 12, fontWeight: '800', color: DARK },
+  card:          { width: 164, backgroundColor: WHITE, borderRadius: 20, overflow: 'hidden' },
+  imgWrap:       { position: 'relative' },
+  img:           { width: '100%', height: 154 },
+  badge:         { position: 'absolute', top: 8, left: 8, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 7, paddingVertical: 3 },
+  badgePromo:    { backgroundColor: '#EF4444' },
+  badgeTxt:      { fontSize: 9, fontWeight: '800', color: WHITE },
+  nameRow:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 10, marginHorizontal: 4, gap: 4 },
+  name:          { fontSize: 12, fontWeight: '800', color: DARK, flex: 1 },
+  promoBadge:    { backgroundColor: '#EF4444', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2, flexShrink: 0 },
+  promoBadgeTxt: { fontSize: 9, fontWeight: '800', color: WHITE },
+  shop:          { fontSize: 9, fontWeight: '600', color: '#9A9A94', marginTop: 4, marginHorizontal: 4 },
+  priceRow:      { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginHorizontal: 4, marginTop: 7, marginBottom: 10 },
+  price:         { fontSize: 12, fontWeight: '800', color: DARK },
+  promoPrice:    { fontSize: 12, fontWeight: '800', color: '#EF4444' },
+  oldPrice:      { fontSize: 10, fontWeight: '500', color: '#9CA3AF', textDecorationLine: 'line-through' },
 });
 
 const pc = StyleSheet.create({
@@ -1346,18 +1470,22 @@ const pc = StyleSheet.create({
 });
 
 const dc = StyleSheet.create({
-  card:     { backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: '#ECECE8' },
-  imgWrap:  { position: 'relative' },
-  img:      { width: '100%', height: 142 },
-  badge:    { position: 'absolute', top: 12, left: 12, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
-  badgeTxt: { fontSize: 11, fontWeight: '700', color: WHITE },
-  heart:    { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
-  body:       { padding: 14, gap: 3 },
-  nameRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
-  name:       { fontSize: 15, fontWeight: '700', color: DARK, flex: 1, marginRight: 8 },
-  ratingRow:  { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  rating:     { fontSize: 13, fontWeight: '700', color: DARK },
-  category:   { fontSize: 12, fontWeight: '500', color: GRAY, textTransform: 'capitalize', marginBottom: 2 },
+  card:             { backgroundColor: WHITE, borderRadius: 23, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: '#ECECE8' },
+  imgWrap:          { position: 'relative' },
+  img:              { width: '100%', height: 142 },
+  badge:            { position: 'absolute', top: 12, left: 12, backgroundColor: ORANGE, borderRadius: 100, paddingHorizontal: 10, paddingVertical: 5 },
+  badgeSponsored:   { backgroundColor: '#D97706' },
+  badgeTxt:         { fontSize: 11, fontWeight: '700', color: WHITE },
+  heart:            { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 2 },
+  body:             { padding: 14, gap: 3 },
+  nameRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  name:             { fontSize: 15, fontWeight: '700', color: DARK, flex: 1, marginRight: 8 },
+  ratingRow:        { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  rating:           { fontSize: 13, fontWeight: '700', color: DARK },
+  category:         { fontSize: 12, fontWeight: '500', color: GRAY, textTransform: 'capitalize', marginBottom: 2 },
+  deliveryPromoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  promoBadge:       { backgroundColor: '#EF4444', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
+  promoBadgeTxt:    { fontSize: 10, fontWeight: '800', color: WHITE },
 });
 
 const svc = StyleSheet.create({
@@ -1383,13 +1511,19 @@ const svf = StyleSheet.create({
 });
 
 const off = StyleSheet.create({
-  card:    { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8' },
-  imgWrap: { position: 'relative', width: 110 },
-  img:     { width: 110, height: 100 },
-  body:    { flex: 1, padding: 12, justifyContent: 'center', gap: 3 },
-  name:    { fontSize: 14, fontWeight: '700', color: DARK },
-  shop:    { fontSize: 11, color: '#9A9A94' },
-  price:   { fontSize: 13, fontWeight: '800', color: DARK },
+  card:          { flexDirection: 'row', backgroundColor: WHITE, borderRadius: 16, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#ECECE8' },
+  imgWrap:       { position: 'relative', width: 110 },
+  img:           { width: 110, height: 100 },
+  body:          { flex: 1, padding: 12, justifyContent: 'center', gap: 3 },
+  nameRow:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4 },
+  name:          { fontSize: 14, fontWeight: '700', color: DARK, flex: 1 },
+  promoBadge:    { backgroundColor: '#EF4444', borderRadius: 100, paddingHorizontal: 6, paddingVertical: 2, flexShrink: 0 },
+  promoBadgeTxt: { fontSize: 9, fontWeight: '800', color: WHITE },
+  shop:          { fontSize: 11, color: '#9A9A94' },
+  price:         { fontSize: 13, fontWeight: '800', color: DARK },
+  priceRow:      { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  promoPrice:    { fontSize: 13, fontWeight: '800', color: '#EF4444' },
+  oldPrice:      { fontSize: 11, fontWeight: '500', color: '#9CA3AF', textDecorationLine: 'line-through' },
 });
 
 const promo = StyleSheet.create({
