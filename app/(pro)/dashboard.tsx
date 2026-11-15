@@ -333,13 +333,23 @@ function DashboardContent({
                 <Text style={[s.bizOptionTxt, !filterBiz && { color: ORANGE, fontWeight: '700' }]}>Toutes les boutiques</Text>
                 {!filterBiz && <Feather name="check" size={14} color={ORANGE} />}
               </TouchableOpacity>
-              {businesses.map((b: Business) => (
-                <TouchableOpacity key={b.id} style={[s.bizOption, filterBiz === b.id && s.bizOptionActive]}
-                  onPress={() => { setFilterBiz(b.id); setBizPickerOpen(false); }}>
-                  <Text style={[s.bizOptionTxt, filterBiz === b.id && { color: ORANGE, fontWeight: '700' }]}>{b.name}</Text>
-                  {filterBiz === b.id && <Feather name="check" size={14} color={ORANGE} />}
-                </TouchableOpacity>
-              ))}
+              {businesses.map((b: any) => {
+                const susp = b.status === 'suspended';
+                return (
+                  <TouchableOpacity key={b.id} style={[s.bizOption, filterBiz === b.id && s.bizOptionActive]}
+                    onPress={() => { setFilterBiz(b.id); setBizPickerOpen(false); }}>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[s.bizOptionTxt, filterBiz === b.id && { color: ORANGE, fontWeight: '700' }]}>{b.name}</Text>
+                      {susp && (
+                        <View style={{ backgroundColor: '#FEF2F2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: '#FECACA' }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#EF4444' }}>SUSPENDUE</Text>
+                        </View>
+                      )}
+                    </View>
+                    {filterBiz === b.id && <Feather name="check" size={14} color={ORANGE} />}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
           <View style={s.periodRow}>
@@ -478,8 +488,39 @@ function DashboardContent({
         </TouchableOpacity>
       </Modal>
 
+      {/* ── Bannière boutique suspendue ── */}
+      {activeBiz && (activeBiz as any).status === 'suspended' && (() => {
+        const daysLeft = (() => {
+          const sa = (activeBiz as any).suspended_at;
+          if (!sa) return 0;
+          return Math.max(0, Math.ceil(3 - (Date.now() - new Date(sa).getTime()) / (1000 * 60 * 60 * 24)));
+        })();
+        const hasWalletPayout = (activeBiz as any).wallet_payout_pending === true;
+        return (
+          <View style={{ position: 'absolute', bottom: 100, left: 16, right: 16, backgroundColor: '#EF4444', borderRadius: 16, padding: 14, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Feather name="slash" size={18} color="#fff" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Boutique suspendue</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+                  Suppression définitive dans {daysLeft} jour{daysLeft > 1 ? 's' : ''}
+                </Text>
+              </View>
+            </View>
+            {hasWalletPayout && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: 10, padding: 10 }}>
+                <Feather name="credit-card" size={14} color="rgba(255,255,255,0.9)" />
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', flex: 1 }}>
+                  Versement de votre solde en cours selon les politiques de versement en vigueur
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      })()}
+
       {/* ── Checklist d'intégration (s'affiche si tâches incomplètes) ── */}
-      {activeBiz && (
+      {activeBiz && (activeBiz as any).status !== 'suspended' && (
         <OnboardingChecklistModal
           key={activeBiz.id}
           businessId={activeBiz.id}

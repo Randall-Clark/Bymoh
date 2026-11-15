@@ -392,6 +392,19 @@ export default function CatalogEditScreen() {
   };
 
   const save = async () => {
+    // Vérifier que la boutique n'est pas suspendue
+    if (businessId) {
+      const { data: bizStatus } = await supabase
+        .from('businesses')
+        .select('status')
+        .eq('id', businessId)
+        .single();
+      if (bizStatus?.status === 'suspended') {
+        Alert.alert('Boutique suspendue', 'Les modifications sont désactivées pendant la suspension.');
+        return;
+      }
+    }
+
     if (!title.trim()) { Alert.alert('Erreur','Le nom est requis.'); return; }
     if (images.length === 0) { Alert.alert('Photo requise','Ajoute au moins une photo.'); return; }
     if (kind === 'article' && stockEnabled) {
@@ -399,6 +412,25 @@ export default function CatalogEditScreen() {
       if (s < 1) { Alert.alert('Stock invalide', 'Le stock minimum est de 1 article.'); return; }
     }
     if (!businessId)   { Alert.alert('Erreur','Boutique introuvable.'); return; }
+
+    // Bloquer la sauvegarde si livraison sélectionnée sans zones configurées
+    if (kind === 'article' && (fulfillmentType === 'delivery_only' || fulfillmentType === 'both')) {
+      const { count: zoneCount } = await supabase
+        .from('delivery_zones')
+        .select('id', { count: 'exact', head: true })
+        .eq('business_id', businessId);
+      if ((zoneCount ?? 0) === 0) {
+        Alert.alert(
+          'Zones de livraison requises',
+          'Tu dois configurer au moins une zone de livraison avant de proposer cet article à la livraison.',
+          [
+            { text: 'Configurer', onPress: checkZones },
+            { text: 'Annuler', style: 'cancel' },
+          ]
+        );
+        return;
+      }
+    }
     if (kind==='prestation' && !getDurationMinutes()) {
       Alert.alert('Durée requise','Indique la durée estimée de ta prestation.'); return;
     }

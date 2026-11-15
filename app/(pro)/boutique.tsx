@@ -3,7 +3,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator, Animated, Dimensions, Image, Modal, Platform,
+  ActivityIndicator, Alert, Animated, Dimensions, Image, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -133,6 +133,14 @@ export default function BoutiqueTab() {
   const reviewCount = biz?.review_count ?? 0;
   const displayRating = Math.max(1, Math.round(avgRating));
 
+  // ── Suspension ───────────────────────────────────────────────────────────
+  const isSuspended = biz?.status === 'suspended';
+  const suspensionDaysLeft = (() => {
+    if (!biz?.suspended_at) return 0;
+    const elapsed = (Date.now() - new Date(biz.suspended_at).getTime()) / (1000 * 60 * 60 * 24);
+    return Math.max(0, Math.ceil(3 - elapsed));
+  })();
+
   const articles   = items.filter((i:any) => i.kind === 'article').slice(0, 5);
   const services   = items.filter((i:any) => i.kind === 'prestation').slice(0, 5);
 
@@ -194,6 +202,19 @@ export default function BoutiqueTab() {
           </View>
         )}
 
+        {/* ── Bannière suspension ── */}
+        {isSuspended && (
+          <View style={s.suspendBanner}>
+            <Feather name="slash" size={16} color="#fff" />
+            <View style={{ flex: 1 }}>
+              <Text style={s.suspendBannerTitle}>Boutique suspendue</Text>
+              <Text style={s.suspendBannerSub}>
+                Suppression définitive dans {suspensionDaysLeft} jour{suspensionDaysLeft > 1 ? 's' : ''} · Ajouts et modifications désactivés
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Infos boutique */}
         <View style={s.bizInfo}>
           <View style={s.bizLogoWrap}>
@@ -229,10 +250,18 @@ export default function BoutiqueTab() {
       {/* ── Carte surélevée ── */}
       <View style={s.floatingCard}>
         <View style={{ flexDirection:'row', gap:10 }}>
-          <TouchableOpacity style={[s.addBtn, { flex:1 }]}
-            onPress={() => biz && setKindPickOpen(true)} activeOpacity={0.88}>
-            <Feather name="plus" size={18} color="#fff" />
-            <Text style={s.addBtnTxt}>Ajouter</Text>
+          <TouchableOpacity
+            style={[s.addBtn, { flex:1 }, isSuspended && s.addBtnDisabled]}
+            onPress={() => {
+              if (isSuspended) {
+                Alert.alert('Boutique suspendue', 'L\'ajout d\'articles est désactivé pendant la suspension.');
+                return;
+              }
+              biz && setKindPickOpen(true);
+            }}
+            activeOpacity={isSuspended ? 1 : 0.88}>
+            <Feather name="plus" size={18} color={isSuspended ? '#9CA3AF' : '#fff'} />
+            <Text style={[s.addBtnTxt, isSuspended && { color: '#9CA3AF' }]}>Ajouter</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.catalogBtn}
             onPress={() => biz && router.navigate({ pathname:'/(pro)/business/[id]', params:{ id:biz.id } } as any)}
@@ -280,9 +309,12 @@ export default function BoutiqueTab() {
                   const st = statusBadge(item);
                   const imgUrl = safeFirstUrl(item.image_url) || safeUrls(item.image_urls)[0];
                   return (
-                    <TouchableOpacity key={item.id} style={s.hCard}
-                      onPress={() => biz && router.navigate({ pathname:'/(pro)/catalog/edit', params:{ businessId:biz.id, serviceId:item.id } } as any)}
-                      activeOpacity={0.85}>
+                    <TouchableOpacity key={item.id} style={[s.hCard, isSuspended && { opacity: 0.5 }]}
+                      onPress={() => {
+                        if (isSuspended) { Alert.alert('Boutique suspendue', 'Les modifications sont désactivées pendant la suspension.'); return; }
+                        biz && router.navigate({ pathname:'/(pro)/catalog/edit', params:{ businessId:biz.id, serviceId:item.id } } as any);
+                      }}
+                      activeOpacity={isSuspended ? 1 : 0.85}>
                       <View style={s.hCardImg}>
                         {imgUrl
                           ? <Image source={{ uri:imgUrl }} style={{ width:'100%', height:'100%', resizeMode:'cover' }} />
@@ -315,9 +347,12 @@ export default function BoutiqueTab() {
                   const imgUrl = safeFirstUrl(item.image_url) || safeUrls(item.image_urls)[0];
                   const catLabel = item.service_category==='at_client' ? 'Domicile' : item.service_category==='hybrid' ? 'Hybride' : 'Boutique';
                   return (
-                    <TouchableOpacity key={item.id} style={s.hCard}
-                      onPress={() => biz && router.navigate({ pathname:'/(pro)/catalog/edit', params:{ businessId:biz.id, serviceId:item.id } } as any)}
-                      activeOpacity={0.85}>
+                    <TouchableOpacity key={item.id} style={[s.hCard, isSuspended && { opacity: 0.5 }]}
+                      onPress={() => {
+                        if (isSuspended) { Alert.alert('Boutique suspendue', 'Les modifications sont désactivées pendant la suspension.'); return; }
+                        biz && router.navigate({ pathname:'/(pro)/catalog/edit', params:{ businessId:biz.id, serviceId:item.id } } as any);
+                      }}
+                      activeOpacity={isSuspended ? 1 : 0.85}>
                       <View style={[s.hCardImg, { backgroundColor:'#F0FDF4' }]}>
                         {imgUrl
                           ? <Image source={{ uri:imgUrl }} style={{ width:'100%', height:'100%', resizeMode:'cover' }} />
@@ -545,7 +580,11 @@ const s = StyleSheet.create({
   kpiLabel:      { fontSize:11, color:'rgba(255,255,255,0.5)', fontWeight:'600' },
   floatingCard:  { marginHorizontal:16, marginTop:-48, backgroundColor:'#fff', borderRadius:24, padding:16, gap:14, borderWidth:1, borderColor:'#F0F0F0' },
   addBtn:        { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:ORANGE, borderRadius:16, paddingVertical:16 },
+  addBtnDisabled:{ backgroundColor:'#F3F4F6', borderWidth:1.5, borderColor:'#E5E7EB' },
   addBtnTxt:     { fontSize:15, fontWeight:'700', color:'#fff' },
+  suspendBanner: { flexDirection:'row', alignItems:'center', gap:10, backgroundColor:'#EF4444', borderRadius:14, padding:12, marginBottom:12 },
+  suspendBannerTitle: { fontSize:13, fontWeight:'800', color:'#fff' },
+  suspendBannerSub:   { fontSize:11, color:'rgba(255,255,255,0.8)', marginTop:1 },
   catalogBtn:    { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor:'#FEF2EC', borderRadius:16, paddingVertical:16, paddingHorizontal:20, borderWidth:1.5, borderColor:'#FDDCCA' },
   catalogBtnTxt: { fontSize:15, fontWeight:'700', color:ORANGE },
   actionsRow:    { flexDirection:'row' },

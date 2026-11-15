@@ -43,7 +43,7 @@ const SETTING_ITEMS: SettingItem[] = [
   { id:'info',    icon:'edit-3',      label:'Informations generales', sub:'Nom, description, telephone, livraison', color:DARK,    bg:'#EEF2FF' },
   { id:'address', icon:'map-pin',     label:'Adresse',                sub:'Localisation de la boutique',           color:'#059669', bg:'#F0FDF4' },
   { id:'socials', icon:'share-2',     label:'Reseaux sociaux',        sub:'Facebook, Instagram, WhatsApp...',       color:'#F59E0B', bg:'#FFFBEB' },
-  { id:'danger',  icon:'trash-2',     label:'Supprimer la boutique',  sub:'Action irreversible',                   color:RED,       bg:'#FEF2F2' },
+  { id:'danger',  icon:'slash',       label:'Suspendre la boutique',  sub:'Suspendue 3 jours puis supprimée définitivement', color:RED, bg:'#FEF2F2' },
 ];
 
 function generateId(): string {
@@ -273,59 +273,111 @@ export default function BusinessSettingsPage() {
     }
   };
 
-  // ── Supprimer boutique ────────────────────────────────────────────────────
-  const cleanBusinessStorage = async (bizId: string) => {
-    const coverExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    await Promise.allSettled(
-      coverExts.map((ext) =>
-        supabase.storage.from('businesses').remove([`covers/${bizId}.${ext}`])
-      )
-    );
+  // ── Suspendre boutique (soft-delete 3 jours) ─────────────────────────────
+  const suspendBusiness = async () => {
+    setDeleting(true);
     try {
-      const { data: serviceFiles } = await supabase.storage.from('businesses').list(`services/${bizId}`);
-      if (serviceFiles && serviceFiles.length > 0) {
-        await supabase.storage.from('businesses').remove(serviceFiles.map((f) => `services/${bizId}/${f.name}`));
-      }
-    } catch {}
-    try {
-      const { data: serviceItems } = await supabase.storage.from('businesses').list(`items/${bizId}`);
-      if (serviceItems && serviceItems.length > 0) {
-        await supabase.storage.from('businesses').remove(serviceItems.map((f) => `items/${bizId}/${f.name}`));
-      }
-    } catch {}
-  };
+      // 1. Vérifier commandes actives
+      const { data: activeOrders } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('business_id', id!)
+        .not('status', 'in', '("cancelled","completed","delivered","refunded")');
 
-  const deleteBusiness = () => {
-    Alert.alert('Supprimer la boutique ?',
-      `"${business?.name}" sera definitivement supprimee.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', style: 'destructive', onPress: () =>
-          Alert.alert('Confirmation finale', 'Cette action est irreversible.',
-            [
-              { text: 'Annuler', style: 'cancel' },
-              { text: 'Oui, supprimer', style: 'destructive', onPress: async () => {
-                setDeleting(true);
-                try {
-                  await supabase.from('delivery_zones').delete().eq('business_id', id!);
-                  await supabase.from('services').delete().eq('business_id', id!);
-                  await supabase.from('business_hours').delete().eq('business_id', id!);
-                  await supabase.from('businesses').delete().eq('id', id!);
-                  await cleanBusinessStorage(id!);
-                  await qc.invalidateQueries({ queryKey: ['my-businesses'] });
-                  const cartStore = useCartStore.getState();
-                  if (cartStore.businessId === id!) cartStore.clearCart();
-                  router.replace('/(pro)/dashboard' as any);
-                } catch (e: any) {
-                  Alert.alert('Erreur', e.message);
-                  setDeleting(false);
-                }
-              }},
-            ]
-          )
-        },
-      ]
-    );
+      // 2. Vérifier réservations actives
+      const { data: activeBookings } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('business_id', id!)
+        .not('status', 'in', '("cancelled","completed")');
+
+      // 3. Vérifier solde portefeuille marchand
+      const { data: walletData } = await supabase
+        .from('wallet_accounts')
+        .select('balance, pending_balance')
+        .eq('business_id', id!)
+        .single();
+
+      setDeleting(false);
+
+      const nOrders   = activeOrders?.length  ?? 0;
+      const nBookings = activeBookings?.length ?? 0;
+      const walletBalance = (walletData?.balance ?? 0) + (walletData?.pending_balance ?? 0);
+
+      // Bloquer si commandes/réservations actives
+      if (nOrders > 0 || nBookings > 0) {
+        const parts: string[] = [];
+        if (nOrders   > 0) parts.push(`${nOrders} commande${nOrders   > 1 ? 's' : ''} en cours`);
+        if (nBookings > 0) parts.push(`${nBookings} réservation${nBookings > 1 ? 's' : ''} en cours`);
+        Alert.alert(
+          'Action impossible',
+          `Vous avez ${parts.join(' et ')}.\n\nAnnulez-les avant de pouvoir suspendre votre boutique.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Construire le message de confirmation selon le solde du portefeuille
+      const walletLine = walletBalance > 0
+        ? `• Solde portefeuille (${walletBalance.toLocaleString('fr-FR')} FCFA) reversé sous 3 jours selon les politiques de versement en vigueur\n`
+        : '';
+
+      // 4. Double confirmation
+      Alert.alert(
+        'Suspendre la boutique ?',
+        `"${business?.name}" sera suspendue pendant 3 jours :\n\n• Plus visible par les clients\n• Aucune nouvelle commande\n• Boutons d'ajout désactivés\n${walletLine}\nAprès 3 jours, elle sera définitivement supprimée.`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          {
+            text: 'Suspendre', style: 'destructive',
+            onPress: () => Alert.alert(
+              'Confirmation finale',
+              walletBalance > 0
+                ? `Votre solde de ${walletBalance.toLocaleString('fr-FR')} FCFA sera versé sur votre compte selon les délais de versement habituels.\n\nCette action est irréversible après 3 jours.`
+                : 'Cette action est irréversible après 3 jours.',
+              [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                  text: 'Oui, suspendre', style: 'destructive',
+                  onPress: async () => {
+                    setDeleting(true);
+                    try {
+                      await supabase.from('businesses').update({
+                        status:                'suspended',
+                        suspended_at:          new Date().toISOString(),
+                        // Marquer le portefeuille comme "à reverser" pour le backend
+                        wallet_payout_pending: walletBalance > 0,
+                      }).eq('id', id!);
+                      // Créer une demande de versement final si solde > 0
+                      if (walletBalance > 0) {
+                        await supabase.from('wallet_payout_requests').insert({
+                          business_id: id!,
+                          amount:      walletBalance,
+                          reason:      'business_suspension',
+                          status:      'pending',
+                          created_at:  new Date().toISOString(),
+                        });
+                      }
+                      await qc.invalidateQueries({ queryKey: ['my-businesses'] });
+                      await qc.invalidateQueries({ queryKey: ['pro-biz', id] });
+                      const cartStore = useCartStore.getState();
+                      if (cartStore.businessId === id!) cartStore.clearCart();
+                      router.replace('/(pro)/dashboard' as any);
+                    } catch (e: any) {
+                      Alert.alert('Erreur', e.message);
+                      setDeleting(false);
+                    }
+                  },
+                },
+              ]
+            ),
+          },
+        ]
+      );
+    } catch (e: any) {
+      setDeleting(false);
+      Alert.alert('Erreur', e.message);
+    }
   };
 
   if (isLoading) {
@@ -376,31 +428,79 @@ export default function BusinessSettingsPage() {
             <Feather name="chevron-right" size={16} color="#9CA3AF" />
           </TouchableOpacity>
 
-          {SETTING_ITEMS.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[s.settingRow, item.id === 'danger' && s.settingRowDanger]}
-              onPress={() => {
-                if (item.id === 'danger') { deleteBusiness(); return; }
-                setActiveSection(item.id);
-              }}
-              activeOpacity={0.85}
-            >
-              <View style={[s.settingIcon, { backgroundColor: item.bg }]}>
-                <Feather name={item.icon as any} size={18} color={item.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.settingLabel as any, item.id === 'danger' && { color: RED }]}>
-                  {item.label}
-                </Text>
-                <Text style={s.settingSub as any}>{item.sub}</Text>
-              </View>
-              {item.id !== 'danger'
-                ? <Feather name="chevron-right" size={16} color="#9CA3AF" />
-                : deleting ? <ActivityIndicator size="small" color={RED} /> : null
-              }
-            </TouchableOpacity>
-          ))}
+          {SETTING_ITEMS.map((item) => {
+            // ── Remplacer le bouton suspension par une carte d'état si déjà suspendue ──
+            if (item.id === 'danger' && business?.status === 'suspended') {
+              const daysLeft = (() => {
+                const sa = (business as any).suspended_at;
+                if (!sa) return 0;
+                return Math.max(0, Math.ceil(3 - (Date.now() - new Date(sa).getTime()) / (1000 * 60 * 60 * 24)));
+              })();
+              const hasWalletPayout = (business as any).wallet_payout_pending === true;
+              return (
+                <View key={item.id} style={s.suspendedCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={[s.settingIcon, { backgroundColor: '#FEF2F2' }]}>
+                      <Feather name="slash" size={18} color={RED} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.settingLabel as any, { color: RED }]}>Boutique suspendue</Text>
+                      <Text style={s.settingSub as any}>
+                        Suppression définitive dans {daysLeft} jour{daysLeft > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  {hasWalletPayout && (
+                    <View style={s.suspendedWalletRow}>
+                      <Feather name="credit-card" size={13} color="#9CA3AF" />
+                      <Text style={s.suspendedWalletTxt}>
+                        Versement de votre solde en cours selon les politiques de versement en vigueur
+                      </Text>
+                    </View>
+                  )}
+                  <View style={s.suspendedInfoRow}>
+                    <Feather name="info" size={13} color="#9CA3AF" />
+                    <Text style={s.suspendedInfoTxt}>
+                      Les paramètres ne peuvent plus être modifiés. Toutes les données seront supprimées à l'expiration du délai.
+                    </Text>
+                  </View>
+                </View>
+              );
+            }
+
+            // ── Désactiver les autres sections si boutique suspendue ──
+            const isSuspended = business?.status === 'suspended';
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  s.settingRow,
+                  item.id === 'danger' && s.settingRowDanger,
+                  isSuspended && item.id !== 'danger' && s.settingRowDisabled,
+                ]}
+                onPress={() => {
+                  if (isSuspended) return; // bloquer toute modification
+                  if (item.id === 'danger') { suspendBusiness(); return; }
+                  setActiveSection(item.id);
+                }}
+                activeOpacity={isSuspended ? 1 : 0.85}
+              >
+                <View style={[s.settingIcon, { backgroundColor: isSuspended ? '#F3F4F6' : item.bg }]}>
+                  <Feather name={item.icon as any} size={18} color={isSuspended ? '#D1D5DB' : item.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.settingLabel as any, item.id === 'danger' && { color: RED }, isSuspended && { color: '#D1D5DB' }]}>
+                    {item.label}
+                  </Text>
+                  <Text style={[s.settingSub as any, isSuspended && { color: '#E5E7EB' }]}>{item.sub}</Text>
+                </View>
+                {item.id !== 'danger'
+                  ? <Feather name="chevron-right" size={16} color={isSuspended ? '#E5E7EB' : '#9CA3AF'} />
+                  : deleting ? <ActivityIndicator size="small" color={RED} /> : null
+                }
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
 
@@ -588,11 +688,17 @@ const s = StyleSheet.create({
   coverThumbPh:    { width:56, height:56, borderRadius:12, backgroundColor:'#F3F4F6', alignItems:'center', justifyContent:'center' },
   coverLabel:      { fontSize:14, fontWeight:'700', color:'#111827' },
   coverSub:        { fontSize:12, color:'#9CA3AF', marginTop:1 },
-  settingRow:      { flexDirection:'row', alignItems:'center', gap:14, backgroundColor:'#fff', borderRadius:16, padding:14, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:4, elevation:2 },
-  settingRowDanger:{ backgroundColor:'#FEF2F2', borderWidth:1, borderColor:'#FECACA' },
-  settingIcon:     { width:46, height:46, borderRadius:14, alignItems:'center', justifyContent:'center' },
-  settingLabel:    { fontSize:14, fontWeight:'700', color:'#111827' },
-  settingSub:      { fontSize:12, color:'#9CA3AF', marginTop:2 },
+  settingRow:        { flexDirection:'row', alignItems:'center', gap:14, backgroundColor:'#fff', borderRadius:16, padding:14, shadowColor:'#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:4, elevation:2 },
+  settingRowDanger:  { backgroundColor:'#FEF2F2', borderWidth:1, borderColor:'#FECACA' },
+  settingRowDisabled:{ opacity:0.5 },
+  settingIcon:       { width:46, height:46, borderRadius:14, alignItems:'center', justifyContent:'center' },
+  settingLabel:      { fontSize:14, fontWeight:'700', color:'#111827' },
+  settingSub:        { fontSize:12, color:'#9CA3AF', marginTop:2 },
+  suspendedCard:     { backgroundColor:'#FEF2F2', borderWidth:1, borderColor:'#FECACA', borderRadius:16, padding:14, gap:10 },
+  suspendedWalletRow:{ flexDirection:'row', alignItems:'flex-start', gap:6, paddingTop:4, borderTopWidth:1, borderTopColor:'#FECACA' },
+  suspendedWalletTxt:{ flex:1, fontSize:12, color:'#9CA3AF', lineHeight:17 },
+  suspendedInfoRow:  { flexDirection:'row', alignItems:'flex-start', gap:6 },
+  suspendedInfoTxt:  { flex:1, fontSize:12, color:'#9CA3AF', lineHeight:17 },
   formScroll:      { padding:20, gap:14, paddingBottom:60 },
   coverPickerInForm:{ position:'relative', borderRadius:16, overflow:'hidden', backgroundColor:'#F3F4F6', borderWidth:2, borderColor:'#E5E7EB', borderStyle:'dashed', height:180, marginBottom:6 },
   coverImgFull:    { width:'100%', height:'100%', resizeMode:'cover' },
