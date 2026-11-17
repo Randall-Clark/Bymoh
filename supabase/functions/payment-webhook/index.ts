@@ -11,17 +11,6 @@ import {
   confirmPayment   as paydunyaConfirm,
 } from './_paydunya.ts';
 
-// Estimation du délai de settlement
-// Avant 14h UTC → T+1 (lendemain 08h UTC), après 14h → T+2
-function estimateSettledAt(): Date {
-  const now     = new Date();
-  const hourUTC = now.getUTCHours();
-  const settled = new Date(now);
-  settled.setUTCDate(settled.getUTCDate() + (hourUTC < 14 ? 1 : 2));
-  settled.setUTCHours(8, 0, 0, 0);
-  return settled;
-}
-
 // Détecte quel gateway a envoyé le webhook
 // PawaPay utilise le header X-PawaPay-Signature
 function detectGateway(req: Request): 'paydunya' | 'pawapay' {
@@ -108,12 +97,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 5. Mettre à jour payment_transactions ─────────────────
+    // settled_at n'est PAS fixé ici — il sera fixé par confirm-delivery
+    // quand le client confirme la réception (+24h)
     await supabase
       .from('payment_transactions')
       .update({
-        status:     confirmed.status,
-        settled_at: confirmed.status === 'completed' ? estimateSettledAt().toISOString() : null,
-        metadata:   { gateway, raw: parsed.raw, confirmed },
+        status:   confirmed.status,
+        metadata: { gateway, raw: parsed.raw, confirmed },
       })
       .eq('id', transaction.id);
 
